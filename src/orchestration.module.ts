@@ -8,22 +8,22 @@ import { CachedModule } from '@agent/core/infrastructure/redis';
 import { EdgeAuthModule } from './edge-auth/edge-auth.module';
 import { NAME_SERVICE_TCP, PORT_TCP } from '@agent/core/constants';
 import { getMicroserviceClientConfig } from '@agent/core/common';
-import { OrchestrationController } from './orchestration.controller';
-import { AiOrchestrationProcessor } from './processor/ai-orchestration.processor';
-import { DynamicProviderProcessor } from './processor/dynamic-provider.processor';
-import { McpClientService } from './mcp/mcp-client.service';
-import { McpAuthClientService } from './mcp-auth/mcp-auth-client.service';
-import { ReactLoopService } from './llm/react-loop.service';
-import { SupervisorService } from './llm/supervisor.service';
-import { AgentRankingService } from './llm/agent-ranking.service';
-import { SupervisorPromptBuilder } from './llm/supervisor-prompt.builder';
-import { MessageClientService } from './message-client.service';
-import { LlmStrategyFactory } from './llm/strategy/llm-strategy.factory';
-import { GeminiStrategy } from './llm/strategy/gemini.strategy';
-import { OpenAiStrategy } from './llm/strategy/openai.strategy';
-import { AnthropicStrategy } from './llm/strategy/anthropic.strategy';
-import { MockStrategy } from './llm/strategy/mock.strategy';
-import { AgentStreamService } from './socket/agent-stream.service';
+import { OrchestrationController } from './interfaces/legacy-slack/orchestration.controller';
+import { AiOrchestrationProcessor } from './core/orchestrator/ai-orchestration.processor';
+import { DynamicProviderProcessor } from './core/orchestrator/dynamic-provider.processor';
+import { McpClientService } from './tools/mcp/mcp-client.service';
+import { McpAuthClientService } from './tools/mcp/mcp-auth-client.service';
+import { ReactLoopService } from './core/loop/react-loop.service';
+import { SupervisorService } from './core/supervisor/supervisor.service';
+import { AgentRankingService } from './core/supervisor/agent-ranking.service';
+import { SupervisorPromptBuilder } from './core/supervisor/supervisor-prompt.builder';
+import { MessageClientService } from './interfaces/legacy-slack/message-client.service';
+import { LlmStrategyFactory } from './core/strategy/llm-strategy.factory';
+import { GeminiStrategy } from './core/strategy/gemini.strategy';
+import { OpenAiStrategy } from './core/strategy/openai.strategy';
+import { AnthropicStrategy } from './core/strategy/anthropic.strategy';
+import { MockStrategy } from './core/strategy/mock.strategy';
+import { AgentStreamService } from './interfaces/legacy-slack/agent-stream.service';
 import { OrchestrationCheckpointEntity } from './entity/orchestration-checkpoint.entity';
 import { OrchestrationTriggerClaimEntity } from './entity/orchestration-trigger-claim.entity';
 import { DynamicProviderEntity } from './entity/dynamic-provider.entity';
@@ -34,24 +34,25 @@ import { ChannelMemoryCleanupService } from './memory/channel-memory-cleanup.ser
 import { MemoryManagerService } from './memory/memory-manager.service';
 import { SkillService } from './memory/skill.service';
 import { SkillRetrievalService } from './memory/skill-retrieval.service';
-import { CheckpointService } from './checkpoint/checkpoint.service';
-import { CheckpointCleanupService } from './checkpoint/checkpoint-cleanup.service';
-import { TriggerClaimService } from './trigger-claim/trigger-claim.service';
+import { CheckpointService } from './core/hitl/checkpoint.service';
+import { CheckpointCleanupService } from './core/hitl/checkpoint-cleanup.service';
+import { TriggerClaimService } from './core/hitl/trigger-claim.service';
 import { CircuitBreakerService } from './common/circuit-breaker.service';
 import { ProviderConcurrencyLimiterService } from './common/provider-concurrency-limiter.service';
-import { OpenApiParserService } from './parser/openapi-parser.service';
-import { DynamicToolRegistryService } from './registry/dynamic-tool-registry.service';
-import { DynamicProviderDbService } from './registry/dynamic-provider-db.service';
-import { ProviderSummaryService } from './registry/provider-summary.service';
-import { OpenAiEmbeddingProvider } from './registry/openai-embedding.provider';
-import { DynamicToolExecutorService } from './executor/dynamic-tool-executor.service';
-import { AgentCancellationService } from './cancellation/agent-cancellation.service';
-import { TurnResolverService } from './processor/turn-resolver.service';
-import { CheckpointPauseService } from './processor/checkpoint-pause.service';
-import { ApprovalRequestService } from './processor/approval-request.service';
-import { ApprovalExecutionService } from './processor/approval-execution.service';
-import { ApprovalContinuationPlannerService } from './processor/approval-continuation-planner.service';
-import { ApprovalSkillRecorderService } from './processor/approval-skill-recorder.service';
+import { OpenApiParserService } from './tools/openapi/openapi-parser.service';
+import { DynamicToolRegistryService } from './tools/registry/dynamic-tool-registry.service';
+import { DynamicProviderDbService } from './tools/registry/dynamic-provider-db.service';
+import { ProviderSummaryService } from './tools/registry/provider-summary.service';
+import { OpenAiEmbeddingProvider } from './tools/registry/openai-embedding.provider';
+import { DynamicToolExecutorService } from './tools/executor/dynamic-tool-executor.service';
+import { AgentCancellationService } from './core/cancellation/agent-cancellation.service';
+import { TurnResolverService } from './core/orchestrator/turn-resolver.service';
+import { CheckpointPauseService } from './core/hitl/checkpoint-pause.service';
+import { ApprovalRequestService } from './core/hitl/approval-request.service';
+import { ApprovalExecutionService } from './core/hitl/approval-execution.service';
+import { ApprovalContinuationPlannerService } from './core/hitl/approval-continuation-planner.service';
+import { ApprovalSkillRecorderService } from './core/hitl/approval-skill-recorder.service';
+import { CliService } from './interfaces/cli/cli.service';
 import { MetricsRegistryService } from './common/metrics-registry.service';
 import { HealthCheckService } from './common/health-check.service';
 import { EdgeRelayRegistryService } from './edge-relay/edge-relay-registry.service';
@@ -126,6 +127,7 @@ import { EdgeRelayProcessor } from './edge-relay/edge-relay.processor';
     ApprovalExecutionService,
     ApprovalContinuationPlannerService,
     ApprovalSkillRecorderService,
+    CliService,
     MetricsRegistryService,
     HealthCheckService,
     EdgeRelayRegistryService,

@@ -1,8 +1,5 @@
-export * from '../mcp/mcp-client.service';
-export * from '../mcp-auth/mcp-auth-client.service';
-export * from '../parser/openapi-parser.service';
-export * from '../registry/dynamic-tool-registry.service';
-export * from '../registry/dynamic-provider-db.service';
-export * from '../registry/provider-summary.service';
-export * from '../registry/openai-embedding.provider';
-export * from '../executor/dynamic-tool-executor.service';
+// Layer 5: Tool Integration & Execution
+export * from './mcp';
+export * from './openapi';
+export * from './registry';
+export * from './executor';

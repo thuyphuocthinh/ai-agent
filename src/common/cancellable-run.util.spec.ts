@@ -1,5 +1,5 @@
 import { runCancellable, rethrowIfCancelled } from './cancellable-run.util';
-import { TurnCancelledError } from '../llm/turn-cancelled.error';
+import { TurnCancelledError } from '../core/loop/turn-cancelled.error';
 
 describe('runCancellable', () => {
   const mockCancellation = { isCancelled: jest.fn().mockResolvedValue(false) };

@@ -2,7 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ECheckpointRiskLevel } from '@agent/core/constants';
 import { SkillRetrievalService } from './skill-retrieval.service';
 import { SkillService } from './skill.service';
-import { OpenAiEmbeddingProvider } from '../registry/openai-embedding.provider';
+import { OpenAiEmbeddingProvider } from '../tools/registry/openai-embedding.provider';
 import { SkillEntity } from '../entity/skill.entity';
 
 describe('SkillRetrievalService', () => {

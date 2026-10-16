@@ -4,12 +4,12 @@ import { ECheckpointRiskLevel } from '@agent/core/constants';
 import {
   OPENAI_EMBEDDING_MODEL,
   OpenAiEmbeddingProvider,
-} from '../registry/openai-embedding.provider';
+} from '../tools/registry/openai-embedding.provider';
 import { SkillService } from './skill.service';
 import { SkillEntity } from '../entity/skill.entity';
 import { cosineSimilarity } from './skill-cosine-similarity.util';
-import { CHARS_PER_TOKEN_ESTIMATE } from '../executor/tool-result-size-cap.util';
-import { attachEmbeddingCostMetadata } from '../llm/llm-cost.util';
+import { CHARS_PER_TOKEN_ESTIMATE } from '../tools/executor/tool-result-size-cap.util';
+import { attachEmbeddingCostMetadata } from '../core/loop/llm-cost.util';
 
 // Bảo thủ có chủ đích — chưa có số liệu thật để tinh chỉnh, thà bỏ sót gợi ý
 // còn hơn gợi ý sai skill.

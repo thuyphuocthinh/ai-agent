@@ -3,7 +3,7 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { LessThan } from 'typeorm';
 import { ChannelMemoryService } from './channel-memory.service';
 import { ChannelMemoryEntity } from '../entity/channel-memory.entity';
-import { OpenAiEmbeddingProvider } from '../registry/openai-embedding.provider';
+import { OpenAiEmbeddingProvider } from '../tools/registry/openai-embedding.provider';
 
 describe('ChannelMemoryService', () => {
   let service: ChannelMemoryService;

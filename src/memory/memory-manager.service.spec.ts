@@ -5,7 +5,7 @@ import {
   resolveDataCharBudget,
   resolveHistoryCharBudget,
   resolveMemoryCharBudget,
-} from '../executor/tool-result-size-cap.util';
+} from '../tools/executor/tool-result-size-cap.util';
 
 describe('MemoryManagerService', () => {
   let service: MemoryManagerService;

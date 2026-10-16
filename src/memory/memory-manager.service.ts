@@ -3,7 +3,7 @@ import {
   resolveDataCharBudget,
   resolveHistoryCharBudget,
   resolveMemoryCharBudget,
-} from '../executor/tool-result-size-cap.util';
+} from '../tools/executor/tool-result-size-cap.util';
 import { ChannelMemoryEntity } from '../entity/channel-memory.entity';
 import { ChannelMemoryService } from './channel-memory.service';
 

@@ -6,5 +6,3 @@ export * from './core';
 export * from './tools';
 export * from './security';
 export * from './orchestration.module';
-export * from './orchestration.controller';
-export * from './message-client.service';
