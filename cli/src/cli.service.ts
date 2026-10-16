@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import * as readline from 'readline';
-import { IMessageSink } from '../../contracts/message-sink.interface';
-import { IStreamSink, AgentStreamContext, AgentStreamStep } from '../../contracts/stream-sink.interface';
+import { IMessageSink } from '@agent/core/contracts';
+import { IStreamSink, AgentStreamContext, AgentStreamStep } from '@agent/core/contracts';
 import {
   ChatHistoryTurnDto,
   CreateOrchestrationMessageRequestDto,
@@ -9,7 +9,7 @@ import {
   GetMessageTextRequestDto,
   GetRecentHistoryRequestDto,
   UpdateOrchestrationMessageRequestDto,
-} from '../../dto/message-client.dto';
+} from '@agent/core/dto/message-client.dto';
 import { EMessageRole } from '@agent/core/constants';
 
 export interface CliServiceOptions {

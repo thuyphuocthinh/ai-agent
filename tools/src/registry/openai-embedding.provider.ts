@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import OpenAI from 'openai';
-import { EmbeddingProvider } from '../../common/agentic-openapi-parser';
+import { EmbeddingProvider } from 'agentic-openapi-parser';
 
 /**
  * Bring-your-own EmbeddingProvider for agentic-openapi-parser's SemanticToolIndex — calls OpenAI's

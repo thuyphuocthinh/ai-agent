@@ -3,7 +3,7 @@ import {
   ORCHESTRATION_CONSTANTS,
   ORCHESTRATION_SYSTEM_PROMPT,
 } from '@agent/core/constants';
-import { McpClientService } from '../tools/mcp/mcp-client.service';
+import { McpClientService } from '@agent/tools';
 import {
   RunReactLoopRequestDto,
   RunReactLoopResponseDto,
@@ -14,7 +14,7 @@ import { CircuitBreakerService } from '../common/circuit-breaker.service';
 import { AgentCancellationService } from '../cancellation/agent-cancellation.service';
 import { runCancellable } from '../common/cancellable-run.util';
 import { TurnCancelledError } from './turn-cancelled.error';
-import { capToolResultSize } from '../tools/executor/tool-result-size-cap.util';
+import { capToolResultSize } from '@agent/tools';
 import { MemoryManagerService } from '../memory/memory-manager.service';
 import { ReactLoopRun } from './react-loop-run';
 import { ToolRepeatGuard } from './tool-repeat-guard';

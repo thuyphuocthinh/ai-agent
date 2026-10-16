@@ -4,7 +4,7 @@ import {
   ORCHESTRATION_SELF_CHECK_PROMPT,
 } from '@agent/core/constants';
 import { ReactLoopService } from './react-loop.service';
-import { McpClientService } from '../tools/mcp/mcp-client.service';
+import { McpClientService } from '@agent/tools';
 import { LlmStrategyFactory } from '../strategy/llm-strategy.factory';
 import { AgentStreamService } from '../contracts/agent-stream.service';
 import { RunReactLoopRequestDto } from '../dto/react-loop.dto';
@@ -16,7 +16,7 @@ import {
   resolveDataCharBudget,
   resolveHistoryCharBudget,
   resolveMemoryCharBudget,
-} from '../tools/executor/tool-result-size-cap.util';
+} from '@agent/tools';
 
 // @agent/core/common barrel transitively kéo theo "nanoid" (ESM-only) qua
 // string.util.ts — jest không transform được, mock thẳng theo đúng convention

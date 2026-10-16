@@ -4,23 +4,23 @@ import { Repository } from 'typeorm';
 import {
   DynamicProviderEntity,
   DynamicProviderAuthConfig,
-} from '../../entity/dynamic-provider.entity';
+} from '@agent/core/entity/dynamic-provider.entity';
 import { DynamicToolRegistryService } from './dynamic-tool-registry.service';
 import {
   DynamicProviderDto,
   RegisterDynamicProviderRequestDto,
   UpdateDynamicProviderRequestDto,
-} from '../../dto/orchestration.dto';
+} from '@agent/core/dto/orchestration.dto';
 import { OpenApiParserService } from '../openapi/openapi-parser.service';
-import { EDynamicProviderAuthType } from '../../entity/dynamic-provider.entity';
+import { EDynamicProviderAuthType } from '@agent/core/entity/dynamic-provider.entity';
 import { RpcException } from '@nestjs/microservices';
 import { ERefreshFormat, ORCHESTRATION_ERROR } from '@agent/core/constants';
 import { v4 as uuidv4 } from 'uuid';
 import {
   OAuth2TokenState,
   Oauth2RefreshTokenRefresher,
-} from '../../common/agentic-openapi-parser';
-import { inferOAuth2RefreshFormat } from '../../common/oauth2-refresh-format.util';
+} from 'agentic-openapi-parser';
+import { inferOAuth2RefreshFormat } from '@agent/core/common';
 
 export interface CreateDynamicProviderParams {
   userId: string;

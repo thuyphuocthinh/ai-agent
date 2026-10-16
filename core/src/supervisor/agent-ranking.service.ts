@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ORCHESTRATION_CONSTANTS } from '@agent/core/constants';
-import { OpenAiEmbeddingProvider } from '../tools/registry/openai-embedding.provider';
+import { OpenAiEmbeddingProvider } from '@agent/tools';
 import { SemanticToolIndex } from '../common/agentic-openapi-parser';
 import { AvailableAgentDto } from '../dto/supervisor.dto';
 

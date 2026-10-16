@@ -1,12 +1,12 @@
 import { OpenAPI, OpenAPIV2, OpenAPIV3 } from 'openapi-types';
-import { McpToolDto } from '../../dto/mcp.dto';
+import { McpToolDto } from '@agent/core/dto/mcp.dto';
 import {
   iterateOperations,
   deriveToolName,
   buildStrictInputSchema,
   deriveMethodAnnotations,
   DynamicToolDefinition,
-} from '../../common/agentic-openapi-parser';
+} from '../common/agentic-openapi-parser';
 
 type AnyOperation = OpenAPIV3.OperationObject & Partial<OpenAPIV2.OperationObject>;
 

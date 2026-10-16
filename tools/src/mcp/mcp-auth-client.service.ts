@@ -7,7 +7,7 @@ import {
   InitiateConnectResponseDto,
   ProviderStatusDto,
   SubmitCredentialsRequestDto,
-} from '../../dto/mcp-auth.dto';
+} from '@agent/core/dto/mcp-auth.dto';
 
 @Injectable()
 export class McpAuthClientService {
@@ -51,7 +51,7 @@ export class McpAuthClientService {
         );
       }
       return data;
-    } catch (error) {
+    } catch (error: any) {
       this.logger.error(`getConnectionStatus failed: ${error.message}`);
       throw new RpcException(ORCHESTRATION_ERROR.MCP_AUTH_REQUEST_FAILED);
     }
@@ -74,7 +74,7 @@ export class McpAuthClientService {
         res,
         'connect/initiate',
       );
-    } catch (error) {
+    } catch (error: any) {
       this.logger.error(`initiateConnect failed: ${error.message}`);
       throw new RpcException(ORCHESTRATION_ERROR.MCP_AUTH_REQUEST_FAILED);
     }
@@ -91,7 +91,7 @@ export class McpAuthClientService {
         },
         { headers: { Authorization: this.basicAuthHeader } },
       );
-    } catch (error) {
+    } catch (error: any) {
       this.logger.error(`submitCredentials failed: ${error.message}`);
       throw new RpcException(ORCHESTRATION_ERROR.MCP_AUTH_REQUEST_FAILED);
     }
@@ -103,7 +103,7 @@ export class McpAuthClientService {
         data: { owner_id: ownerId },
         headers: { Authorization: this.basicAuthHeader },
       });
-    } catch (error) {
+    } catch (error: any) {
       this.logger.error(`disconnectProvider failed: ${error.message}`);
       throw new RpcException(ORCHESTRATION_ERROR.MCP_AUTH_REQUEST_FAILED);
     }

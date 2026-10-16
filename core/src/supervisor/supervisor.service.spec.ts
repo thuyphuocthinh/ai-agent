@@ -6,10 +6,10 @@ import {
   SUPERVISOR_PLAN_SCHEMA_NO_ANSWER,
 } from '@agent/core/constants';
 import { SupervisorService } from './supervisor.service';
-import { McpAuthClientService } from '../tools/mcp/mcp-auth-client.service';
+import { McpAuthClientService } from '@agent/tools';
 import { LlmStrategyFactory } from '../strategy/llm-strategy.factory';
 import { CircuitBreakerService } from '../common/circuit-breaker.service';
-import { DynamicProviderDbService } from '../tools/registry/dynamic-provider-db.service';
+import { DynamicProviderDbService } from '@agent/tools';
 import { MetricsRegistryService } from '../common/metrics-registry.service';
 import { MemoryManagerService } from '../memory/memory-manager.service';
 import { SkillRetrievalService } from '../memory/skill-retrieval.service';
@@ -19,26 +19,26 @@ import {
   resolveDataCharBudget,
   resolveHistoryCharBudget,
   resolveMemoryCharBudget,
-} from '../tools/executor/tool-result-size-cap.util';
-import { AGENT_REGISTRY } from '../tools/registry/agents.registry';
+} from '@agent/tools';
+import { AGENT_REGISTRY } from '@agent/tools';
 
 // Cô lập test khỏi giá trị thật của process.env.AGENT_SQL_SERVER_URL — mock
 // thẳng registry để chủ động quyết định agent nào có/thiếu hạ tầng thật.
-jest.mock('../tools/registry/agents.registry', () => ({
-  AGENT_REGISTRY: {
-    sql_server: { label: 'SQL Server', endpoint: 'http://mcp-server/mcp' },
-    // notion: đã connect qua mcp-auth (xem test bên dưới) nhưng CHƯA có agent
-    // thật đăng ký (endpoint rỗng) — phải bị loại khỏi danh sách khả dụng.
-    notion: { label: 'Notion', endpoint: undefined },
-    // Edge MCP Server plan, Phase 2 — không có endpoint tĩnh, chỉ khả dụng
-    // qua EdgeRelayRegistryService.isOnline(workspaceId) (xem getRelayBoundAgents()).
-    sql_server_edge: {
-      label: 'SQL Server (on-prem, qua Edge MCP Server)',
-      endpoint: undefined,
-      perWorkspaceInstance: true,
+jest.mock('@agent/tools', () => {
+  const actual = jest.requireActual('@agent/tools');
+  return {
+    ...actual,
+    AGENT_REGISTRY: {
+      sql_server: { label: 'SQL Server', endpoint: 'http://mcp-server/mcp' },
+      notion: { label: 'Notion', endpoint: undefined },
+      sql_server_edge: {
+        label: 'SQL Server (on-prem, qua Edge MCP Server)',
+        endpoint: undefined,
+        perWorkspaceInstance: true,
+      },
     },
-  },
-}));
+  };
+});
 
 describe('SupervisorService', () => {
   let service: SupervisorService;

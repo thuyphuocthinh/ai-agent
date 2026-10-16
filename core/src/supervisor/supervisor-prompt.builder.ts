@@ -4,7 +4,7 @@ import { ChatHistoryTurnDto } from '../dto/message-client.dto';
 import { ChannelMemoryEntity } from '../entity/channel-memory.entity';
 import { SkillEntity } from '../entity/skill.entity';
 import { MemoryManagerService } from '../memory/memory-manager.service';
-import { capRoundResults } from '../tools/executor/tool-result-size-cap.util';
+import { capRoundResults } from '@agent/tools';
 import { detectFrustration } from '../loop/detect-frustration.util';
 
 // Tách khỏi SupervisorService — trách nhiệm duy nhất: ghép channel_memory +

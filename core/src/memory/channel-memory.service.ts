@@ -8,12 +8,12 @@ import { SemanticToolIndex } from '../common/agentic-openapi-parser';
 import {
   OPENAI_EMBEDDING_MODEL,
   OpenAiEmbeddingProvider,
-} from '../tools/registry/openai-embedding.provider';
+} from '@agent/tools';
 import { ChannelMemoryEntity } from '../entity/channel-memory.entity';
 import { ToolCallTraceDto } from '../dto/react-loop.dto';
 import { isLikelyCreateToolCall } from './create-tool-heuristic.util';
 import { looksLikeInjection } from './memory-injection-heuristic.util';
-import { CHARS_PER_TOKEN_ESTIMATE } from '../tools/executor/tool-result-size-cap.util';
+import { CHARS_PER_TOKEN_ESTIMATE } from '@agent/tools';
 import { attachEmbeddingCostMetadata } from '../loop/llm-cost.util';
 import { cosineSimilarity } from './skill-cosine-similarity.util';
 

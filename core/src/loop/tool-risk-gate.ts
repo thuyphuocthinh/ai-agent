@@ -5,7 +5,7 @@ import { LlmStrategy } from '../strategy/llm-strategy.interface';
 import { CircuitBreakerService } from '../common/circuit-breaker.service';
 import { extractRequiredCount } from './quantity-check.util';
 import { isLikelyCreateToolCall } from '../memory/create-tool-heuristic.util';
-import { AGENT_REGISTRY } from '../tools/registry/agents.registry';
+import { AGENT_REGISTRY } from '@agent/tools';
 import { extractWriteQueryPreviewTarget } from './write-query-preview.util';
 import { InsertAccumulator } from './insert-accumulator';
 

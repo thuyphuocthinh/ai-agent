@@ -2,8 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PROVIDER_DESCRIPTIONS, PROVIDER_LABELS } from '@agent/core/constants';
 import { McpAuthClientService } from '../mcp/mcp-auth-client.service';
 import { McpClientService } from '../mcp/mcp-client.service';
-import { ProviderStatusDto } from '../../dto/mcp-auth.dto';
-import { ProviderSummaryDto } from '../../dto/orchestration.dto';
+import { ProviderStatusDto } from '@agent/core/dto/mcp-auth.dto';
+import { ProviderSummaryDto } from '@agent/core/dto/orchestration.dto';
 import { DynamicProviderDbService } from './dynamic-provider-db.service';
 import { AGENT_REGISTRY } from './agents.registry';
 

@@ -1,0 +1,11 @@
+{
+  "name": "agents-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Enterprise AI Agent Monorepo (Core, Tools, CLI)",
+  "scripts": {
+    "build": "pnpm -r run build",
+    "test": "pnpm -r run test",
+    "start:cli": "pnpm --filter @agent/cli start"
+  }
+}

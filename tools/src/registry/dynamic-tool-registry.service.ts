@@ -1,16 +1,16 @@
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { McpToolDto } from '../../dto/mcp.dto';
+import { McpToolDto } from '@agent/core/dto/mcp.dto';
 import { OpenApiParserService } from '../openapi/openapi-parser.service';
 import { OpenApiConverter } from '../openapi/openapi-converter.util';
-import { DynamicProviderEntity } from '../../entity/dynamic-provider.entity';
+import { DynamicProviderEntity } from '@agent/core/entity/dynamic-provider.entity';
 import { OpenAPI } from 'openapi-types';
 import { RpcException } from '@nestjs/microservices';
 import { ORCHESTRATION_ERROR } from '@agent/core/constants';
 import { buildTTL } from '@agent/core/common';
-import { EDynamicProviderAuthType } from '../../entity/dynamic-provider.entity';
-import { SemanticToolIndex } from '../../common/agentic-openapi-parser';
+import { EDynamicProviderAuthType } from '@agent/core/entity/dynamic-provider.entity';
+import { SemanticToolIndex } from '../common/agentic-openapi-parser';
 import { OpenAiEmbeddingProvider } from './openai-embedding.provider';
 
 // McpToolDto.description is optional (real MCP servers may omit it), but SemanticToolIndex

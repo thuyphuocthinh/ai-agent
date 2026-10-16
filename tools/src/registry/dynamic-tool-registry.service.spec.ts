@@ -3,7 +3,7 @@ import { DynamicToolRegistryService } from './dynamic-tool-registry.service';
 import { OpenApiParserService } from '../openapi/openapi-parser.service';
 import { OpenAiEmbeddingProvider } from './openai-embedding.provider';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { DynamicProviderEntity } from '../../entity/dynamic-provider.entity';
+import { DynamicProviderEntity } from '@agent/core/entity/dynamic-provider.entity';
 import { OpenAPI } from 'openapi-types';
 import { RpcException } from '@nestjs/microservices';
 import { buildTTL } from '@agent/core/common';

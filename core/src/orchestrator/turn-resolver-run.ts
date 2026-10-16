@@ -23,7 +23,7 @@ import { describeExternalServiceError } from '../loop/external-service-error.uti
 import { CheckpointPauseService } from '../hitl/checkpoint-pause.service';
 import { MetricsRegistryService } from '../common/metrics-registry.service';
 import { buildOnToken } from './agent-stream-token.util';
-import { capRoundResultsWeighted } from '../tools/executor/tool-result-size-cap.util';
+import { capRoundResultsWeighted } from '@agent/tools';
 import { MemoryManagerService } from '../memory/memory-manager.service';
 import { hasPendingActionStep } from '../common/pending-action-step.util';
 import {

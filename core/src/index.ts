@@ -9,6 +9,5 @@ export * from './orchestrator';
 export * from './strategy';
 export * from './supervisor';
 export * from './memory';
-export * from './tools';
 export * from './security';
 export * from './orchestration.module';

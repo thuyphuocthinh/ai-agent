@@ -7,7 +7,7 @@ import {
 } from '@agent/core/constants';
 import { extractTextFromMcpResult } from '@agent/core/common';
 import { MessageClientService } from '../contracts/message-client.service';
-import { McpClientService } from '../tools/mcp/mcp-client.service';
+import { McpClientService } from '@agent/tools';
 import { CheckpointService } from './checkpoint.service';
 import {
   AmbiguousAgentCandidate,
@@ -31,7 +31,7 @@ import {
   ApprovalRequiredDelegateResult,
   buildAnswer,
 } from '../orchestrator/orchestration-answer.types';
-import { capToolResultSize } from '../tools/executor/tool-result-size-cap.util';
+import { capToolResultSize } from '@agent/tools';
 
 @Injectable()
 export class CheckpointPauseService {

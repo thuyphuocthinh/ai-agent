@@ -4,7 +4,7 @@ import { ECheckpointRiskLevel } from '@agent/core/constants';
 import { CheckpointPauseService } from './checkpoint-pause.service';
 import { MessageClientService } from '../contracts/message-client.service';
 import { CheckpointService } from './checkpoint.service';
-import { McpClientService } from '../tools/mcp/mcp-client.service';
+import { McpClientService } from '@agent/tools';
 import { ApprovalRequiredDelegateResult } from '../orchestrator/orchestration-answer.types';
 
 // checkpoint-pause.service.ts import @agent/core/common ở module scope (extractTextFromMcpResult)

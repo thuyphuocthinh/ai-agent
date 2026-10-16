@@ -1,13 +1,12 @@
 import { Module } from '@nestjs/common';
-import { TypeOrmModule } from '@nestjs/typeorm';
 import { ScheduleModule } from '@nestjs/schedule';
-import { DatabaseModule } from '@agent/core/infrastructure/database';
-import { QueueModule, EQueueName } from '@agent/core/infrastructure/queue';
-import { CachedModule } from '@agent/core/infrastructure/redis';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { DatabaseModule } from './infrastructure/database/database.module';
+import { CachedModule } from './infrastructure/redis/redis.module';
+import { QueueModule } from './infrastructure/queue/queue.module';
+import { EQueueName } from './infrastructure/queue';
 import { AiOrchestrationProcessor } from './orchestrator/ai-orchestration.processor';
 import { DynamicProviderProcessor } from './orchestrator/dynamic-provider.processor';
-import { McpClientService } from './tools/mcp/mcp-client.service';
-import { McpAuthClientService } from './tools/mcp/mcp-auth-client.service';
 import { ReactLoopService } from './loop/react-loop.service';
 import { SupervisorService } from './supervisor/supervisor.service';
 import { AgentRankingService } from './supervisor/agent-ranking.service';
@@ -32,12 +31,7 @@ import { CheckpointCleanupService } from './hitl/checkpoint-cleanup.service';
 import { TriggerClaimService } from './hitl/trigger-claim.service';
 import { CircuitBreakerService } from './common/circuit-breaker.service';
 import { ProviderConcurrencyLimiterService } from './common/provider-concurrency-limiter.service';
-import { OpenApiParserService } from './tools/openapi/openapi-parser.service';
-import { DynamicToolRegistryService } from './tools/registry/dynamic-tool-registry.service';
-import { DynamicProviderDbService } from './tools/registry/dynamic-provider-db.service';
-import { ProviderSummaryService } from './tools/registry/provider-summary.service';
-import { OpenAiEmbeddingProvider } from './tools/registry/openai-embedding.provider';
-import { DynamicToolExecutorService } from './tools/executor/dynamic-tool-executor.service';
+import { ToolsModule } from '@agent/tools';
 import { AgentCancellationService } from './cancellation/agent-cancellation.service';
 import { TurnResolverService } from './orchestrator/turn-resolver.service';
 import { CheckpointPauseService } from './hitl/checkpoint-pause.service';
@@ -46,7 +40,6 @@ import { ApprovalExecutionService } from './hitl/approval-execution.service';
 import { ApprovalContinuationPlannerService } from './hitl/approval-continuation-planner.service';
 import { ApprovalSkillRecorderService } from './hitl/approval-skill-recorder.service';
 import { MessageClientService, AgentStreamService } from './contracts';
-import { CliService } from './interfaces/cli/cli.service';
 import { MetricsRegistryService } from './common/metrics-registry.service';
 import { HealthCheckService } from './common/health-check.service';
 
@@ -60,6 +53,7 @@ import { HealthCheckService } from './common/health-check.service';
       ChannelMemoryEntity,
       SkillEntity,
     ]),
+    ToolsModule,
     ScheduleModule.forRoot(),
     CachedModule.forRoot(),
     QueueModule.forRoot(),
@@ -71,14 +65,6 @@ import { HealthCheckService } from './common/health-check.service';
   providers: [
     AiOrchestrationProcessor,
     DynamicProviderProcessor,
-    McpClientService,
-    McpAuthClientService,
-    OpenApiParserService,
-    DynamicToolRegistryService,
-    DynamicProviderDbService,
-    ProviderSummaryService,
-    OpenAiEmbeddingProvider,
-    DynamicToolExecutorService,
     ReactLoopService,
     SupervisorService,
     AgentRankingService,
@@ -107,7 +93,6 @@ import { HealthCheckService } from './common/health-check.service';
     ApprovalSkillRecorderService,
     MessageClientService,
     AgentStreamService,
-    CliService,
     MetricsRegistryService,
     HealthCheckService,
   ],
@@ -118,8 +103,7 @@ import { HealthCheckService } from './common/health-check.service';
     LlmStrategyFactory,
     MessageClientService,
     AgentStreamService,
-    CliService,
-    McpClientService,
+    ToolsModule,
   ],
 })
 export class OrchestrationModule {}

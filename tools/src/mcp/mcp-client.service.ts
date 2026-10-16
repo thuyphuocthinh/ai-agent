@@ -11,15 +11,15 @@ import {
   McpToolDto,
   McpResourceDto,
   McpPromptDto,
-} from '../../dto/mcp.dto';
+} from '@agent/core/dto/mcp.dto';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { withTimeout } from '../../loop/with-timeout.util';
-import { abortableSleep } from '../../common/abortable-sleep.util';
-import { CircuitBreakerService } from '../../common/circuit-breaker.service';
-import { ProviderConcurrencyLimiterService } from '../../common/provider-concurrency-limiter.service';
+import { withTimeout } from '@agent/core/loop/with-timeout.util';
+import { abortableSleep } from '@agent/core/common';
+import { CircuitBreakerService } from '@agent/core/common';
+import { ProviderConcurrencyLimiterService } from '@agent/core/common';
 import { DynamicToolRegistryService } from '../registry/dynamic-tool-registry.service';
 import { DynamicToolExecutorService } from '../executor/dynamic-tool-executor.service';
-import { PiiScrubberUtil } from '../../security/pii/pii-scrubber.util';
+import { PiiScrubberUtil } from '@agent/core/security';
 import { routeKey, clientCacheKey } from './route-key.util';
 
 interface CacheEntry<T> {
@@ -139,7 +139,7 @@ export class McpClientService {
         try {
           const client = await entry.promise;
           await client.close();
-        } catch (error) {
+        } catch (error: any) {
           this.logger.warn(
             `evictIdleClients() failed to close "${cacheKey}": ${(error as Error).message}`,
           );

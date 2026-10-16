@@ -1,0 +1,47 @@
+{
+  "name": "@agent/cli",
+  "version": "0.1.0",
+  "description": "Agent CLI — Interactive Console Application with REPL and HITL Prompts",
+  "private": true,
+  "main": "dist/index.js",
+  "bin": {
+    "agent-cli": "./dist/bin.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "start": "ts-node -r tsconfig-paths/register src/bin.ts",
+    "test": "jest"
+  },
+  "dependencies": {
+    "@agent/core": "workspace:*",
+    "@nestjs/common": "^11.0.1",
+    "reflect-metadata": "^0.2.2"
+  },
+  "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "@types/node": "^22.10.7",
+    "jest": "^30.0.0",
+    "ts-jest": "^29.2.5",
+    "ts-node": "^10.9.2",
+    "tsconfig-paths": "^4.2.0",
+    "typescript": "^5.7.3"
+  },
+  "jest": {
+    "moduleFileExtensions": ["js", "json", "ts"],
+    "rootDir": "src",
+    "testRegex": ".*\\.spec\\.ts$",
+    "transform": {
+      "^.+\\.(t|j)s$": [
+        "ts-jest",
+        {
+          "diagnostics": false
+        }
+      ]
+    },
+    "testEnvironment": "node",
+    "moduleNameMapper": {
+      "^@agent/cli(|/.*)$": "<rootDir>/$1",
+      "^@agent/core(|/.*)$": "<rootDir>/../../core/src/$1"
+    }
+  }
+}

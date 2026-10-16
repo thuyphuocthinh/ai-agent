@@ -5,14 +5,14 @@ import { MessageClientService } from '../contracts/message-client.service';
 import { SupervisorService } from '../supervisor/supervisor.service';
 import { AgentStreamService } from '../contracts/agent-stream.service';
 import { CheckpointService } from './checkpoint.service';
-import { McpClientService } from '../tools/mcp/mcp-client.service';
+import { McpClientService } from '@agent/tools';
 import { AgentCancellationService } from '../cancellation/agent-cancellation.service';
 import { TurnCancelledError } from '../loop/turn-cancelled.error';
 import { TurnResolverService } from '../orchestrator/turn-resolver.service';
 import { MemoryManagerService } from '../memory/memory-manager.service';
 import { ApprovalContinuationPlannerService } from './approval-continuation-planner.service';
 import { ApprovalSkillRecorderService } from './approval-skill-recorder.service';
-import { resolveDataCharBudget } from '../tools/executor/tool-result-size-cap.util';
+import { resolveDataCharBudget } from '@agent/tools';
 
 // approval-execution.service.ts import @agent/core/common ở module scope (extractTextFromMcpResult)
 // — mock thẳng barrel để tránh kéo theo "nanoid" (ESM-only) mà jest không transform được.

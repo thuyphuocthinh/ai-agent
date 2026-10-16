@@ -2,8 +2,8 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 import { ORCHESTRATION_CONSTANTS } from '@agent/core/constants';
 import { McpClientService } from './mcp-client.service';
-import { CircuitBreakerService } from '../../common/circuit-breaker.service';
-import { ProviderConcurrencyLimiterService } from '../../common/provider-concurrency-limiter.service';
+import { CircuitBreakerService } from '@agent/core/common';
+import { ProviderConcurrencyLimiterService } from '@agent/core/common';
 import { DynamicToolRegistryService } from '../registry/dynamic-tool-registry.service';
 import { DynamicToolExecutorService } from '../executor/dynamic-tool-executor.service';
 

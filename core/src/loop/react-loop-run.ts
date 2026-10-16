@@ -3,7 +3,7 @@ import {
   ORCHESTRATION_CONSTANTS,
   ORCHESTRATION_SELF_CHECK_PROMPT,
 } from '@agent/core/constants';
-import { McpClientService } from '../tools/mcp/mcp-client.service';
+import { McpClientService } from '@agent/tools';
 import {
   RunReactLoopRequestDto,
   RunReactLoopResponseDto,

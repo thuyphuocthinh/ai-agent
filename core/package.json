@@ -55,7 +55,8 @@
     "typeorm": "^0.3.28",
     "uuid": "^13.0.0",
     "winston": "^3.19.0",
-    "zod": "^4.3.6"
+    "zod": "^4.3.6",
+    "@agent/tools": "workspace:*"
   },
   "devDependencies": {
     "@nestjs/cli": "^11.0.0",
@@ -100,7 +101,8 @@
     "moduleNameMapper": {
       "^@agent/core(|/.*)$": "<rootDir>/$1",
       "^nanoid$": "<rootDir>/common/__mocks__/nanoid.js",
-      "^uuid$": "<rootDir>/common/__mocks__/uuid.js"
+      "^uuid$": "<rootDir>/common/__mocks__/uuid.js",
+      "^@agent/tools(|/.*)$": "<rootDir>/../../tools/src/$1"
     }
   }
 }

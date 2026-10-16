@@ -8,7 +8,7 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import {
   DynamicProviderEntity,
   EDynamicProviderAuthType,
-} from '../../entity/dynamic-provider.entity';
+} from '@agent/core/entity/dynamic-provider.entity';
 import { QueueService } from '@agent/core/infrastructure/queue';
 
 jest.mock('axios');

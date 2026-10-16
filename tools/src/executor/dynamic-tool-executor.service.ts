@@ -3,10 +3,10 @@ import {
   DynamicToolRegistryService,
   DynamicProviderSpec,
 } from '../registry/dynamic-tool-registry.service';
-import { CallToolResponseDto } from '../../dto/mcp.dto';
-import { EDynamicProviderAuthType } from '../../entity/dynamic-provider.entity';
+import { CallToolResponseDto } from '@agent/core/dto/mcp.dto';
+import { EDynamicProviderAuthType } from '@agent/core/entity/dynamic-provider.entity';
 import { QueueService, EQueueName, EJobName } from '@agent/core/infrastructure/queue';
-import { PiiScrubProcessor } from '../../security/pii/pii-scrub.processor';
+import { PiiScrubProcessor } from '@agent/core/security';
 import {
   OpenApiSecurityInjector as LibSecurityInjector,
   Oauth2RefreshTokenRefresher,
@@ -17,8 +17,8 @@ import {
   ResponseProcessingError,
   DynamicProviderAuthType as ELibAuthType,
   ObservabilityHooks,
-} from '../../common/agentic-openapi-parser';
-import { inferOAuth2RefreshFormat } from '../../common/oauth2-refresh-format.util';
+} from 'agentic-openapi-parser';
+import { inferOAuth2RefreshFormat } from '@agent/core/common';
 
 @Injectable()
 export class DynamicToolExecutorService {
@@ -153,7 +153,7 @@ export class DynamicToolExecutorService {
   ): Promise<unknown> {
     try {
       return await this.callTool(spec, toolName, args, providerSpec, signal);
-    } catch (error) {
+    } catch (error: any) {
       if (
         !this.isUnauthorized(error) ||
         !(await this.tryRenewOAuth2Token(providerId, providerSpec))
