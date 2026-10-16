@@ -5,7 +5,7 @@ import {
   GetMessageTextRequestDto,
   GetRecentHistoryRequestDto,
   UpdateOrchestrationMessageRequestDto,
-} from '../dto/message-client.dto';
+} from './dtos/message-client.dto';
 
 export const MESSAGE_SINK = Symbol('MESSAGE_SINK');
 

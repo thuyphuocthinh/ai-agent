@@ -4,7 +4,7 @@ import {
   resolveHistoryCharBudget,
   resolveMemoryCharBudget,
 } from '@agent/tools';
-import { ChannelMemoryEntity } from '../entity/channel-memory.entity';
+import { ChannelMemoryEntity } from '../infrastructure/database/entities/channel-memory.entity';
 import { ChannelMemoryService } from './channel-memory.service';
 
 export interface ContextBudget {

@@ -25,14 +25,29 @@
       "@agent/core/*": [
         "src/*"
       ],
-      "agentic-openapi-parser/*": [
-        "node_modules/agentic-openapi-parser/dist/*/index.d.ts"
+      "@agent/core/entity/*": [
+        "src/infrastructure/database/entities/*"
+      ],
+      "@agent/core/entity": [
+        "src/infrastructure/database/entities/index.ts"
+      ],
+      "@agent/core/dto/*": [
+        "src/contracts/dtos/*"
+      ],
+      "@agent/core/dto": [
+        "src/contracts/dtos/index.ts"
+      ],
+      "@agent/core/loop/*": [
+        "src/engine/loop/*"
       ],
       "@agent/tools": [
         "../tools/src/index.ts"
       ],
       "@agent/tools/*": [
         "../tools/src/*"
+      ],
+      "agentic-openapi-parser/*": [
+        "node_modules/agentic-openapi-parser/dist/*/index.d.ts"
       ]
     }
   },

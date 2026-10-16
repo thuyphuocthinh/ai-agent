@@ -9,7 +9,7 @@ import {
   GetMessageTextRequestDto,
   GetRecentHistoryRequestDto,
   UpdateOrchestrationMessageRequestDto,
-} from '../dto/message-client.dto';
+} from './dtos/message-client.dto';
 import { EMessageRole } from '@agent/core/constants';
 import { ChannelMemoryService } from '../memory/channel-memory.service';
 

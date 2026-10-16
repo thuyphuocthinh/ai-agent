@@ -2,7 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { ECheckpointRiskLevel } from '@agent/core/constants';
 import { SkillService } from './skill.service';
-import { SkillEntity } from '../entity/skill.entity';
+import { SkillEntity } from '../infrastructure/database/entities/skill.entity';
 
 describe('SkillService', () => {
   let service: SkillService;

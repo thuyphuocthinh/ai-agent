@@ -1,4 +1,4 @@
-import { DelegationDto } from '../dto/supervisor.dto';
+import { DelegationDto } from '../contracts/dtos/supervisor.dto';
 
 // accuracy_problem.md mục 6/11/12/13/14 — dùng CHUNG bởi 2 nơi, PHẢI đồng bộ
 // 1 nguồn sự thật DUY NHẤT (tách ra file riêng thay vì để private trong 1

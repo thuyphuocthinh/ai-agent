@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { CachedService } from '@agent/core/infrastructure/redis';
 import { DatabaseHealthService } from '@agent/core/infrastructure/database';
 import { QueueService, EQueueName } from '@agent/core/infrastructure/queue';
-import { HealthCheckResponseDto } from '../dto/orchestration.dto';
+import { HealthCheckResponseDto } from '../contracts/dtos/orchestration.dto';
 import { CircuitBreakerService } from './circuit-breaker.service';
 import { MetricsRegistryService } from './metrics-registry.service';
 

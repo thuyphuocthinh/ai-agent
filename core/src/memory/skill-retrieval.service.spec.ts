@@ -3,7 +3,7 @@ import { ECheckpointRiskLevel } from '@agent/core/constants';
 import { SkillRetrievalService } from './skill-retrieval.service';
 import { SkillService } from './skill.service';
 import { OpenAiEmbeddingProvider } from '@agent/tools';
-import { SkillEntity } from '../entity/skill.entity';
+import { SkillEntity } from '../infrastructure/database/entities/skill.entity';
 
 describe('SkillRetrievalService', () => {
   let service: SkillRetrievalService;

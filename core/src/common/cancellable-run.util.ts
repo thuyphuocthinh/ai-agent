@@ -1,5 +1,5 @@
-import { AgentCancellationService } from '../cancellation/agent-cancellation.service';
-import { TurnCancelledError } from '../loop/turn-cancelled.error';
+import { AgentCancellationService } from '../engine/cancellation/agent-cancellation.service';
+import { TurnCancelledError } from '../engine/loop/turn-cancelled.error';
 
 // Redis là poll (không có cách "push" huỷ vào 1 Promise đang await SDK LLM),
 // nên phải tự hỏi định kỳ. 1s đủ nhanh để cảm giác "Stop" phản hồi tức thời,

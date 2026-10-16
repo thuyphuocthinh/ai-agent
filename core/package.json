@@ -99,10 +99,13 @@
     "coverageDirectory": "../coverage",
     "testEnvironment": "node",
     "moduleNameMapper": {
+      "^@agent/core/entity/(.*)$": "<rootDir>/infrastructure/database/entities/$1",
+      "^@agent/core/dto/(.*)$": "<rootDir>/contracts/dtos/$1",
+      "^@agent/core/loop/(.*)$": "<rootDir>/engine/loop/$1",
       "^@agent/core(|/.*)$": "<rootDir>/$1",
+      "^@agent/tools(|/.*)$": "<rootDir>/../../tools/src/$1",
       "^nanoid$": "<rootDir>/common/__mocks__/nanoid.js",
-      "^uuid$": "<rootDir>/common/__mocks__/uuid.js",
-      "^@agent/tools(|/.*)$": "<rootDir>/../../tools/src/$1"
+      "^uuid$": "<rootDir>/common/__mocks__/uuid.js"
     }
   }
 }

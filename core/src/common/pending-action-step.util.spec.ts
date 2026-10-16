@@ -1,5 +1,5 @@
 import { hasPendingActionStep } from './pending-action-step.util';
-import { DelegationDto } from '../dto/supervisor.dto';
+import { DelegationDto } from '../contracts/dtos/supervisor.dto';
 
 describe('hasPendingActionStep', () => {
   const step = (task: string, mustExecute?: boolean): DelegationDto =>

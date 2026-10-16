@@ -6,10 +6,10 @@ import {
   OpenAiEmbeddingProvider,
 } from '@agent/tools';
 import { SkillService } from './skill.service';
-import { SkillEntity } from '../entity/skill.entity';
+import { SkillEntity } from '../infrastructure/database/entities/skill.entity';
 import { cosineSimilarity } from './skill-cosine-similarity.util';
 import { CHARS_PER_TOKEN_ESTIMATE } from '@agent/tools';
-import { attachEmbeddingCostMetadata } from '../loop/llm-cost.util';
+import { attachEmbeddingCostMetadata } from '../engine/loop/llm-cost.util';
 
 // Bảo thủ có chủ đích — chưa có số liệu thật để tinh chỉnh, thà bỏ sót gợi ý
 // còn hơn gợi ý sai skill.
