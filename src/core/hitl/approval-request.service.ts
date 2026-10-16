@@ -2,8 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import { RpcException } from '@nestjs/microservices';
 import { EJobName, EQueueName, QueueService } from '@agent/core/infrastructure/queue';
 import { ORCHESTRATION_ERROR } from '@agent/core/constants';
-import { MessageClientService } from '../../interfaces/legacy-slack/message-client.service';
-import { AgentStreamService } from '../../interfaces/legacy-slack/agent-stream.service';
+import { MessageClientService } from '../../interfaces/contracts/message-client.service';
+import { AgentStreamService } from '../../interfaces/contracts/agent-stream.service';
 import { CheckpointService } from './checkpoint.service';
 import {
   OrchestrationCheckpointStatus,

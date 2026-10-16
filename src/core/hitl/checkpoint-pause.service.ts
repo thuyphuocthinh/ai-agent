@@ -6,7 +6,7 @@ import {
   EStepExecutionStatus,
 } from '@agent/core/constants';
 import { extractTextFromMcpResult } from '@agent/core/common';
-import { MessageClientService } from '../../interfaces/legacy-slack/message-client.service';
+import { MessageClientService } from '../../interfaces/contracts/message-client.service';
 import { McpClientService } from '../../tools/mcp/mcp-client.service';
 import { CheckpointService } from './checkpoint.service';
 import {

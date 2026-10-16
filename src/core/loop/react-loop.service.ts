@@ -9,7 +9,7 @@ import {
   RunReactLoopResponseDto,
 } from '../../dto/react-loop.dto';
 import { LlmStrategyFactory } from '../strategy/llm-strategy.factory';
-import { AgentStreamService } from '../../interfaces/legacy-slack/agent-stream.service';
+import { AgentStreamService } from '../../interfaces/contracts/agent-stream.service';
 import { CircuitBreakerService } from '../../common/circuit-breaker.service';
 import { AgentCancellationService } from '../cancellation/agent-cancellation.service';
 import { runCancellable } from '../../common/cancellable-run.util';

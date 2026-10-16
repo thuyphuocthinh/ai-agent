@@ -1,14 +1,9 @@
 import { Module } from '@nestjs/common';
-import { ClientsModule } from '@nestjs/microservices';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ScheduleModule } from '@nestjs/schedule';
 import { DatabaseModule } from '@agent/core/infrastructure/database';
 import { QueueModule, EQueueName } from '@agent/core/infrastructure/queue';
 import { CachedModule } from '@agent/core/infrastructure/redis';
-import { EdgeAuthModule } from './edge-auth/edge-auth.module';
-import { NAME_SERVICE_TCP, PORT_TCP } from '@agent/core/constants';
-import { getMicroserviceClientConfig } from '@agent/core/common';
-import { OrchestrationController } from './interfaces/legacy-slack/orchestration.controller';
 import { AiOrchestrationProcessor } from './core/orchestrator/ai-orchestration.processor';
 import { DynamicProviderProcessor } from './core/orchestrator/dynamic-provider.processor';
 import { McpClientService } from './tools/mcp/mcp-client.service';
@@ -17,13 +12,11 @@ import { ReactLoopService } from './core/loop/react-loop.service';
 import { SupervisorService } from './core/supervisor/supervisor.service';
 import { AgentRankingService } from './core/supervisor/agent-ranking.service';
 import { SupervisorPromptBuilder } from './core/supervisor/supervisor-prompt.builder';
-import { MessageClientService } from './interfaces/legacy-slack/message-client.service';
 import { LlmStrategyFactory } from './core/strategy/llm-strategy.factory';
 import { GeminiStrategy } from './core/strategy/gemini.strategy';
 import { OpenAiStrategy } from './core/strategy/openai.strategy';
 import { AnthropicStrategy } from './core/strategy/anthropic.strategy';
 import { MockStrategy } from './core/strategy/mock.strategy';
-import { AgentStreamService } from './interfaces/legacy-slack/agent-stream.service';
 import { OrchestrationCheckpointEntity } from './entity/orchestration-checkpoint.entity';
 import { OrchestrationTriggerClaimEntity } from './entity/orchestration-trigger-claim.entity';
 import { DynamicProviderEntity } from './entity/dynamic-provider.entity';
@@ -52,16 +45,13 @@ import { ApprovalRequestService } from './core/hitl/approval-request.service';
 import { ApprovalExecutionService } from './core/hitl/approval-execution.service';
 import { ApprovalContinuationPlannerService } from './core/hitl/approval-continuation-planner.service';
 import { ApprovalSkillRecorderService } from './core/hitl/approval-skill-recorder.service';
+import { MessageClientService, AgentStreamService } from './interfaces/contracts';
 import { CliService } from './interfaces/cli/cli.service';
 import { MetricsRegistryService } from './common/metrics-registry.service';
 import { HealthCheckService } from './common/health-check.service';
-import { EdgeRelayRegistryService } from './edge-relay/edge-relay-registry.service';
-import { EdgeRelayGateway } from './edge-relay/edge-relay.gateway';
-import { EdgeRelayProcessor } from './edge-relay/edge-relay.processor';
 
 @Module({
   imports: [
-    EdgeAuthModule,
     DatabaseModule,
     TypeOrmModule.forFeature([
       OrchestrationCheckpointEntity,
@@ -75,18 +65,9 @@ import { EdgeRelayProcessor } from './edge-relay/edge-relay.processor';
     QueueModule.forRoot(),
     QueueModule.forFeature([
       EQueueName.AI_ORCHESTRATION_QUEUE,
-      EQueueName.SOCKET_QUEUE,
       EQueueName.DYNAMIC_PROVIDER_QUEUE,
-      EQueueName.EDGE_RELAY_QUEUE,
-    ]),
-    ClientsModule.registerAsync([
-      getMicroserviceClientConfig(
-        NAME_SERVICE_TCP.MESSAGE_SERVICE,
-        PORT_TCP.MESSAGE_TCP_PORT,
-      ),
     ]),
   ],
-  controllers: [OrchestrationController],
   providers: [
     AiOrchestrationProcessor,
     DynamicProviderProcessor,
@@ -102,13 +83,11 @@ import { EdgeRelayProcessor } from './edge-relay/edge-relay.processor';
     SupervisorService,
     AgentRankingService,
     SupervisorPromptBuilder,
-    MessageClientService,
     LlmStrategyFactory,
     GeminiStrategy,
     OpenAiStrategy,
     AnthropicStrategy,
     MockStrategy,
-    AgentStreamService,
     CheckpointService,
     CheckpointCleanupService,
     ChannelMemoryService,
@@ -122,16 +101,25 @@ import { EdgeRelayProcessor } from './edge-relay/edge-relay.processor';
     AgentCancellationService,
     TurnResolverService,
     CheckpointPauseService,
-    EdgeRelayProcessor,
     ApprovalRequestService,
     ApprovalExecutionService,
     ApprovalContinuationPlannerService,
     ApprovalSkillRecorderService,
+    MessageClientService,
+    AgentStreamService,
     CliService,
     MetricsRegistryService,
     HealthCheckService,
-    EdgeRelayRegistryService,
-    EdgeRelayGateway,
+  ],
+  exports: [
+    AiOrchestrationProcessor,
+    ReactLoopService,
+    SupervisorService,
+    LlmStrategyFactory,
+    MessageClientService,
+    AgentStreamService,
+    CliService,
+    McpClientService,
   ],
 })
-export class OrchestrationModule { }
+export class OrchestrationModule {}

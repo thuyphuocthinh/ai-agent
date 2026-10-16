@@ -15,7 +15,7 @@ import {
   LlmToolResult,
   LlmTurnResult,
 } from '../strategy/llm-strategy.interface';
-import { AgentStreamService } from '../../interfaces/legacy-slack/agent-stream.service';
+import { AgentStreamService } from '../../interfaces/contracts/agent-stream.service';
 import { withLlmRetry } from './with-llm-retry.util';
 import { CircuitBreakerService } from '../../common/circuit-breaker.service';
 import { McpToolDto } from '../../dto/mcp.dto';

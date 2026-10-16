@@ -1,8 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { CheckpointService } from './checkpoint.service';
-import { MessageClientService } from '../../interfaces/legacy-slack/message-client.service';
-import { AgentStreamService } from '../../interfaces/legacy-slack/agent-stream.service';
+import { MessageClientService } from '../../interfaces/contracts/message-client.service';
+import { AgentStreamService } from '../../interfaces/contracts/agent-stream.service';
 import { OrchestrationCheckpointStatus } from '../../entity/orchestration-checkpoint.entity';
 import { CheckpointResponseDto } from '../../dto/checkpoint.dto';
 

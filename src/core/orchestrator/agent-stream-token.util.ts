@@ -1,4 +1,4 @@
-import { AgentStreamService } from '../../interfaces/legacy-slack/agent-stream.service';
+import { AgentStreamService } from '../../interfaces/contracts/agent-stream.service';
 
 // Dùng chung cho mọi lệnh gọi LLM cần stream ra đúng messageId của bot reply
 // (synthesize() ở nhánh respond multi-agent, ở fallback hết MAX_SUPERVISOR_ROUNDS,

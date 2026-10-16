@@ -11,7 +11,7 @@ import {
   ToolCallTraceDto,
 } from '../../dto/react-loop.dto';
 import { LlmToolCall, LlmToolResult } from '../strategy/llm-strategy.interface';
-import { AgentStreamService } from '../../interfaces/legacy-slack/agent-stream.service';
+import { AgentStreamService } from '../../interfaces/contracts/agent-stream.service';
 import { ApprovalRequiredError } from './approval-required.error';
 import { CallToolResponseDto, McpToolDto } from '../../dto/mcp.dto';
 import { abortableSleep } from '../../common/abortable-sleep.util';

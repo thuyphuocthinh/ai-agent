@@ -7,7 +7,7 @@ import {
   AgentRankingCache,
   SupervisorService,
 } from '../supervisor/supervisor.service';
-import { AgentStreamService } from '../../interfaces/legacy-slack/agent-stream.service';
+import { AgentStreamService } from '../../interfaces/contracts/agent-stream.service';
 import {
   AvailableAgentDto,
   DelegationDto,

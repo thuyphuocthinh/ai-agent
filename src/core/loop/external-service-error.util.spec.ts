@@ -1,8 +1,6 @@
 import { RpcException } from '@nestjs/microservices';
 import { ORCHESTRATION_ERROR } from '@agent/core/constants';
 import { describeExternalServiceError } from './external-service-error.util';
-import { RelayOfflineError } from '../../edge-relay/relay-offline.error';
-import { RelayTimeoutError } from '../../edge-relay/relay-timeout.error';
 
 describe('describeExternalServiceError', () => {
   it('surfaces the code+message of an internal RpcException nguyên văn', () => {
@@ -32,21 +30,6 @@ describe('describeExternalServiceError', () => {
     expect(describeExternalServiceError('some raw string error')).toBe(
       '⚠️ Lỗi: some raw string error',
     );
-  });
-
-  it('surfaces a clean Vietnamese message for RelayOfflineError instead of the internal English error text', () => {
-    const error = new RelayOfflineError('workspace-1');
-    const result = describeExternalServiceError(error);
-    expect(result).toContain('on-prem');
-    expect(result).toContain('offline');
-    expect(result).not.toContain('Edge relay offline for workspace');
-  });
-
-  it('surfaces a clean Vietnamese message for RelayTimeoutError instead of the internal English error text', () => {
-    const error = new RelayTimeoutError('workspace-1');
-    const result = describeExternalServiceError(error);
-    expect(result).toContain('on-prem');
-    expect(result).not.toContain('Edge relay timed out for workspace');
   });
 
   it('scrubs a token echoed back inside a raw provider error message instead of leaking it verbatim', () => {

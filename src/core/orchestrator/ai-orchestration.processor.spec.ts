@@ -6,8 +6,8 @@ import {
   IProcessApprovalJobData,
 } from '@agent/core/infrastructure/queue';
 import { AiOrchestrationProcessor } from './ai-orchestration.processor';
-import { MessageClientService } from '../../interfaces/legacy-slack/message-client.service';
-import { AgentStreamService } from '../../interfaces/legacy-slack/agent-stream.service';
+import { MessageClientService } from '../../interfaces/contracts/message-client.service';
+import { AgentStreamService } from '../../interfaces/contracts/agent-stream.service';
 import { TriggerClaimService } from '../hitl/trigger-claim.service';
 import { AgentCancellationService } from '../cancellation/agent-cancellation.service';
 import { TurnCancelledError } from '../loop/turn-cancelled.error';

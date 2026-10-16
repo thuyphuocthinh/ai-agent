@@ -1,10 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { IProcessAiTriggerJobData } from '@agent/core/infrastructure/queue';
 import { ORCHESTRATION_CONSTANTS } from '@agent/core/constants';
-import { MessageClientService } from '../../interfaces/legacy-slack/message-client.service';
+import { MessageClientService } from '../../interfaces/contracts/message-client.service';
 import { ReactLoopService } from '../loop/react-loop.service';
 import { SupervisorService } from '../supervisor/supervisor.service';
-import { AgentStreamService } from '../../interfaces/legacy-slack/agent-stream.service';
+import { AgentStreamService } from '../../interfaces/contracts/agent-stream.service';
 import {
   AvailableAgentDto,
   DelegationDto,

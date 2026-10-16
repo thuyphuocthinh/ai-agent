@@ -10,8 +10,8 @@ import {
   IProcessApprovalJobData,
 } from '@agent/core/infrastructure/queue';
 import { ORCHESTRATION_CONSTANTS, ORCHESTRATION_ERROR } from '@agent/core/constants';
-import { MessageClientService } from '../../interfaces/legacy-slack/message-client.service';
-import { AgentStreamService } from '../../interfaces/legacy-slack/agent-stream.service';
+import { MessageClientService } from '../../interfaces/contracts/message-client.service';
+import { AgentStreamService } from '../../interfaces/contracts/agent-stream.service';
 import { describeExternalServiceError } from '../loop/external-service-error.util';
 import { CancelTurnRequestDto } from '../../dto/orchestration.dto';
 import { TriggerClaimService } from '../hitl/trigger-claim.service';

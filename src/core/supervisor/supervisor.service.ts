@@ -39,7 +39,6 @@ import { SkillRetrievalService } from '../../memory/skill-retrieval.service';
 import { AgentRankingService } from './agent-ranking.service';
 import { SupervisorPromptBuilder } from './supervisor-prompt.builder';
 import { detectFrustration } from '../loop/detect-frustration.util';
-import { EdgeRelayRegistryService } from '../../edge-relay/edge-relay-registry.service';
 
 export interface AgentRankingCache {
   current?: { shown: AvailableAgentDto[]; omittedCount: number };
@@ -60,7 +59,6 @@ export class SupervisorService {
     private readonly skillRetrieval: SkillRetrievalService,
     private readonly agentRanking: AgentRankingService,
     private readonly promptBuilder: SupervisorPromptBuilder,
-    private readonly edgeRelayRegistry: EdgeRelayRegistryService,
   ) {}
 
   private getSystemAgents(): AvailableAgentDto[] {
@@ -103,37 +101,9 @@ export class SupervisorService {
 
     return [
       ...staticAgents,
-      ...this.getRelayBoundAgents(workspaceId, staticAgents),
       ...this.getSystemAgents(),
       ...dynamicAgents,
     ];
-  }
-
-  // Provider có AgentRegistryEntry.perWorkspaceInstance (relay on-prem riêng
-  // của workspace) KHÔNG đi qua mcp_auth is_connected/endpoint tĩnh ở trên,
-  // nên bị lọc mất khỏi staticAgents nếu không OR-in ở đây.
-  private getRelayBoundAgents(
-    workspaceId: string | undefined,
-    alreadyIncluded: AvailableAgentDto[],
-  ): AvailableAgentDto[] {
-    if (!workspaceId) return [];
-
-    const alreadyIncludedProviders = new Set(
-      alreadyIncluded.map((agent) => agent.provider),
-    );
-
-    return Object.entries(AGENT_REGISTRY)
-      .filter(
-        ([provider, entry]) =>
-          entry.perWorkspaceInstance &&
-          !alreadyIncludedProviders.has(provider) &&
-          this.edgeRelayRegistry.isOnline(workspaceId),
-      )
-      .map(([provider, entry]) => ({
-        provider,
-        label: entry.label,
-        description: PROVIDER_DESCRIPTIONS[provider] ?? '',
-      }));
   }
 
   async plan(

@@ -21,11 +21,6 @@ import { DynamicToolRegistryService } from '../registry/dynamic-tool-registry.se
 import { DynamicToolExecutorService } from '../executor/dynamic-tool-executor.service';
 import { PiiScrubberUtil } from '../../security/pii/pii-scrubber.util';
 import { routeKey, clientCacheKey } from './route-key.util';
-import { QueueService } from '@agent/core/infrastructure/queue';
-import { RelayClientTransport } from './relay-client.transport';
-import { EdgeRelayRegistryService } from '../../edge-relay/edge-relay-registry.service';
-import { RelayOfflineError } from '../../edge-relay/relay-offline.error';
-import { RelayTimeoutError } from '../../edge-relay/relay-timeout.error';
 
 interface CacheEntry<T> {
   data: T[];
@@ -55,8 +50,6 @@ export class McpClientService {
     private readonly concurrencyLimiter: ProviderConcurrencyLimiterService,
     private readonly dynamicRegistry: DynamicToolRegistryService,
     private readonly dynamicExecutor: DynamicToolExecutorService,
-    private readonly edgeRelayRegistry: EdgeRelayRegistryService,
-    private readonly queueService: QueueService,
   ) {}
 
   private async getClient(
@@ -89,27 +82,6 @@ export class McpClientService {
     workspaceId?: string,
   ): Promise<Client> {
     const entry = AGENT_REGISTRY[provider];
-
-    if (entry?.perWorkspaceInstance) {
-      if (!workspaceId) {
-        throw new RpcException(ORCHESTRATION_ERROR.AGENT_NOT_REGISTERED);
-      }
-      const client = new Client({ name: 'orchestration', version: '1.0.0' });
-      const transport = new RelayClientTransport(
-        workspaceId,
-        this.edgeRelayRegistry,
-        this.queueService,
-      );
-      await withTimeout(
-        client.connect(transport),
-        ORCHESTRATION_CONSTANTS.MCP_CALL_TIMEOUT_MS,
-        `MCP connect() timeout sau ${ORCHESTRATION_CONSTANTS.MCP_CALL_TIMEOUT_MS / 1000}s (provider=${provider})`,
-      );
-      this.logger.log(
-        `Connected MCP client for provider "${routeKey(provider, workspaceId)}" via edge relay`,
-      );
-      return client;
-    }
 
     if (!entry?.endpoint) {
       throw new RpcException(ORCHESTRATION_ERROR.AGENT_NOT_REGISTERED);
@@ -397,106 +369,27 @@ export class McpClientService {
       dto.name,
       dto.workspaceId,
     );
-    const isPerWorkspace = !!AGENT_REGISTRY[dto.provider]?.perWorkspaceInstance;
-
-    // Lớp chặn thứ 2, độc lập với quyền `db_datareader` phía SQL Server: relay
-    // (perWorkspaceInstance) tự khai tool qua listTools() của chính nó — nếu
-    // relay có bug/bị giả mạo khai nhầm 1 tool ghi thành an toàn, backend vẫn
-    // không tin, chặn hẳn tại đây. Fail-closed: thiếu annotation (cache miss)
-    // cũng bị coi là KHÔNG an toàn, không mặc định cho qua.
-    //
-    // Tuy nhiên cache miss CÓ THỂ do cache bị stale/cleared (race condition,
-    // reconnect...) — chặn ngay khi miss gây false positive cho tool AN TOÀN
-    // (readOnlyHint) giữa 1 vòng ReactLoop. Nên thử refresh 1 lần trước khi
-    // quyết định chặn — nếu SAU refresh vẫn không thấy readOnlyHint → vẫn chặn.
-    if (isPerWorkspace && !cachedTool?.annotations?.readOnlyHint) {
-      if (!cachedTool) {
-        // Cache miss — thử refresh trước khi chặn
-        this.logger.warn(
-          `Write gate cache miss for "${dto.name}" (${routeKey(dto.provider, dto.workspaceId)}) — refreshing tools before blocking`,
-        );
-        await this.getTools(dto.provider, undefined, signal, dto.workspaceId);
-        const refreshed = this.getFreshCachedTool(
-          dto.provider,
-          dto.name,
-          dto.workspaceId,
-        );
-        if (refreshed?.annotations?.readOnlyHint) {
-          cachedTool = refreshed;
-        } else {
-          return this.toEdgeRelayErrorResponse(
-            'RELAY_WRITE_BLOCKED',
-            false,
-            `Tool "${dto.name}" bị chặn — hệ thống on-prem qua Edge MCP Server chỉ được phép gọi tool ĐỌC (readOnlyHint), không xác nhận được tool này an toàn.`,
-          );
-        }
-      } else {
-        // Tool tồn tại trong cache nhưng KHÔNG có readOnlyHint → chặn ngay
-        return this.toEdgeRelayErrorResponse(
-          'RELAY_WRITE_BLOCKED',
-          false,
-          `Tool "${dto.name}" bị chặn — hệ thống on-prem qua Edge MCP Server chỉ được phép gọi tool ĐỌC (readOnlyHint), không xác nhận được tool này an toàn.`,
-        );
-      }
-    }
 
     const isDestructive = cachedTool
       ? Boolean(cachedTool.annotations?.destructiveHint)
       : true;
     const maxRetries = isDestructive ? 1 : 3;
 
-    try {
-      return await this.withReconnect(
-        dto.provider,
-        dto.ownerId,
-        async (client) => {
-          const result = (await client.callTool(
-            { name: dto.name, arguments: dto.args },
-            undefined,
-            { signal },
-          )) as CallToolResponseDto;
-          return this.scrubToolResult(result);
-        },
-        maxRetries,
-        signal,
-        dto.workspaceId,
-      );
-    } catch (error) {
-      if (error instanceof RelayOfflineError) {
-        return this.toEdgeRelayErrorResponse(
-          'RELAY_OFFLINE',
-          false,
-          error.message,
-        );
-      }
-      if (error instanceof RelayTimeoutError) {
-        // Luôn retryable — gate phía trên đã chặn hết tool KHÔNG readOnlyHint
-        // cho provider perWorkspaceInstance (nguồn duy nhất phát sinh lỗi
-        // này), nên tới được đây nghĩa là tool đang gọi chắc chắn chỉ đọc.
-        return this.toEdgeRelayErrorResponse(
-          'RELAY_TIMEOUT',
-          true,
-          error.message,
-        );
-      }
-      throw error;
-    }
-  }
-
-  private toEdgeRelayErrorResponse(
-    code: string,
-    retryable: boolean,
-    message: string,
-  ): CallToolResponseDto {
-    return {
-      isError: true,
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify({ error: true, retryable, code, message }),
-        },
-      ],
-    };
+    return await this.withReconnect(
+      dto.provider,
+      dto.ownerId,
+      async (client) => {
+        const result = (await client.callTool(
+          { name: dto.name, arguments: dto.args },
+          undefined,
+          { signal },
+        )) as CallToolResponseDto;
+        return this.scrubToolResult(result);
+      },
+      maxRetries,
+      signal,
+      dto.workspaceId,
+    );
   }
 
   private scrubToolResult(result: CallToolResponseDto): CallToolResponseDto {
@@ -644,15 +537,6 @@ export class McpClientService {
         );
 
         if (this.isTimeoutError(error, timeoutMsg)) {
-          throw error;
-        }
-
-        // Không retry ở đây — relay offline/timeout không tự khỏi vì thử lại,
-        // chỉ tốn thêm 12s/lần. callTool() catch riêng, trả RELAY_OFFLINE/RELAY_TIMEOUT.
-        if (
-          error instanceof RelayOfflineError ||
-          error instanceof RelayTimeoutError
-        ) {
           throw error;
         }
 

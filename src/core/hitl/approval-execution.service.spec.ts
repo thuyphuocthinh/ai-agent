@@ -1,9 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { IProcessApprovalJobData } from '@agent/core/infrastructure/queue';
 import { ApprovalExecutionService } from './approval-execution.service';
-import { MessageClientService } from '../../interfaces/legacy-slack/message-client.service';
+import { MessageClientService } from '../../interfaces/contracts/message-client.service';
 import { SupervisorService } from '../supervisor/supervisor.service';
-import { AgentStreamService } from '../../interfaces/legacy-slack/agent-stream.service';
+import { AgentStreamService } from '../../interfaces/contracts/agent-stream.service';
 import { CheckpointService } from './checkpoint.service';
 import { McpClientService } from '../../tools/mcp/mcp-client.service';
 import { AgentCancellationService } from '../cancellation/agent-cancellation.service';

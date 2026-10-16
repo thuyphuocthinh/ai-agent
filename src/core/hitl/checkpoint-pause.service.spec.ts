@@ -2,7 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { IProcessAiTriggerJobData } from '@agent/core/infrastructure/queue';
 import { ECheckpointRiskLevel } from '@agent/core/constants';
 import { CheckpointPauseService } from './checkpoint-pause.service';
-import { MessageClientService } from '../../interfaces/legacy-slack/message-client.service';
+import { MessageClientService } from '../../interfaces/contracts/message-client.service';
 import { CheckpointService } from './checkpoint.service';
 import { McpClientService } from '../../tools/mcp/mcp-client.service';
 import { ApprovalRequiredDelegateResult } from '../orchestrator/orchestration-answer.types';

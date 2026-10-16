@@ -1,16 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 import { ORCHESTRATION_CONSTANTS } from '@agent/core/constants';
-import { QueueService } from '@agent/core/infrastructure/queue';
 import { McpClientService } from './mcp-client.service';
 import { CircuitBreakerService } from '../../common/circuit-breaker.service';
 import { ProviderConcurrencyLimiterService } from '../../common/provider-concurrency-limiter.service';
 import { DynamicToolRegistryService } from '../registry/dynamic-tool-registry.service';
 import { DynamicToolExecutorService } from '../executor/dynamic-tool-executor.service';
-import { EdgeRelayRegistryService } from '../../edge-relay/edge-relay-registry.service';
-import { RelayOfflineError } from '../../edge-relay/relay-offline.error';
-import { RelayTimeoutError } from '../../edge-relay/relay-timeout.error';
-import { RelayClientTransport } from './relay-client.transport';
 
 const mockConnect = jest.fn();
 const mockListTools = jest.fn();
@@ -44,15 +39,6 @@ jest.mock('../registry/agents.registry', () => ({
       label: 'SQL Server',
       endpoint: 'http://mcp-server/mcp/sql_server',
     },
-    // Edge MCP Server plan, Phase 1 — provider giả lập có 1 instance riêng
-    // cho mỗi workspace (VD relay on-prem), dùng để test cache/breaker/limiter
-    // có tách đúng theo workspaceId hay không, KHÔNG ảnh hưởng behavior của
-    // sql_server (provider dùng chung, không set perWorkspaceInstance).
-    edge_relay_test: {
-      label: 'Edge Relay Test',
-      endpoint: 'http://mcp-server/mcp/edge_relay_test',
-      perWorkspaceInstance: true,
-    },
   },
 }));
 
@@ -63,16 +49,6 @@ describe('McpClientService', () => {
   const mockCircuitBreaker = {
     run: jest.fn((_key: string, action: () => Promise<unknown>) => action()),
   };
-  const mockEdgeRelayRegistry = {
-    bind: jest.fn(),
-    unbind: jest.fn(),
-    isOnline: jest.fn(),
-    dispatch: jest.fn(),
-  };
-  const mockQueueService = {
-    addJob: jest.fn().mockResolvedValue(undefined),
-  };
-
   beforeEach(async () => {
     jest.clearAllMocks();
     mockConnect.mockResolvedValue(undefined);
@@ -94,10 +70,7 @@ describe('McpClientService', () => {
           provide: DynamicToolRegistryService,
           useValue: { isDynamicProvider: jest.fn().mockReturnValue(false) },
         },
-        { provide: DynamicToolExecutorService, useValue: {} },
-        { provide: EdgeRelayRegistryService, useValue: mockEdgeRelayRegistry },
-        { provide: QueueService, useValue: mockQueueService },
-      ],
+        { provide: DynamicToolExecutorService, useValue: {} },      ],
     }).compile();
 
     service = module.get<McpClientService>(McpClientService);
@@ -211,13 +184,7 @@ describe('McpClientService', () => {
             provide: DynamicToolRegistryService,
             useValue: mockDynamicRegistry,
           },
-          { provide: DynamicToolExecutorService, useValue: {} },
-          {
-            provide: EdgeRelayRegistryService,
-            useValue: mockEdgeRelayRegistry,
-          },
-          { provide: QueueService, useValue: mockQueueService },
-        ],
+          { provide: DynamicToolExecutorService, useValue: {} },        ],
       }).compile();
       const dynamicService = module.get<McpClientService>(McpClientService);
 
@@ -254,13 +221,7 @@ describe('McpClientService', () => {
           {
             provide: DynamicToolExecutorService,
             useValue: mockDynamicExecutor,
-          },
-          {
-            provide: EdgeRelayRegistryService,
-            useValue: mockEdgeRelayRegistry,
-          },
-          { provide: QueueService, useValue: mockQueueService },
-        ],
+          },        ],
       }).compile();
       const dynamicService = module.get<McpClientService>(McpClientService);
       const controller = new AbortController();
@@ -1120,13 +1081,7 @@ describe('McpClientService', () => {
           {
             provide: DynamicToolExecutorService,
             useValue: mockDynamicExecutor2,
-          },
-          {
-            provide: EdgeRelayRegistryService,
-            useValue: mockEdgeRelayRegistry,
-          },
-          { provide: QueueService, useValue: mockQueueService },
-        ],
+          },        ],
       }).compile();
       const dynamicService = module2.get<McpClientService>(McpClientService);
 
@@ -1228,450 +1183,6 @@ describe('McpClientService', () => {
       service.evictStaleResourceCache();
 
       expect(cacheSize()).toBe(0);
-    });
-  });
-
-  describe('Edge MCP Server plan, Phase 1 — per-workspace isolation for perWorkspaceInstance providers', () => {
-    it('routes callTool() through a SEPARATE breaker key per workspace for a perWorkspaceInstance provider — 1 workspace lỗi không ảnh hưởng workspace khác', async () => {
-      mockCallTool.mockResolvedValue({ content: [] });
-      // readOnlyHint để không bị chặn bởi gate fail-closed (không phải trọng
-      // tâm test này — xem describe "callTool() fail-closed write gate...").
-      const readOnlyXTool = {
-        data: [
-          {
-            name: 'x',
-            description: '',
-            inputSchema: {},
-            annotations: { readOnlyHint: true },
-          },
-        ],
-        fetchedAt: Date.now(),
-      };
-      (service as any).toolsCache.set(
-        'edge_relay_test:workspace-A',
-        readOnlyXTool,
-      );
-      (service as any).toolsCache.set(
-        'edge_relay_test:workspace-B',
-        readOnlyXTool,
-      );
-
-      await service.callTool({
-        provider: 'edge_relay_test',
-        name: 'x',
-        args: {},
-        ownerId: 'user-1',
-        workspaceId: 'workspace-A',
-      });
-      await service.callTool({
-        provider: 'edge_relay_test',
-        name: 'x',
-        args: {},
-        ownerId: 'user-1',
-        workspaceId: 'workspace-B',
-      });
-
-      expect(mockCircuitBreaker.run).toHaveBeenCalledWith(
-        'mcp:edge_relay_test:workspace-A',
-        expect.any(Function),
-        undefined,
-      );
-      expect(mockCircuitBreaker.run).toHaveBeenCalledWith(
-        'mcp:edge_relay_test:workspace-B',
-        expect.any(Function),
-        undefined,
-      );
-    });
-
-    it('does NOT share the tool-list cache across 2 workspaces for a perWorkspaceInstance provider — bug thật đã tự phát hiện (đọc code), tránh lộ tool GHI của workspace khác qua cache', async () => {
-      mockListTools
-        .mockResolvedValueOnce({
-          tools: [{ name: 'read_only_tool', description: '', inputSchema: {} }],
-        })
-        .mockResolvedValueOnce({
-          tools: [
-            { name: 'read_only_tool', description: '', inputSchema: {} },
-            {
-              name: 'write_tool',
-              description: '',
-              inputSchema: {},
-              annotations: { destructiveHint: true },
-            },
-          ],
-        });
-
-      const toolsA = await service.getTools(
-        'edge_relay_test',
-        undefined,
-        undefined,
-        'workspace-A',
-      );
-      const toolsB = await service.getTools(
-        'edge_relay_test',
-        undefined,
-        undefined,
-        'workspace-B',
-      );
-
-      expect(toolsA).toEqual([
-        { name: 'read_only_tool', description: '', inputSchema: {} },
-      ]);
-      expect(toolsB).toHaveLength(2);
-      // 2 lần gọi listTools() THẬT — không phải workspace-B ăn cache của A.
-      expect(mockListTools).toHaveBeenCalledTimes(2);
-    });
-
-    it('still shares ONE breaker key/cache across "workspaceId" values for a provider WITHOUT perWorkspaceInstance (sql_server) — không làm loãng ngưỡng circuit breaker vô cớ', async () => {
-      mockListTools.mockResolvedValue({ tools: [] });
-      mockCallTool.mockResolvedValue({ content: [] });
-
-      await service.callTool({
-        provider: 'sql_server',
-        name: 'x',
-        args: {},
-        ownerId: 'user-1',
-        workspaceId: 'workspace-A',
-      });
-      await service.callTool({
-        provider: 'sql_server',
-        name: 'x',
-        args: {},
-        ownerId: 'user-1',
-        workspaceId: 'workspace-B',
-      });
-
-      // Cả 2 lần đều đi qua ĐÚNG 1 key chung — provider dùng chung 1 instance
-      // cho mọi workspace, tách key theo workspace chỉ làm loãng ngưỡng
-      // circuit breaker vô ích (xem route-key.util.ts).
-      expect(mockCircuitBreaker.run).toHaveBeenCalledWith(
-        'mcp:sql_server',
-        expect.any(Function),
-        undefined,
-      );
-      expect(mockCircuitBreaker.run).not.toHaveBeenCalledWith(
-        'mcp:sql_server:workspace-A',
-        expect.any(Function),
-        undefined,
-      );
-    });
-  });
-
-  describe('Edge MCP Server plan, Phase 2 — relay dispatch and error envelope', () => {
-    afterEach(() => jest.useRealTimers());
-
-    // Tool "x" dùng xuyên suốt describe này để test transport/connection —
-    // đánh dấu readOnlyHint để không bị chặn bởi gate fail-closed (test riêng
-    // ở dưới, "callTool() fail-closed write gate...", đã cover phần đó rồi).
-    // Cache cả key có workspaceId lẫn key bare (fallback khi thiếu workspaceId).
-    beforeEach(() => {
-      const readOnlyXTool = {
-        data: [
-          {
-            name: 'x',
-            description: '',
-            inputSchema: {},
-            annotations: { readOnlyHint: true },
-          },
-        ],
-        fetchedAt: Date.now(),
-      };
-      (service as any).toolsCache.set(
-        'edge_relay_test:workspace-A',
-        readOnlyXTool,
-      );
-      (service as any).toolsCache.set('edge_relay_test', readOnlyXTool);
-    });
-
-    it('connects a perWorkspaceInstance provider through RelayClientTransport, not StreamableHTTPClientTransport', async () => {
-      mockCallTool.mockResolvedValue({ content: [] });
-
-      await service.callTool({
-        provider: 'edge_relay_test',
-        name: 'x',
-        args: {},
-        ownerId: 'user-1',
-        workspaceId: 'workspace-A',
-      });
-
-      expect(mockConnect).toHaveBeenCalledTimes(1);
-      expect(mockConnect.mock.calls[0][0]).toBeInstanceOf(RelayClientTransport);
-    });
-
-    it('throws AGENT_NOT_REGISTERED-style RpcException when a perWorkspaceInstance provider is called without a workspaceId', async () => {
-      await expect(
-        service.callTool({
-          provider: 'edge_relay_test',
-          name: 'x',
-          args: {},
-          ownerId: 'user-1',
-        }),
-      ).rejects.toThrow();
-      expect(mockConnect).not.toHaveBeenCalled();
-    });
-
-    it('shares ONE connection across 2 different owners in the same workspace for a perWorkspaceInstance provider (regression — separate sessions on 1 relay socket would race JSON-RPC ids)', async () => {
-      mockCallTool.mockResolvedValue({ content: [] });
-
-      await service.callTool({
-        provider: 'edge_relay_test',
-        name: 'x',
-        args: {},
-        ownerId: 'user-1',
-        workspaceId: 'workspace-A',
-      });
-      await service.callTool({
-        provider: 'edge_relay_test',
-        name: 'x',
-        args: {},
-        ownerId: 'user-2',
-        workspaceId: 'workspace-A',
-      });
-
-      expect(mockConnect).toHaveBeenCalledTimes(1);
-    });
-
-    it('still gives 2 different owners SEPARATE connections for a provider WITHOUT perWorkspaceInstance (sql_server) — regression, unchanged behavior', async () => {
-      mockCallTool.mockResolvedValue({ content: [] });
-
-      await service.callTool({
-        provider: 'sql_server',
-        name: 'x',
-        args: {},
-        ownerId: 'user-1',
-        workspaceId: 'workspace-A',
-      });
-      await service.callTool({
-        provider: 'sql_server',
-        name: 'x',
-        args: {},
-        ownerId: 'user-2',
-        workspaceId: 'workspace-A',
-      });
-
-      expect(mockConnect).toHaveBeenCalledTimes(2);
-    });
-
-    it('converts a RelayOfflineError into a retryable:false JSON error envelope instead of throwing', async () => {
-      // Tool đọc — RelayOfflineError xảy ra ở bước connect(), không liên quan
-      // gì tới gate ghi/đọc (đằng nào 1 tool ghi cũng đã bị chặn TRƯỚC khi kịp
-      // connect, xem describe "callTool() fail-closed write gate..." ở dưới).
-      mockConnect.mockRejectedValue(new RelayOfflineError('workspace-A'));
-
-      const result = await service.callTool({
-        provider: 'edge_relay_test',
-        name: 'x',
-        args: {},
-        ownerId: 'user-1',
-        workspaceId: 'workspace-A',
-      });
-
-      expect(result.isError).toBe(true);
-      const parsed = JSON.parse(result.content![0].text as string);
-      expect(parsed).toEqual({
-        error: true,
-        retryable: false,
-        code: 'RELAY_OFFLINE',
-        message: expect.stringContaining('workspace-A'),
-      });
-      // RelayOfflineError không tự khỏi khi thử lại — phải fail ngay lần đầu, không retry.
-      expect(mockConnect).toHaveBeenCalledTimes(1);
-    });
-
-    it('converts a RelayTimeoutError into a retryable:true envelope for a read-only tool (safe to retry)', async () => {
-      jest.useFakeTimers();
-      (service as any).toolsCache.set('edge_relay_test:workspace-A', {
-        data: [
-          {
-            name: 'read_only_tool',
-            description: '',
-            inputSchema: {},
-            annotations: { readOnlyHint: true },
-          },
-        ],
-        fetchedAt: Date.now(),
-      });
-      mockConnect.mockRejectedValue(new RelayTimeoutError('workspace-A'));
-
-      const resultPromise = service.callTool({
-        provider: 'edge_relay_test',
-        name: 'read_only_tool',
-        args: {},
-        ownerId: 'user-1',
-        workspaceId: 'workspace-A',
-      });
-      await jest.runAllTimersAsync();
-      const result = await resultPromise;
-
-      const parsed = JSON.parse(result.content![0].text as string);
-      expect(parsed).toMatchObject({ code: 'RELAY_TIMEOUT', retryable: true });
-      // RelayTimeoutError không tự khỏi khi thử lại (tốn thêm 12s ack/lần) — phải fail ngay lần đầu.
-      expect(mockConnect).toHaveBeenCalledTimes(1);
-    });
-  });
-
-  describe('callTool() fail-closed write gate for perWorkspaceInstance providers (lớp chặn thứ 2, độc lập với quyền db_datareader phía SQL Server)', () => {
-    it('blocks a tool WITHOUT readOnlyHint before ever attempting the network call', async () => {
-      (service as any).toolsCache.set('edge_relay_test:workspace-A', {
-        data: [
-          {
-            name: 'write_tool',
-            description: '',
-            inputSchema: {},
-            annotations: { readOnlyHint: false, destructiveHint: true },
-          },
-        ],
-        fetchedAt: Date.now(),
-      });
-
-      const result = await service.callTool({
-        provider: 'edge_relay_test',
-        name: 'write_tool',
-        args: {},
-        ownerId: 'user-1',
-        workspaceId: 'workspace-A',
-      });
-
-      expect(result.isError).toBe(true);
-      const parsed = JSON.parse(result.content![0].text as string);
-      expect(parsed).toMatchObject({
-        code: 'RELAY_WRITE_BLOCKED',
-        retryable: false,
-      });
-      expect(mockConnect).not.toHaveBeenCalled();
-      expect(mockCallTool).not.toHaveBeenCalled();
-    });
-
-    it('fails closed (blocks) when the tool is not in cache — refreshes first, but still blocks if tool not found after refresh', async () => {
-      // mockListTools mặc định trả { tools: [] } — refresh không tìm ra tool
-      const result = await service.callTool({
-        provider: 'edge_relay_test',
-        name: 'unknown_tool',
-        args: {},
-        ownerId: 'user-1',
-        workspaceId: 'workspace-A',
-      });
-
-      const parsed = JSON.parse(result.content![0].text as string);
-      expect(parsed).toMatchObject({ code: 'RELAY_WRITE_BLOCKED' });
-      // callTool thật KHÔNG được gọi — vẫn fail-closed
-      expect(mockCallTool).not.toHaveBeenCalled();
-    });
-
-    it('allows a tool WITH readOnlyHint through to the real call', async () => {
-      (service as any).toolsCache.set('edge_relay_test:workspace-A', {
-        data: [
-          {
-            name: 'read_only_tool',
-            description: '',
-            inputSchema: {},
-            annotations: { readOnlyHint: true },
-          },
-        ],
-        fetchedAt: Date.now(),
-      });
-      mockConnect.mockResolvedValue(undefined);
-      mockCallTool.mockResolvedValue({
-        content: [{ type: 'text', text: 'ok' }],
-      });
-
-      const result = await service.callTool({
-        provider: 'edge_relay_test',
-        name: 'read_only_tool',
-        args: {},
-        ownerId: 'user-1',
-        workspaceId: 'workspace-A',
-      });
-
-      expect(result.isError).toBeFalsy();
-      expect(mockCallTool).toHaveBeenCalledTimes(1);
-    });
-
-    it('does NOT gate a destructive tool for a provider WITHOUT perWorkspaceInstance (sql_server) — regression, HITL approval elsewhere still handles it', async () => {
-      (service as any).toolsCache.set('sql_server', {
-        data: [
-          {
-            name: 'execute_write_query',
-            description: '',
-            inputSchema: {},
-            annotations: { readOnlyHint: false, destructiveHint: true },
-          },
-        ],
-        fetchedAt: Date.now(),
-      });
-      mockConnect.mockResolvedValue(undefined);
-      mockCallTool.mockResolvedValue({
-        content: [{ type: 'text', text: 'ok' }],
-      });
-
-      const result = await service.callTool({
-        provider: 'sql_server',
-        name: 'execute_write_query',
-        args: {},
-        ownerId: 'user-1',
-      });
-
-      expect(result.isError).toBeFalsy();
-      expect(mockCallTool).toHaveBeenCalledTimes(1);
-    });
-
-    it('recovers from a cache miss by refreshing tools — allows a readOnlyHint tool that was missing from cache', async () => {
-      // Cache trống — không set toolsCache
-      // Nhưng listTools trả về tool có readOnlyHint → refresh phải tìm ra
-      mockListTools.mockResolvedValue({
-        tools: [
-          {
-            name: 'read_only_tool',
-            description: '',
-            inputSchema: {},
-            annotations: { readOnlyHint: true },
-          },
-        ],
-      });
-      mockConnect.mockResolvedValue(undefined);
-      mockCallTool.mockResolvedValue({
-        content: [{ type: 'text', text: 'query result' }],
-      });
-
-      const result = await service.callTool({
-        provider: 'edge_relay_test',
-        name: 'read_only_tool',
-        args: {},
-        ownerId: 'user-1',
-        workspaceId: 'workspace-A',
-      });
-
-      // Phải cho qua sau refresh, không bị RELAY_WRITE_BLOCKED
-      expect(result.isError).toBeFalsy();
-      expect(mockCallTool).toHaveBeenCalledTimes(1);
-    });
-
-    it('still blocks after refresh when tool genuinely lacks readOnlyHint', async () => {
-      // Cache trống — không set toolsCache
-      // listTools trả về tool KHÔNG có readOnlyHint → sau refresh vẫn chặn
-      mockListTools.mockResolvedValue({
-        tools: [
-          {
-            name: 'write_tool',
-            description: '',
-            inputSchema: {},
-            annotations: { readOnlyHint: false, destructiveHint: true },
-          },
-        ],
-      });
-      mockConnect.mockResolvedValue(undefined);
-
-      const result = await service.callTool({
-        provider: 'edge_relay_test',
-        name: 'write_tool',
-        args: {},
-        ownerId: 'user-1',
-        workspaceId: 'workspace-A',
-      });
-
-      const parsed = JSON.parse(result.content![0].text as string);
-      expect(parsed).toMatchObject({ code: 'RELAY_WRITE_BLOCKED' });
-      // Không gọi callTool thật — vẫn fail-closed
-      expect(mockCallTool).not.toHaveBeenCalled();
     });
   });
 

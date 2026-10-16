@@ -1,8 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { EJobName, EQueueName, QueueService } from '@agent/core/infrastructure/queue';
 import { ApprovalRequestService } from './approval-request.service';
-import { MessageClientService } from '../../interfaces/legacy-slack/message-client.service';
-import { AgentStreamService } from '../../interfaces/legacy-slack/agent-stream.service';
+import { MessageClientService } from '../../interfaces/contracts/message-client.service';
+import { AgentStreamService } from '../../interfaces/contracts/agent-stream.service';
 import { CheckpointService } from './checkpoint.service';
 import { OrchestrationCheckpointStatus } from '../../entity/orchestration-checkpoint.entity';
 
