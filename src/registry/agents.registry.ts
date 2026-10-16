@@ -1,0 +1,71 @@
+/**
+ * Khai tĩnh 1 dòng/agent — chỉ nơi agent chạy + provider tương ứng.
+ * KHÔNG khai tool ở đây — tool list lấy trực tiếp qua MCP `listTools()`
+ * (xem McpClientService) để luôn khớp đúng với agent thật, không phải
+ * bản copy tay dễ lệch.
+ */
+export interface AgentRegistryEntry {
+  label: string;
+  endpoint: string | undefined;
+  // true = provider có 1 instance RIÊNG cho mỗi workspace (VD Edge MCP Server
+  // relay chạy on-prem của từng khách hàng) — cache/breaker/limiter phải tách
+  // theo workspaceId để 1 workspace lỗi không ảnh hưởng workspace khác. Mọi
+  // provider hiện có dùng CHUNG 1 instance cho mọi workspace nên để trống
+  // (undefined = false) — KHÔNG đổi hành vi provider hiện tại.
+  perWorkspaceInstance?: boolean;
+}
+
+export const AGENT_REGISTRY: Record<string, AgentRegistryEntry> = {
+  sql_server: {
+    label: 'SQL Server',
+    endpoint: process.env.AGENT_SQL_SERVER_URL,
+  },
+  // Giai đoạn 2, Step 4 — agent thứ 2, repo riêng `freelancer/agent_github`.
+  github: {
+    label: 'GitHub',
+    endpoint: process.env.AGENT_GITHUB_URL,
+  },
+  google_sheets: {
+    label: 'Google Sheets',
+    endpoint: process.env.AGENT_GOOGLE_SHEETS_URL,
+  },
+  google_docs: {
+    label: 'Google Docs',
+    endpoint: process.env.AGENT_GOOGLE_DOCS_URL,
+  },
+  google_mail: {
+    label: 'Gmail',
+    endpoint: process.env.AGENT_GOOGLE_MAIL_URL,
+  },
+  google_drive: {
+    label: 'Google Drive',
+    endpoint: process.env.AGENT_GOOGLE_DRIVE_URL,
+  },
+  google_calendar: {
+    label: 'Google Calendar',
+    endpoint: process.env.AGENT_GOOGLE_CALENDAR_URL,
+  },
+  slack: {
+    label: 'Slack',
+    endpoint: process.env.AGENT_SLACK_URL,
+  },
+  notion: {
+    label: 'Notion',
+    endpoint: process.env.AGENT_NOTION_URL,
+  },
+  // Agent HỆ THỐNG — không phải kết nối tới hệ thống ngoài, không cần user
+  // connect (xem SupervisorService.getSystemAgents()).
+  compute: {
+    label: 'Python Compute',
+    endpoint: process.env.AGENT_COMPUTE_URL,
+  },
+  // Edge MCP Server — SQL Server on-prem của khách hàng, chạm được qua relay
+  // (workspace tự mở kết nối outbound), KHÔNG có endpoint tĩnh nào cả. Tách
+  // riêng khỏi `sql_server` (cloud, dùng chung 1 instance) để không làm loãng
+  // cache/breaker key của `sql_server` cho những workspace không dùng relay.
+  sql_server_edge: {
+    label: 'SQL Server (on-prem, qua Edge MCP Server)',
+    endpoint: undefined,
+    perWorkspaceInstance: true,
+  },
+};
