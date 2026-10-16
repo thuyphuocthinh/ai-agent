@@ -13,7 +13,7 @@ import {
   McpPromptDto,
 } from '../../dto/mcp.dto';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { withTimeout } from '../../core/loop/with-timeout.util';
+import { withTimeout } from '../../loop/with-timeout.util';
 import { abortableSleep } from '../../common/abortable-sleep.util';
 import { CircuitBreakerService } from '../../common/circuit-breaker.service';
 import { ProviderConcurrencyLimiterService } from '../../common/provider-concurrency-limiter.service';
