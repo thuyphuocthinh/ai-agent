@@ -85,9 +85,11 @@ describe('CheckpointService', () => {
       ORCHESTRATION_CONSTANTS.CHECKPOINT_EXPIRY_MS + 1000,
     );
     expect(mockRepo.save).toHaveBeenCalledWith(entity);
-    // toEqual (không phải toBe) — create() giờ map qua toResponseDto(), trả
-    // 1 object MỚI chứ không phải nguyên văn entity từ repo.save().
-    expect(result).toEqual(entity);
+    // toMatchObject — create() map qua toResponseDto(), trả CheckpointResponseDto
+    // hỗ trợ cả field chuẩn mới (conversationId, runId) lẫn field tương thích cũ.
+    expect(result).toMatchObject(entity);
+    expect(result.conversationId).toBe(entity.channelId);
+    expect(result.runId).toBe(entity.replyMessageId);
   });
 
   describe('findPendingByReplyMessageId', () => {

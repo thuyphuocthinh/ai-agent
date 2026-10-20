@@ -9,11 +9,15 @@ import { ECheckpointKind, ECheckpointRiskLevel } from '@agent/core/constants';
 
 export class CreateCheckpointRequestDto {
   replyMessageId: string;
+  runId?: string;
   userId: string;
-  botUserId: string;
+  botUserId?: string;
   channelId: string;
-  workspaceId: string;
-  channelType: string;
+  conversationId?: string;
+  workspaceId?: string;
+  tenantId?: string;
+  channelType?: string;
+  sessionType?: string;
   originalPrompt: string;
   pendingTool: PendingToolCall | null;
   pendingTask: string;
@@ -31,11 +35,15 @@ export class CreateCheckpointRequestDto {
 export class CheckpointResponseDto {
   id: string;
   replyMessageId: string;
+  runId?: string;
   userId: string;
   botUserId: string;
   channelId: string;
+  conversationId?: string;
   workspaceId: string;
+  tenantId?: string;
   channelType: string;
+  sessionType?: string;
   originalPrompt: string;
   pendingTool: PendingToolCall | null;
   pendingTask: string;

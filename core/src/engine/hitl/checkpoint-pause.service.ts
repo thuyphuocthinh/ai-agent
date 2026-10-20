@@ -61,7 +61,8 @@ export class CheckpointPauseService {
     // TurnResolverService.continueRounds().
     remainingSteps: DelegationDto[],
   ): Promise<AnswerResult> {
-    const { userId, channelId, botUserId, workspaceId } = data;
+    const { userId, channelId, workspaceId } = data;
+    const botUserId = data.botUserId ?? 'agent-bot';
     const { approvalRequired: pendingTool, task: pendingTask } = approvalNeeded;
 
     const { preview, riskLevel } = await this.buildRiskPreview(

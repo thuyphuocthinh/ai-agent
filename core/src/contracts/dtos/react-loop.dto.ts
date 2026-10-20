@@ -6,10 +6,13 @@ export class RunReactLoopRequestDto {
   provider: string;
   userId: string;
   channelId: string;
-  workspaceId: string;
+  conversationId?: string;
+  workspaceId?: string;
+  tenantId?: string;
   // messageId của message BOT (reply) — dùng để stream step lên đúng bubble
   messageId: string;
-  channelType: string; // 'direct' | 'group'
+  channelType?: string; // 'direct' | 'group' | 'cli' | 'web'
+  sessionType?: string;
   // Lịch sử hội thoại — TurnResolverService fetch 1 LẦN/turn rồi truyền
   // xuống cho cả SupervisorService.plan() lẫn đây, đảm bảo cả 2 nhìn thấy
   // đúng CÙNG 1 snapshot lịch sử (không tự fetch riêng, tránh lệch nhau).

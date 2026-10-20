@@ -2,11 +2,15 @@ import { EJobName } from '../../constants/queue.constant';
 
 export interface IProcessAiTriggerJobData {
   userId: string;
-  channelId: string;
-  workspaceId: string;
+  conversationId?: string;
+  channelId: string; // Alias backward-compatibility for conversationId
+  workspaceId?: string;
+  tenantId?: string;
   messageId: string;
-  botUserId: string;
-  channelType: string;
+  runId?: string;
+  botUserId?: string;
+  sessionType?: string;
+  channelType?: string;
 }
 
 export interface IProcessApprovalJobData {

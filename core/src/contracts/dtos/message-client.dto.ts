@@ -1,7 +1,9 @@
 import { EStepExecutionStatus, EMessageRole } from '@agent/core/constants';
 export class CreateOrchestrationMessageRequestDto {
-  channelId: string;
-  senderId: string;
+  channelId?: string;
+  conversationId?: string;
+  senderId?: string;
+  userId?: string;
   // object — Giai đoạn 3 (HITL) dùng để tạo message "approval_request"
   // ({type, tool, args, status}), không chỉ text thường.
   content: string | Record<string, unknown>;
@@ -13,7 +15,7 @@ export class CreateOrchestrationMessageResponseDto {
 
 export class UpdateOrchestrationMessageRequestDto {
   id: string;
-  userId: string;
+  userId?: string;
   // object — Giai đoạn 3 (HITL) cần re-send content dạng object khi update
   // message "approval_request" kèm toolCalls (xem pauseForApproval()).
   content: string | Record<string, unknown>;
@@ -22,11 +24,9 @@ export class UpdateOrchestrationMessageRequestDto {
     status: EStepExecutionStatus;
     resultPreview?: string;
   }[];
-  // ver3.md mục 1 (dài hạn) — optional CÓ CHỦ ĐÍCH: chỉ cần truyền ở các call
-  // site có toolCalls thật (nơi có thể phát sinh ghi nhớ channel_memory), các
-  // nhánh lỗi chỉ update text bỏ qua an toàn (không channelId → updateMessage()
-  // tự bỏ qua bước ghi channel_memory).
+  // Optional: ghi nhớ channel_memory / conversation_memory
   channelId?: string;
+  conversationId?: string;
   executionTimeMs?: number;
 }
 
@@ -36,7 +36,8 @@ export class GetMessageTextRequestDto {
 }
 
 export class GetRecentHistoryRequestDto {
-  channelId: string;
+  channelId?: string;
+  conversationId?: string;
   userId: string;
   // Chỉ lấy message TRƯỚC message này (không tính chính nó)
   beforeMessageId: string;

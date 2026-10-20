@@ -5,9 +5,11 @@ export const STREAM_SINK = Symbol('STREAM_SINK');
 
 export interface AgentStreamContext {
   userId: string;
-  channelId: string;
+  conversationId?: string;
+  channelId?: string; // Backward compatibility alias for conversationId
   messageId: string;
-  channelType: string;
+  sessionType?: string;
+  channelType?: string; // Backward compatibility alias for sessionType
   streamKey?: string;
 }
 

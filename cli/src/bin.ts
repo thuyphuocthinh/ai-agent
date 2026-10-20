@@ -19,19 +19,19 @@ async function runCli() {
     }
 
     await cli.emitStep(
-      { channelId: 'cli', userId: 'local-user', messageId: 'turn', channelType: 'cli' },
+      { conversationId: 'cli', userId: 'local-user', messageId: 'turn', sessionType: 'cli' },
       { type: 'step_start', label: 'Processing query...' },
     );
 
     // Simulated response for standalone CLI testing
     await cli.emitToken(
-      { channelId: 'cli', userId: 'local-user', messageId: 'turn', channelType: 'cli' },
+      { conversationId: 'cli', userId: 'local-user', messageId: 'turn', sessionType: 'cli' },
       `Received instruction: "${input}"\n`,
     );
     await cli.flush();
 
     await cli.emitStep(
-      { channelId: 'cli', userId: 'local-user', messageId: 'turn', channelType: 'cli' },
+      { conversationId: 'cli', userId: 'local-user', messageId: 'turn', sessionType: 'cli' },
       { type: 'done' },
     );
   }

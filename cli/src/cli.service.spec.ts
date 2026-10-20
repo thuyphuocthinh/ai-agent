@@ -119,6 +119,20 @@ describe('CliService', () => {
       expect(outData).toContain('[Done]');
     });
 
+    it('should support conversationId and sessionType in stream context', async () => {
+      const modernCtx = {
+        userId: 'u1',
+        conversationId: 'conv-1',
+        messageId: 'm1',
+        sessionType: 'cli',
+      };
+      await cliService.emitStep(modernCtx, {
+        type: 'step_start',
+        label: 'Starting agent',
+      });
+      expect(outData).toContain('[Step] Starting agent');
+    });
+
     it('should stream token and flush', async () => {
       await cliService.emitToken(ctx, 'Hello ');
       await cliService.emitToken(ctx, 'world!');

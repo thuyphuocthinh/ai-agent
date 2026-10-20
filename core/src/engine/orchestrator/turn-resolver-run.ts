@@ -402,7 +402,8 @@ export class TurnResolverRun {
   }
 
   private async runNonConvergenceFallback(): Promise<AnswerResult> {
-    const { userId, channelId, channelType } = this.data;
+    const { userId, channelId } = this.data;
+    const channelType = this.data.sessionType ?? this.data.channelType ?? 'direct';
     this.logger.warn(
       `Supervisor chưa hội tụ (realSteps=${this.realStepsRun}/${ORCHESTRATION_CONSTANTS.MAX_REAL_STEPS_PER_TURN}, nonProgress=${this.nonProgressRounds}/${ORCHESTRATION_CONSTANTS.MAX_SUPERVISOR_ROUNDS}) cho user ${userId}, tổng hợp lại kết quả đã có`,
     );
@@ -448,7 +449,8 @@ export class TurnResolverRun {
   }
 
   private async finalizeAnswer(answerHint?: string): Promise<AnswerResult> {
-    const { userId, channelId, channelType } = this.data;
+    const { userId, channelId } = this.data;
+    const channelType = this.data.sessionType ?? this.data.channelType ?? 'direct';
 
     if (this.rounds.length === 1) {
       return buildAnswer(
@@ -592,7 +594,9 @@ export class TurnResolverRun {
     delegation: DelegationDto,
     round: number,
   ): Promise<DelegateRoundResult | ApprovalRequiredDelegateResult | null> {
-    const { userId, channelId, workspaceId, channelType } = this.data;
+    const { userId, channelId } = this.data;
+    const workspaceId = this.data.tenantId ?? this.data.workspaceId ?? 'default';
+    const channelType = this.data.sessionType ?? this.data.channelType ?? 'direct';
     const targetAgent = this.agents.find(
       (a) => a.provider === delegation.agent,
     );

@@ -86,14 +86,12 @@ export class AiOrchestrationProcessor extends BaseProcessor<
   // theo channel) — không chặn tin nhắn mới dù channel đang có checkpoint
   // pending khác (Step 8, đã revise: chặn từng làm rớt câu hỏi của user khác).
   private async handleAiTrigger(data: IProcessAiTriggerJobData): Promise<void> {
-    const {
-      userId,
-      channelId,
-      workspaceId,
-      messageId,
-      botUserId,
-      channelType,
-    } = data;
+    const userId = data.userId;
+    const channelId = data.conversationId ?? data.channelId;
+    const workspaceId = data.tenantId ?? data.workspaceId ?? 'default';
+    const messageId = data.messageId;
+    const botUserId = data.botUserId ?? 'agent-bot';
+    const channelType = data.sessionType ?? data.channelType ?? 'direct';
 
     // Giai đoạn 4, Step 1 — claim atomic (insert-once) TRƯỚC khi tạo message
     // placeholder. Nếu job này bị BullMQ retry/redeliver (lỗi tạm thời, worker

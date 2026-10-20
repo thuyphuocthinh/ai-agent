@@ -29,7 +29,8 @@ export class MessageClientService implements IMessageSink {
   }
 
   async getRecentHistory(dto: GetRecentHistoryRequestDto): Promise<ChatHistoryTurnDto[]> {
-    const turns = this.history.get(dto.channelId) || [];
+    const convId = dto.conversationId ?? dto.channelId ?? 'default';
+    const turns = this.history.get(convId) || [];
     const limit = dto.limit || 10;
     return turns.slice(-limit);
   }
@@ -41,12 +42,13 @@ export class MessageClientService implements IMessageSink {
     const text = typeof dto.content === 'string' ? dto.content : JSON.stringify(dto.content);
     this.messages.set(id, text);
 
-    const turns = this.history.get(dto.channelId) || [];
+    const convId = dto.conversationId ?? dto.channelId ?? 'default';
+    const turns = this.history.get(convId) || [];
     turns.push({
       role: EMessageRole.MODEL,
       text,
     });
-    this.history.set(dto.channelId, turns);
+    this.history.set(convId, turns);
 
     return { id };
   }
@@ -55,9 +57,10 @@ export class MessageClientService implements IMessageSink {
     const text = typeof dto.content === 'string' ? dto.content : JSON.stringify(dto.content);
     this.messages.set(dto.id, text);
 
-    if (dto.channelId && dto.toolCalls?.length && this.channelMemory) {
+    const convId = dto.conversationId ?? dto.channelId;
+    if (convId && dto.toolCalls?.length && this.channelMemory) {
       await this.channelMemory.recordSuccessfulCreateCalls(
-        dto.channelId,
+        convId,
         dto.id,
         dto.toolCalls,
       );
