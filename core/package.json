@@ -1,7 +1,7 @@
 {
   "name": "@agent/core",
   "version": "0.1.0",
-  "description": "Agent Core — reusable AI orchestration engine (extracted from slack-be)",
+  "description": "Agent Core — Enterprise AI Agent Orchestration Engine",
   "private": true,
   "scripts": {
     "build": "tsc -p tsconfig.build.json",

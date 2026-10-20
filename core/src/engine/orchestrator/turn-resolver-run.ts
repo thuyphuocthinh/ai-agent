@@ -97,7 +97,7 @@ type EvaluateOutcome = ESupervisorVerdict;
  * user). Tách khỏi TurnResolverService để state (rounds/toolCalls/counters)
  * là field thay vì phải truyền qua hàng loạt tham số — cùng lý do đã tách
  * ReactLoopRun khỏi ReactLoopService. Xem thiết kế đầy đủ (WHY):
- * slack-docs/Documents/Orchestration/code-notes/turn-resolver.service.md
+ * docs/orchestration/code-notes/turn-resolver.service.md
  */
 export class TurnResolverRun {
   private readonly data: IProcessAiTriggerJobData;

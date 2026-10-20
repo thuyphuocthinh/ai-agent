@@ -77,7 +77,7 @@ export interface ToolCallExecutorDeps {
  * auto-approve INSERT?), dedup/cache theo ToolRepeatGuard, retry lỗi tạm thời
  * (transient), gọi MCP thật, ghi trace + emit step lên FE. Tách khỏi
  * ReactLoopRun để test được trực tiếp thay vì chỉ suy ra qua số lần gọi mock.
- * Xem thiết kế đầy đủ (WHY): slack-docs/Documents/Orchestration/code-notes/react-loop.service.md
+ * Xem thiết kế đầy đủ (WHY): docs/orchestration/code-notes/react-loop.service.md
  */
 export class ToolCallExecutor {
   private readonly dto: RunReactLoopRequestDto;

@@ -21,7 +21,7 @@ import { AnswerResult } from './orchestration-answer.types';
 import { TurnResolverRun } from './turn-resolver-run';
 import { MemoryManagerService } from '../../memory/memory-manager.service';
 
-// Ghi chú thiết kế đầy đủ (WHY): slack-docs/Documents/Orchestration/code-notes/turn-resolver.service.md
+// Ghi chú thiết kế đầy đủ (WHY): docs/orchestration/code-notes/turn-resolver.service.md
 // Logic chi tiết 1 turn (plan/delegate/evaluate/synthesize) nằm ở
 // TurnResolverRun (turn-resolver-run.ts) — file này chỉ dựng dependencies
 // rồi giao việc, giữ nguyên API công khai (continueRounds()/resolveAnswer())

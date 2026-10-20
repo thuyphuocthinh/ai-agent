@@ -32,7 +32,7 @@ interface ClientCacheEntry {
   lastUsedAt: number;
 }
 
-// Ghi chú thiết kế đầy đủ (WHY): slack-docs/Documents/Orchestration/code-notes/mcp-client.service.md
+// Ghi chú thiết kế đầy đủ (WHY): docs/orchestration/code-notes/mcp-client.service.md
 @Injectable()
 export class McpClientService {
   private readonly logger = new Logger(McpClientService.name);

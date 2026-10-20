@@ -44,7 +44,7 @@ export interface AgentRankingCache {
   current?: { shown: AvailableAgentDto[]; omittedCount: number };
 }
 
-// Ghi chú thiết kế đầy đủ (WHY): slack-docs/Documents/Orchestration/code-notes/supervisor.service.md
+// Ghi chú thiết kế đầy đủ (WHY): docs/orchestration/code-notes/supervisor.service.md
 @Injectable()
 export class SupervisorService {
   private readonly logger = new Logger(SupervisorService.name);

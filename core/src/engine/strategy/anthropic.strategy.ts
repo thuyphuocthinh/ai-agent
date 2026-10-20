@@ -23,7 +23,7 @@ export class AnthropicStrategy implements LlmStrategy {
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (apiKey) {
       const baseURL =
-        process.env.AI_ROUTER_URL || 'http://slack-9router:20128/v1';
+        process.env.AI_ROUTER_URL || 'http://localhost:20128/v1';
       // maxRetries: SDK tự retry lỗi tạm thời (429/5xx) với backoff, giống OpenAI.
       this.client = new Anthropic({ apiKey, baseURL, maxRetries: 3 });
     } else {

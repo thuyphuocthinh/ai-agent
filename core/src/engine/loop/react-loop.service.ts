@@ -19,7 +19,7 @@ import { MemoryManagerService } from '../../memory/memory-manager.service';
 import { ReactLoopRun } from './react-loop-run';
 import { ToolRepeatGuard } from './tool-repeat-guard';
 
-// Ghi chú thiết kế đầy đủ (WHY): slack-docs/Documents/Orchestration/code-notes/react-loop.service.md
+// Ghi chú thiết kế đầy đủ (WHY): docs/orchestration/code-notes/react-loop.service.md
 // Logic chi tiết 1 lượt chạy (tool call, self-check, quantity-nudge...) nằm
 // ở ReactLoopRun (react-loop-run.ts) — file này chỉ dựng dependencies rồi giao việc.
 @Injectable()

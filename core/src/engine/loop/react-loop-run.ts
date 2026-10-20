@@ -51,7 +51,7 @@ export interface ReactLoopRunDeps {
  * Risk-gate (destructive/auto-approve) nằm ở ToolRiskGate, cơ chế thực thi
  * tool (dedup/retry/trace) nằm ở ToolCallExecutor — tách ra để mỗi phần có 1
  * lý do thay đổi riêng, dễ test trực tiếp hơn suy luận qua mock. Xem thiết kế
- * đầy đủ (WHY): slack-docs/Documents/Orchestration/code-notes/react-loop.service.md
+ * đầy đủ (WHY): docs/orchestration/code-notes/react-loop.service.md
  */
 export class ReactLoopRun {
   private readonly dto: RunReactLoopRequestDto;

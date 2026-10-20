@@ -55,7 +55,7 @@ export class GeminiStrategy implements LlmStrategy {
     const requestOptions = {
       baseUrl: process.env.AI_ROUTER_URL
         ? process.env.AI_ROUTER_URL.replace(/\/v1$/, '')
-        : 'http://slack-9router:20128',
+        : 'http://localhost:20128',
     };
 
     const model = this.genAI.getGenerativeModel(
@@ -85,7 +85,7 @@ export class GeminiStrategy implements LlmStrategy {
     const requestOptions = {
       baseUrl: process.env.AI_ROUTER_URL
         ? process.env.AI_ROUTER_URL.replace(/\/v1$/, '')
-        : 'http://slack-9router:20128',
+        : 'http://localhost:20128',
     };
 
     const model = this.genAI.getGenerativeModel(

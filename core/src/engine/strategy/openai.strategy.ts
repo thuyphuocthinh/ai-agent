@@ -43,7 +43,7 @@ export class OpenAiStrategy implements LlmStrategy {
     const apiKey = process.env.OPENAI_API_KEY;
     if (apiKey) {
       const baseURL =
-        process.env.AI_ROUTER_URL || 'http://slack-9router:20128/v1';
+        process.env.AI_ROUTER_URL || 'http://localhost:20128/v1';
       this.client = new OpenAI({
         apiKey,
         baseURL, // Trỏ thẳng vào 9Router chạy qua Docker
