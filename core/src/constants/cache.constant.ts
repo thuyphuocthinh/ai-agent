@@ -30,8 +30,6 @@ export const CACHE = {
         `${GLOBAL_PREFIX}:${GLOBAL_VER}:orchestration:v1:circuit_breaker:total:${key}`,
       CIRCUIT_BREAKER_FAILURES: (key: string): string =>
         `${GLOBAL_PREFIX}:${GLOBAL_VER}:orchestration:v1:circuit_breaker:failures:${key}`,
-      WORKSPACE_TRIGGER_COUNT: (workspaceId: string): string =>
-        `${GLOBAL_PREFIX}:${GLOBAL_VER}:orchestration:v1:workspace_trigger_count:${workspaceId}`,
     },
   },
 };

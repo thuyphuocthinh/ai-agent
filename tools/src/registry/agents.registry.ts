@@ -7,12 +7,6 @@
 export interface AgentRegistryEntry {
   label: string;
   endpoint: string | undefined;
-  // true = provider có 1 instance RIÊNG cho mỗi workspace (VD Edge MCP Server
-  // relay chạy on-prem của từng khách hàng) — cache/breaker/limiter phải tách
-  // theo workspaceId để 1 workspace lỗi không ảnh hưởng workspace khác. Mọi
-  // provider hiện có dùng CHUNG 1 instance cho mọi workspace nên để trống
-  // (undefined = false) — KHÔNG đổi hành vi provider hiện tại.
-  perWorkspaceInstance?: boolean;
 }
 
 export const AGENT_REGISTRY: Record<string, AgentRegistryEntry> = {
@@ -20,7 +14,6 @@ export const AGENT_REGISTRY: Record<string, AgentRegistryEntry> = {
     label: 'SQL Server',
     endpoint: process.env.AGENT_SQL_SERVER_URL,
   },
-  // Giai đoạn 2, Step 4 — agent thứ 2, repo riêng `freelancer/agent_github`.
   github: {
     label: 'GitHub',
     endpoint: process.env.AGENT_GITHUB_URL,
@@ -58,14 +51,5 @@ export const AGENT_REGISTRY: Record<string, AgentRegistryEntry> = {
   compute: {
     label: 'Python Compute',
     endpoint: process.env.AGENT_COMPUTE_URL,
-  },
-  // Edge MCP Server — SQL Server on-prem của khách hàng, chạm được qua relay
-  // (workspace tự mở kết nối outbound), KHÔNG có endpoint tĩnh nào cả. Tách
-  // riêng khỏi `sql_server` (cloud, dùng chung 1 instance) để không làm loãng
-  // cache/breaker key của `sql_server` cho những workspace không dùng relay.
-  sql_server_edge: {
-    label: 'SQL Server (on-prem, qua Edge MCP Server)',
-    endpoint: undefined,
-    perWorkspaceInstance: true,
   },
 };

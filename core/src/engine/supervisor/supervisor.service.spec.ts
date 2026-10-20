@@ -31,11 +31,6 @@ jest.mock('@agent/tools', () => {
     AGENT_REGISTRY: {
       sql_server: { label: 'SQL Server', endpoint: 'http://mcp-server/mcp' },
       notion: { label: 'Notion', endpoint: undefined },
-      sql_server_edge: {
-        label: 'SQL Server (on-prem, qua Edge MCP Server)',
-        endpoint: undefined,
-        perWorkspaceInstance: true,
-      },
     },
   };
 });
