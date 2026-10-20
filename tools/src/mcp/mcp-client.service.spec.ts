@@ -247,6 +247,24 @@ describe('McpClientService', () => {
   });
 
   describe('callTool', () => {
+    it('supports calling tool with minimal args (defaulting provider to mcp and ownerId to default)', async () => {
+      mockCallTool.mockResolvedValue({
+        content: [{ type: 'text', text: 'ok' }],
+      });
+
+      await service.callTool({
+        provider: 'sql_server',
+        name: 'execute_read_only_query',
+        args: { query: 'SELECT 1' },
+      });
+
+      expect(mockCallTool).toHaveBeenCalledWith(
+        { name: 'execute_read_only_query', arguments: { query: 'SELECT 1' } },
+        undefined,
+        { signal: undefined },
+      );
+    });
+
     it('forwards name/args to the MCP client', async () => {
       mockCallTool.mockResolvedValue({
         content: [{ type: 'text', text: 'ok' }],

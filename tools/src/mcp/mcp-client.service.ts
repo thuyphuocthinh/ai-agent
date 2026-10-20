@@ -354,20 +354,24 @@ export class McpClientService {
     dto: CallToolRequestDto,
     signal?: AbortSignal,
   ): Promise<CallToolResponseDto> {
-    if (await this.dynamicRegistry.isDynamicProvider(dto.provider)) {
+    const provider = dto.provider ?? 'mcp';
+    const ownerId = dto.userId ?? dto.ownerId ?? 'default';
+    const workspaceId = dto.tenantId ?? dto.workspaceId;
+
+    if (await this.dynamicRegistry.isDynamicProvider(provider)) {
       return this.dynamicExecutor.execute(
-        dto.provider,
+        provider,
         dto.name,
         dto.args,
-        dto.ownerId,
+        ownerId,
         signal,
       );
     }
 
     let cachedTool = this.getFreshCachedTool(
-      dto.provider,
+      provider,
       dto.name,
-      dto.workspaceId,
+      workspaceId,
     );
 
     const isDestructive = cachedTool
@@ -376,8 +380,8 @@ export class McpClientService {
     const maxRetries = isDestructive ? 1 : 3;
 
     return await this.withReconnect(
-      dto.provider,
-      dto.ownerId,
+      provider,
+      ownerId,
       async (client) => {
         const result = (await client.callTool(
           { name: dto.name, arguments: dto.args },
@@ -388,7 +392,7 @@ export class McpClientService {
       },
       maxRetries,
       signal,
-      dto.workspaceId,
+      workspaceId,
     );
   }
 

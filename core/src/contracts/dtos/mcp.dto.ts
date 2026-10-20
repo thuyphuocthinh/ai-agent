@@ -13,19 +13,15 @@ export class McpToolDto {
 }
 
 export class CallToolRequestDto {
-  provider: string;
   name: string;
   args: Record<string, unknown>;
-  // Danh tính người gọi thật — gửi qua header nội bộ tới MCP server, KHÔNG
-  // qua tool args (tránh lộ ra function-calling schema mà LLM thấy được).
-  ownerId: string;
-  // Dùng để route/cache/breaker theo ĐÚNG tenant cho provider có 1 instance
-  // riêng/workspace (VD Edge MCP Server relay) — provider dùng chung 1
-  // instance cho mọi workspace (Notion/GitHub...) truyền undefined.
-  // Key bắt buộc (không phải `?:`) — caller phải CHỦ Ý truyền undefined thay
-  // vì có thể lỡ quên cả field, y hệt bug đã gặp thật (executeApprovedToolForReal,
-  // countAffectedRows có sẵn workspaceId trong scope mà quên forward).
-  workspaceId: string | undefined;
+  provider?: string;
+  // Danh tính người gọi (userId hoặc ownerId cũ) — gửi qua header X-Owner-Id
+  ownerId?: string;
+  userId?: string;
+  // Tenant/Workspace ID (tuỳ chọn, phục vụ multi-tenant)
+  workspaceId?: string;
+  tenantId?: string;
 }
 
 export class CallToolResponseDto {
