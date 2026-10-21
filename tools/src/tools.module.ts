@@ -9,13 +9,21 @@ import { DynamicProviderDbService } from './registry/dynamic-provider-db.service
 import { ProviderSummaryService } from './registry/provider-summary.service';
 import { OpenAiEmbeddingProvider } from './registry/openai-embedding.provider';
 import { DynamicToolExecutorService } from './executor/dynamic-tool-executor.service';
-import { CircuitBreakerService, ProviderConcurrencyLimiterService } from '@agent/core/common';
+import {
+  CircuitBreakerService,
+  MetricsRegistryService,
+  ProviderConcurrencyLimiterService,
+} from '@agent/core/common';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([DynamicProviderEntity]),
   ],
   providers: [
+    // CircuitBreakerService inject MetricsRegistryService; thiếu dòng này thì
+    // ToolsModule không tự dựng được khi tách khỏi host (Registry riêng của
+    // prom-client nên không đụng instance của OrchestrationModule).
+    MetricsRegistryService,
     CircuitBreakerService,
     ProviderConcurrencyLimiterService,
     McpClientService,

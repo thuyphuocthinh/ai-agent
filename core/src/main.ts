@@ -1,3 +1,9 @@
+import { config as loadEnv } from 'dotenv';
+
+// Nạp .env (thư mục hiện tại, rồi gốc repo) TRƯỚC các import bên dưới:
+// DatabaseModule đọc process.env ngay lúc được import.
+loadEnv({ path: ['.env', '../.env'] });
+
 import { NestFactory } from '@nestjs/core';
 import { WinstonModule } from 'nest-winston';
 import { getLoggerConfig } from '@agent/core/common';

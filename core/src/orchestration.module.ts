@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { DatabaseModule } from './infrastructure/database/database.module';
@@ -45,6 +46,8 @@ import { HealthCheckService } from './common/health-check.service';
 
 @Module({
   imports: [
+    // REDIS_CLIENT và BullMQ inject ConfigService (trước đây host Slack cấp).
+    ConfigModule.forRoot({ isGlobal: true, envFilePath: ['.env', '../.env'] }),
     DatabaseModule,
     TypeOrmModule.forFeature([
       OrchestrationCheckpointEntity,

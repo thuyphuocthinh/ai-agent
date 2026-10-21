@@ -46,7 +46,7 @@
         "../core/src/engine/loop/*"
       ],
       "agentic-openapi-parser/*": [
-        "../core/node_modules/agentic-openapi-parser/dist/*/index.d.ts"
+        "../core/node_modules/agentic-openapi-parser/dist/*/index.js"
       ]
     }
   },
