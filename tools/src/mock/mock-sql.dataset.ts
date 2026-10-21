@@ -1,110 +1,117 @@
-// Bộ dữ liệu mẫu CỐ ĐỊNH cho provider tool giả (MOCK_TOOLS=true). Kết quả luôn
-// giống nhau giữa các lần chạy để test lặp lại được. KHÔNG phải dữ liệu thật.
-export type MockRow = Record<string, string | number>;
+import { DatabaseSync } from 'node:sqlite';
 
-export const MOCK_SQL_TABLES: Record<string, MockRow[]> = {
-  products: [
-    { id: 1, name: 'Áo thun', price: 99000, stock: 50 },
-    { id: 2, name: 'Quần jean', price: 299000, stock: 20 },
-    { id: 3, name: 'Giày thể thao', price: 699000, stock: 8 },
-  ],
-  orders: [
-    { id: 101, customer: 'An', total: 398000, status: 'paid', created_at: '2026-10-01' },
-    { id: 102, customer: 'Bình', total: 699000, status: 'pending', created_at: '2026-10-02' },
-    { id: 103, customer: 'Chi', total: 99000, status: 'paid', created_at: '2026-10-03' },
-  ],
-  payments: [
-    { id: 1, order_id: 101, amount: 398000, status: 'success' },
-    { id: 2, order_id: 103, amount: 99000, status: 'success' },
-  ],
-};
+// Cơ sở dữ liệu mẫu CỐ ĐỊNH cho provider tool giả (MOCK_TOOLS=true), chạy trên SQLite
+// thật trong bộ nhớ (module `node:sqlite` có sẵn của Node, không thêm package) nên mọi
+// câu SQL thông thường (JOIN, GROUP BY, CASE, COUNT/SUM...) đều chạy đúng như DB thật.
+// KHÔNG phải dữ liệu thật; mỗi lần dựng lại là về đúng dữ liệu ban đầu.
+const SAMPLE_DATABASE_SQL = `
+  CREATE TABLE products (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    price INTEGER NOT NULL,
+    stock INTEGER NOT NULL
+  );
+  CREATE TABLE orders (
+    id INTEGER PRIMARY KEY,
+    customer TEXT NOT NULL,
+    total INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE TABLE payments (
+    id INTEGER PRIMARY KEY,
+    order_id INTEGER NOT NULL REFERENCES orders(id),
+    amount INTEGER NOT NULL,
+    status TEXT NOT NULL
+  );
+  INSERT INTO products VALUES
+    (1, 'Áo thun', 99000, 50),
+    (2, 'Quần jean', 299000, 20),
+    (3, 'Giày thể thao', 699000, 8);
+  INSERT INTO orders VALUES
+    (101, 'An', 398000, 'paid', '2026-10-01'),
+    (102, 'Bình', 699000, 'pending', '2026-10-02'),
+    (103, 'Chi', 99000, 'paid', '2026-10-03');
+  INSERT INTO payments VALUES
+    (1, 101, 398000, 'success'),
+    (2, 103, 99000, 'success');
+`;
 
-export function describeMockSchema(table?: string): string | undefined {
-  const names = table ? [table.toLowerCase()] : Object.keys(MOCK_SQL_TABLES);
-  if (names.some((name) => !MOCK_SQL_TABLES[name])) return undefined;
-  return names
-    .map((name) => {
-      const columns = Object.entries(MOCK_SQL_TABLES[name][0])
-        .map(([column, value]) => `${column} ${typeof value === 'number' ? 'int' : 'varchar'}`)
-        .join(', ');
-      return `${name}(${columns})`;
-    })
-    .join('\n');
-}
+const MAX_ROWS = 200;
+const READ_PATTERN = /^\s*(select|with)\b/i;
+const WRITE_PATTERN = /^\s*(insert|update|delete)\b/i;
 
 export type MockQueryResult =
-  | { ok: true; rows: MockRow[] }
+  | { ok: true; text: string }
   | { ok: false; error: string };
 
-const SELECT_PATTERN =
-  /^\s*select\s+(?<select>.+?)\s+from\s+(?<table>\w+)(?:\s+where\s+(?<where>.+?))?(?:\s+limit\s+(?<limit>\d+))?\s*;?\s*$/is;
-const WHERE_PATTERN = /^(?<column>\w+)\s*=\s*(?:'(?<text>[^']*)'|(?<number>-?\d+(?:\.\d+)?))$/;
-const AGGREGATE_PATTERN = /^(?<fn>count|sum)\(\s*(?<arg>\*|\w+)\s*\)(?:\s+as\s+\w+)?$/i;
+export function createMockDatabase(): DatabaseSync {
+  const db = new DatabaseSync(':memory:');
+  db.exec(SAMPLE_DATABASE_SQL);
+  return db;
+}
 
-/**
- * Bộ chạy SELECT tối giản cho dữ liệu mẫu: SELECT (dấu sao, danh sách cột,
- * COUNT, SUM) FROM bảng [WHERE cột = giá trị] [LIMIT n]. Cú pháp khác trả lỗi rõ ràng thay vì
- * đoán, để kết quả giả không bao giờ làm người test hiểu nhầm.
- */
-export function runMockSelect(query: string): MockQueryResult {
-  const match = SELECT_PATTERN.exec(query);
-  if (!match?.groups) {
+// Chỉ 1 câu lệnh: SQLite chỉ chạy câu đầu và bỏ phần sau dấu `;`, nên chặn thẳng để
+// người test không tưởng 2 câu đã cùng chạy.
+function hasSecondStatement(sql: string): boolean {
+  return /;\s*\S/.test(sql);
+}
+
+function failure(error: unknown): MockQueryResult {
+  return { ok: false, error: (error as Error).message };
+}
+
+export function describeMockSchema(db: DatabaseSync, table?: string): MockQueryResult {
+  const tables = db
+    .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
+    .all() as Array<{ name: string }>;
+  const names = table
+    ? tables.filter((t) => t.name.toLowerCase() === table.toLowerCase())
+    : tables;
+  if (names.length === 0) {
     return {
       ok: false,
-      error:
-        'read_query (mock) chỉ hỗ trợ: SELECT */cột/COUNT(*)/SUM(cột) FROM bảng [WHERE cột = giá trị] [LIMIT n]',
+      error: `Bảng "${table}" không tồn tại. Bảng có sẵn: ${tables.map((t) => t.name).join(', ')}`,
     };
   }
-  const table = MOCK_SQL_TABLES[match.groups.table.toLowerCase()];
-  if (!table) {
-    return {
-      ok: false,
-      error: `Bảng "${match.groups.table}" không tồn tại. Bảng có sẵn: ${Object.keys(MOCK_SQL_TABLES).join(', ')}`,
-    };
-  }
+  const text = names
+    .map(({ name }) => {
+      const columns = db.prepare(`PRAGMA table_info(${name})`).all() as Array<{
+        name: string;
+        type: string;
+      }>;
+      return `${name}(${columns.map((c) => `${c.name} ${c.type.toLowerCase()}`).join(', ')})`;
+    })
+    .join('\n');
+  return { ok: true, text };
+}
 
-  let rows = table;
-  if (match.groups.where) {
-    const where = WHERE_PATTERN.exec(match.groups.where.trim());
-    if (!where?.groups) {
-      return {
-        ok: false,
-        error: 'read_query (mock) chỉ hỗ trợ WHERE với đúng 1 điều kiện dạng cột = giá trị',
-      };
-    }
-    const column = where.groups.column;
-    if (!(column in table[0])) {
-      return { ok: false, error: `Cột "${column}" không tồn tại` };
-    }
-    const wanted = where.groups.text ?? Number(where.groups.number);
-    rows = rows.filter((row) => row[column] === wanted);
+export function runMockRead(db: DatabaseSync, sql: string): MockQueryResult {
+  if (!READ_PATTERN.test(sql)) {
+    return { ok: false, error: 'read_query chỉ nhận câu SELECT (hoặc WITH ... SELECT)' };
   }
-  if (match.groups.limit) {
-    rows = rows.slice(0, Number(match.groups.limit));
+  if (hasSecondStatement(sql)) {
+    return { ok: false, error: 'read_query chỉ chạy 1 câu lệnh mỗi lần' };
   }
+  try {
+    const rows = db.prepare(sql).all();
+    return { ok: true, text: JSON.stringify(rows.slice(0, MAX_ROWS)) };
+  } catch (error) {
+    return failure(error);
+  }
+}
 
-  const select = match.groups.select.trim();
-  const aggregate = AGGREGATE_PATTERN.exec(select);
-  if (aggregate?.groups) {
-    if (aggregate.groups.fn.toLowerCase() === 'count') {
-      return { ok: true, rows: [{ count: rows.length }] };
-    }
-    const column = aggregate.groups.arg;
-    if (column === '*' || !(column in table[0]) || typeof table[0][column] !== 'number') {
-      return { ok: false, error: `SUM chỉ áp dụng cho cột số, "${column}" không hợp lệ` };
-    }
-    return {
-      ok: true,
-      rows: [{ sum: rows.reduce((total, row) => total + Number(row[column]), 0) }],
-    };
+export function runMockWrite(db: DatabaseSync, sql: string): MockQueryResult {
+  if (!WRITE_PATTERN.test(sql)) {
+    return { ok: false, error: 'execute_write_query chỉ nhận INSERT/UPDATE/DELETE' };
   }
-  if (select === '*') return { ok: true, rows };
-
-  const columns = select.split(',').map((c) => c.trim());
-  const unknown = columns.find((c) => !(c in table[0]));
-  if (unknown) return { ok: false, error: `Cột "${unknown}" không tồn tại` };
-  return {
-    ok: true,
-    rows: rows.map((row) => Object.fromEntries(columns.map((c) => [c, row[c]]))),
-  };
+  if (hasSecondStatement(sql)) {
+    return { ok: false, error: 'execute_write_query chỉ chạy 1 câu lệnh mỗi lần' };
+  }
+  try {
+    const { changes } = db.prepare(sql).run();
+    return { ok: true, text: JSON.stringify({ affectedRows: Number(changes) }) };
+  } catch (error) {
+    return failure(error);
+  }
 }

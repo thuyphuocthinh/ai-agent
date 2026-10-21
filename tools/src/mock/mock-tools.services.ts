@@ -4,7 +4,13 @@ import {
   CallToolResponseDto,
   McpToolDto,
 } from '@agent/core/dto/mcp.dto';
-import { describeMockSchema, runMockSelect } from './mock-sql.dataset';
+import {
+  MockQueryResult,
+  createMockDatabase,
+  describeMockSchema,
+  runMockRead,
+  runMockWrite,
+} from './mock-sql.dataset';
 
 export const MOCK_PROVIDER_ID = 'sql_server';
 
@@ -26,36 +32,36 @@ const MOCK_TOOLS: McpToolDto[] = [
   },
   {
     name: 'read_query',
-    description: 'Chạy 1 câu SELECT chỉ đọc trên dữ liệu mẫu (products, orders, payments).',
+    description:
+      'Chạy 1 câu SELECT chỉ đọc (SQLite: JOIN, GROUP BY, CASE, COUNT/SUM... đều dùng được) trên dữ liệu mẫu (products, orders, payments).',
     inputSchema: QUERY_SCHEMA,
     annotations: { readOnlyHint: true },
   },
   {
     name: 'execute_write_query',
-    description: 'Chạy câu lệnh GHI (INSERT/UPDATE/DELETE). Cần người dùng duyệt trước khi chạy.',
+    description:
+      'Chạy câu lệnh GHI (INSERT/UPDATE/DELETE) trên dữ liệu mẫu. Cần người dùng duyệt trước khi chạy.',
     inputSchema: QUERY_SCHEMA,
     annotations: { destructiveHint: true },
   },
 ];
 
-const WRITE_PATTERN = /^\s*(insert|update|delete)\b/i;
-
-const ok = (text: string): CallToolResponseDto => ({
-  content: [{ type: 'text', text }],
-  isError: false,
+const toResponse = (result: MockQueryResult): CallToolResponseDto => ({
+  content: [{ type: 'text', text: result.ok ? result.text : result.error }],
+  isError: !result.ok,
 });
-const fail = (text: string): CallToolResponseDto => ({
-  content: [{ type: 'text', text }],
-  isError: true,
-});
+const fail = (error: string): CallToolResponseDto => toResponse({ ok: false, error });
 
 /**
- * Thay McpClientService khi MOCK_TOOLS=true: 1 agent `sql_server` giả với dữ
- * liệu mẫu cố định, không gọi mạng. Chỉ để test engine/playground khi chưa có
- * MCP thật; lệnh ghi KHÔNG thay đổi dữ liệu (chỉ trả kết quả giả).
+ * Thay McpClientService khi MOCK_TOOLS=true: 1 agent `sql_server` giả chạy trên
+ * SQLite thật trong bộ nhớ với dữ liệu mẫu, không gọi mạng. Chỉ để test
+ * engine/playground khi chưa có MCP thật. Lệnh ghi được áp dụng vào DB trong bộ
+ * nhớ (đọc lại thấy thay đổi) và mất khi khởi động lại.
  */
 @Injectable()
 export class MockMcpClientService {
+  private readonly db = createMockDatabase();
+
   async getTools(provider: string): Promise<McpToolDto[]> {
     return provider === MOCK_PROVIDER_ID ? MOCK_TOOLS : [];
   }
@@ -77,23 +83,12 @@ export class MockMcpClientService {
     switch (dto.name) {
       case 'table_schema': {
         const table = typeof dto.args?.table === 'string' ? dto.args.table : undefined;
-        const schema = describeMockSchema(table);
-        return schema ? ok(schema) : fail(`Bảng "${table}" không tồn tại`);
+        return toResponse(describeMockSchema(this.db, table));
       }
-      case 'read_query': {
-        if (!query) return fail('Thiếu tham số "query"');
-        const result = runMockSelect(query);
-        return result.ok ? ok(JSON.stringify(result.rows)) : fail(result.error);
-      }
-      case 'execute_write_query': {
-        if (!query) return fail('Thiếu tham số "query"');
-        if (!WRITE_PATTERN.test(query)) {
-          return fail('execute_write_query chỉ nhận INSERT/UPDATE/DELETE');
-        }
-        return ok(
-          JSON.stringify({ affectedRows: 1, note: 'mock: dữ liệu mẫu không bị thay đổi' }),
-        );
-      }
+      case 'read_query':
+        return query ? toResponse(runMockRead(this.db, query)) : fail('Thiếu tham số "query"');
+      case 'execute_write_query':
+        return query ? toResponse(runMockWrite(this.db, query)) : fail('Thiếu tham số "query"');
       default:
         return fail(`Tool "${dto.name}" không tồn tại trong chế độ mock`);
     }
