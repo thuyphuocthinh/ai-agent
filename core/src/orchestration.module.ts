@@ -43,6 +43,8 @@ import { ApprovalSkillRecorderService } from './engine/hitl/approval-skill-recor
 import { MessageClientService, AgentStreamService } from './contracts';
 import { MetricsRegistryService } from './common/metrics-registry.service';
 import { HealthCheckService } from './common/health-check.service';
+import { ChatController } from './api/chat.controller';
+import { ChatService } from './api/chat.service';
 
 @Module({
   imports: [
@@ -65,7 +67,9 @@ import { HealthCheckService } from './common/health-check.service';
       EQueueName.DYNAMIC_PROVIDER_QUEUE,
     ]),
   ],
+  controllers: [ChatController],
   providers: [
+    ChatService,
     AiOrchestrationProcessor,
     DynamicProviderProcessor,
     ReactLoopService,

@@ -396,6 +396,81 @@ describe('VercelUiStreamAdapter (AC-2, AC-3, AC-7)', () => {
     });
   });
 
+  describe('late binding and custom chunks', () => {
+    const lateBound = () => {
+      const chunks: UIMessageChunk[] = [];
+      const source = new FakeSource();
+      const adapter = new VercelUiStreamAdapter({
+        write: (chunk) => void chunks.push(chunk),
+      });
+      adapter.attach(source);
+      return { chunks, source, adapter };
+    };
+
+    it('ignores every event until a messageId is bound', async () => {
+      const { chunks, source, adapter } = lateBound();
+
+      source.emit(context(), { type: 'token', text: 'chưa bind' });
+      await adapter.flush();
+
+      expect(chunks).toEqual([]);
+      expect(adapter.boundMessageId).toBeUndefined();
+    });
+
+    it('follows the bound messageId and only the first bind counts', async () => {
+      const { chunks, source, adapter } = lateBound();
+
+      adapter.bind(MESSAGE_ID);
+      adapter.bind('another-message');
+      source.emit(context(), { type: 'token', text: 'a' });
+      source.emit(context({ messageId: 'another-message' }), { type: 'token', text: 'b' });
+      await adapter.flush();
+
+      expect(adapter.boundMessageId).toBe(MESSAGE_ID);
+      expect(chunks.filter((c) => c.type === 'text-delta')).toHaveLength(1);
+    });
+
+    it('sends custom chunks in order with the engine chunks, and a valid message results', async () => {
+      const { chunks, source, adapter } = lateBound();
+      adapter.bind(MESSAGE_ID);
+
+      source.emit(context(), { type: 'token', text: 'Xin chào' });
+      adapter.send({ type: 'data-reply', data: { text: 'Câu trả lời cuối' } });
+      source.emit(context(), { type: 'done' });
+      await adapter.flush();
+
+      const order = types(chunks);
+      expect(order.indexOf('text-delta')).toBeLessThan(order.indexOf('data-reply' as never));
+      expect(order.indexOf('data-reply' as never)).toBeLessThan(order.indexOf('finish'));
+      const message = await readMessage(chunks);
+      expect(message.parts).toContainEqual(
+        expect.objectContaining({ type: 'data-reply', data: { text: 'Câu trả lời cuối' } }),
+      );
+    });
+
+    it('starts the stream by itself when the first thing sent is a custom chunk (error before any step)', async () => {
+      const { chunks, adapter } = lateBound();
+      adapter.bind(MESSAGE_ID);
+
+      adapter.send({ type: 'data-reply', data: { text: '⚠️ Lỗi hệ thống' } });
+      await adapter.flush();
+
+      expect(types(chunks)).toEqual(['start', 'data-reply']);
+    });
+
+    it('does not send before binding or after finish', async () => {
+      const { chunks, source, adapter } = lateBound();
+
+      adapter.send({ type: 'data-reply', data: { text: 'sớm' } });
+      adapter.bind(MESSAGE_ID);
+      source.emit(context(), { type: 'done' });
+      adapter.send({ type: 'data-reply', data: { text: 'muộn' } });
+      await adapter.flush();
+
+      expect(types(chunks)).toEqual(['start', 'finish']);
+    });
+  });
+
   describe('backward compatibility with existing sinks (AC-3)', () => {
     it('leaves other listeners of the real AgentStreamService untouched', async () => {
       const service = new AgentStreamService();

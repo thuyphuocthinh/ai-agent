@@ -16,6 +16,14 @@ import { ConversationMemoryService } from '../memory/conversation-memory.service
 
 const DEFAULT_CONVERSATION = 'default';
 
+export interface MessageEvent {
+  type: 'created' | 'updated';
+  id: string;
+  conversationId: string;
+  role: EMessageRole;
+  content: string | Record<string, unknown>;
+}
+
 interface StoredMessage {
   id: string;
   conversationId: string;
@@ -31,10 +39,22 @@ export class MessageClientService implements IMessageSink {
   private readonly logger = new Logger(MessageClientService.name);
   private readonly messages = new Map<string, StoredMessage>();
   private readonly order = new Map<string, string[]>();
+  private readonly listeners = new Set<(event: MessageEvent) => void>();
 
   constructor(
     @Optional() private readonly channelMemory?: ConversationMemoryService,
   ) {}
+
+  /**
+   * Nghe mọi message được tạo/cập nhật. Câu trả lời cuối, lỗi của engine và yêu
+   * cầu duyệt chỉ đi qua đây (không đi qua stream), nên giao diện cần nó.
+   */
+  onMessage(listener: (event: MessageEvent) => void): () => void {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
 
   /** Ghi lượt của USER (trước đây không có cách nào ghi lượt user đúng role). */
   async addUserMessage(dto: {
@@ -94,6 +114,14 @@ export class MessageClientService implements IMessageSink {
       });
     }
 
+    this.notify({
+      type: 'updated',
+      id: dto.id,
+      conversationId: existing?.conversationId ?? convId,
+      role: existing?.role ?? EMessageRole.MODEL,
+      content: dto.content,
+    });
+
     if (convId && dto.toolCalls?.length && this.channelMemory) {
       await this.channelMemory.recordSuccessfulCreateCalls(
         convId,
@@ -128,7 +156,18 @@ export class MessageClientService implements IMessageSink {
       text: typeof content === 'string' ? content : JSON.stringify(content),
       isText: typeof content === 'string',
     });
+    this.notify({ type: 'created', id, conversationId, role, content });
     return { id };
+  }
+
+  private notify(event: MessageEvent): void {
+    for (const listener of this.listeners) {
+      try {
+        listener(event);
+      } catch (error: any) {
+        this.logger.warn(`Message listener error: ${error?.message}`);
+      }
+    }
   }
 
   private remember(message: StoredMessage): void {

@@ -18,8 +18,12 @@ export interface AgentStepSource {
 export type UiChunkWriter = (chunk: UIMessageChunk) => void | Promise<void>;
 
 export interface VercelUiStreamOptions {
-  /** messageId của tin nhắn bot (reply) — chỉ event của message này được chuyển tiếp. */
-  messageId: string;
+  /**
+   * messageId của tin nhắn bot (reply) — chỉ event của message này được chuyển
+   * tiếp. Bỏ trống khi id do engine tạo bên trong (VD AiOrchestrationProcessor
+   * tự tạo reply): khi đó gọi `bind(id)` ngay khi biết; trước đó mọi event bị bỏ qua.
+   */
+  messageId?: string;
   write: UiChunkWriter;
 }
 
@@ -54,7 +58,7 @@ function toToolInput(argsPreview?: string): unknown {
  */
 export class VercelUiStreamAdapter {
   private readonly logger = new Logger(VercelUiStreamAdapter.name);
-  private readonly messageId: string;
+  private messageId?: string;
   private readonly write: UiChunkWriter;
 
   private writeChain: Promise<void> = Promise.resolve();
@@ -84,6 +88,29 @@ export class VercelUiStreamAdapter {
     return this.finishedFlag;
   }
 
+  /** messageId đang theo dõi (undefined nếu chưa bind). */
+  get boundMessageId(): string | undefined {
+    return this.messageId;
+  }
+
+  /** Gán messageId khi nó chỉ biết sau lúc tạo adapter; chỉ lần đầu có tác dụng. */
+  bind(messageId: string): void {
+    if (this.messageId === undefined) {
+      this.messageId = messageId;
+    }
+  }
+
+  /**
+   * Chèn 1 chunk tuỳ biến (VD `data-reply`, `data-approval`) vào ĐÚNG hàng đợi
+   * ghi của stream nên giữ được thứ tự với các chunk của engine. Bỏ qua nếu chưa
+   * bind hoặc stream đã kết thúc.
+   */
+  send(chunk: UIMessageChunk): void {
+    if (this.messageId === undefined || this.finishedFlag || this.broken) return;
+    this.ensureStarted();
+    this.emit(chunk);
+  }
+
   /** Đăng ký vào nguồn event; trả hàm huỷ đăng ký (cũng tự gọi khi turn kết thúc). */
   attach(source: AgentStepSource): () => void {
     this.detachListener?.();
@@ -105,7 +132,7 @@ export class VercelUiStreamAdapter {
 
   handle(context: AgentStreamContext, step: AgentStreamStep): void {
     if (this.finishedFlag || this.broken) return;
-    if (context.messageId !== this.messageId) return;
+    if (this.messageId === undefined || context.messageId !== this.messageId) return;
 
     const streamKey = context.streamKey ?? DEFAULT_STREAM_KEY;
     switch (step.type) {

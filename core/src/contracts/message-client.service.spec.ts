@@ -1,5 +1,5 @@
 import { EMessageRole } from '@agent/core/constants';
-import { MessageClientService } from './message-client.service';
+import { MessageClientService, MessageEvent } from './message-client.service';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
@@ -94,6 +94,55 @@ describe('MessageClientService', () => {
     await expect(history('c1', next.id)).resolves.toEqual([
       { role: EMessageRole.USER, text: 'xoá dữ liệu' },
     ]);
+  });
+
+  describe('onMessage', () => {
+    it('notifies created and updated events, with the conversation of the message', async () => {
+      const events: MessageEvent[] = [];
+      service.onMessage((e) => events.push(e));
+
+      const reply = await service.createMessage({ channelId: 'c1', content: 'placeholder' });
+      // Các nhánh lỗi của processor cập nhật mà không gửi channelId.
+      await service.updateMessage({ id: reply.id, content: 'câu trả lời cuối' });
+
+      expect(events).toEqual([
+        { type: 'created', id: reply.id, conversationId: 'c1', role: EMessageRole.MODEL, content: 'placeholder' },
+        { type: 'updated', id: reply.id, conversationId: 'c1', role: EMessageRole.MODEL, content: 'câu trả lời cuối' },
+      ]);
+    });
+
+    it('notifies user messages with the user role', async () => {
+      const events: MessageEvent[] = [];
+      service.onMessage((e) => events.push(e));
+
+      await service.addUserMessage({ conversationId: 'c1', text: 'hỏi' });
+
+      expect(events[0]).toMatchObject({ type: 'created', role: EMessageRole.USER, content: 'hỏi' });
+    });
+
+    it('passes object content (approval request) through unchanged', async () => {
+      const events: MessageEvent[] = [];
+      service.onMessage((e) => events.push(e));
+      const content = { type: 'approval_request', status: 'pending' };
+
+      await service.createMessage({ channelId: 'c1', content });
+
+      expect(events[0].content).toEqual(content);
+    });
+
+    it('stops notifying after unsubscribe and survives a throwing listener', async () => {
+      const seen: string[] = [];
+      service.onMessage(() => {
+        throw new Error('boom');
+      });
+      const unsubscribe = service.onMessage((e) => seen.push(e.id));
+
+      const first = await service.createMessage({ channelId: 'c1', content: 'a' });
+      unsubscribe();
+      await service.createMessage({ channelId: 'c1', content: 'b' });
+
+      expect(seen).toEqual([first.id]);
+    });
   });
 
   it('records successful create calls into conversation memory when tool calls are attached', async () => {
