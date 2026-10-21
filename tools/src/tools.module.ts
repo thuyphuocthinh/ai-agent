@@ -14,6 +14,22 @@ import {
   MetricsRegistryService,
   ProviderConcurrencyLimiterService,
 } from '@agent/core/common';
+import { AGENT_REGISTRY } from './registry/agents.registry';
+import {
+  MockMcpAuthClientService,
+  MockMcpClientService,
+  MOCK_PROVIDER_ID,
+} from './mock';
+
+// MOCK_TOOLS=true: thay McpClientService/McpAuthClientService bằng provider giả
+// (chưa có MCP thật, chỉ để test engine/playground). Quyết định lúc import nên
+// biến phải được nạp từ .env TRƯỚC khi module này được import (main.ts đã làm).
+const MOCK_TOOLS = process.env.MOCK_TOOLS === 'true';
+if (MOCK_TOOLS) {
+  // Supervisor chỉ liệt kê agent tĩnh có endpoint; mock không gọi mạng nên chỉ
+  // cần 1 giá trị khác rỗng.
+  AGENT_REGISTRY[MOCK_PROVIDER_ID].endpoint ??= 'mock://sql_server';
+}
 
 @Module({
   imports: [
@@ -26,8 +42,12 @@ import {
     MetricsRegistryService,
     CircuitBreakerService,
     ProviderConcurrencyLimiterService,
-    McpClientService,
-    McpAuthClientService,
+    MOCK_TOOLS
+      ? { provide: McpClientService, useClass: MockMcpClientService }
+      : McpClientService,
+    MOCK_TOOLS
+      ? { provide: McpAuthClientService, useClass: MockMcpAuthClientService }
+      : McpAuthClientService,
     OpenApiParserService,
     DynamicToolRegistryService,
     DynamicProviderDbService,
