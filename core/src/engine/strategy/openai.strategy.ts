@@ -38,12 +38,15 @@ export class OpenAiStrategy implements LlmStrategy {
   readonly id = 'openai';
   private readonly logger = new Logger(OpenAiStrategy.name);
   private readonly client?: OpenAI;
+  // Registry ghi tên model kiểu router ("openai/gpt-4o-mini"); gọi thẳng
+  // api.openai.com thì API chỉ nhận "gpt-4o-mini".
+  private readonly callsOpenAiDirectly: boolean;
 
   constructor() {
     const apiKey = process.env.OPENAI_API_KEY;
+    const baseURL = process.env.AI_ROUTER_URL || 'http://localhost:20128/v1';
+    this.callsOpenAiDirectly = baseURL.startsWith('https://api.openai.com');
     if (apiKey) {
-      const baseURL =
-        process.env.AI_ROUTER_URL || 'http://localhost:20128/v1';
       this.client = new OpenAI({
         apiKey,
         baseURL, // Trỏ thẳng vào 9Router chạy qua Docker
@@ -85,7 +88,14 @@ export class OpenAiStrategy implements LlmStrategy {
     if (!this.client) {
       throw new RpcException(ORCHESTRATION_ERROR.LLM_PROVIDER_NOT_CONFIGURED);
     }
-    return new OpenAiChatSession(this.client, opts);
+    return new OpenAiChatSession(this.client, {
+      ...opts,
+      model: this.apiModel(opts.model),
+    });
+  }
+
+  private apiModel(model: string): string {
+    return this.callsOpenAiDirectly ? model.replace(/^openai\//, '') : model;
   }
 
   async generateStructured<T>(opts: LlmStructuredOptions): Promise<T> {
@@ -157,7 +167,10 @@ export class OpenAiStrategy implements LlmStrategy {
       { name: 'openai.generateStructured', run_type: 'llm' },
     );
 
-    const completion = await generate(opts);
+    const completion = await generate({
+      ...opts,
+      model: this.apiModel(opts.model),
+    });
 
     if (!completion || !completion.choices) {
       throw new Error(`9Router/OpenAI Error: ${JSON.stringify(completion)}`);
