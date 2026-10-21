@@ -1,0 +1,115 @@
+import { EMessageRole } from '@agent/core/constants';
+import { MessageClientService } from './message-client.service';
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+describe('MessageClientService', () => {
+  let service: MessageClientService;
+
+  beforeEach(() => {
+    service = new MessageClientService();
+  });
+
+  const history = (conversationId: string, beforeMessageId: string, limit = 10) =>
+    service.getRecentHistory({ conversationId, userId: 'u', beforeMessageId, limit });
+
+  it('creates messages with UUID ids (Postgres columns referencing them are uuid)', async () => {
+    const user = await service.addUserMessage({ conversationId: 'c1', text: 'hi' });
+    const reply = await service.createMessage({ channelId: 'c1', content: 'đang xử lý' });
+
+    expect(user.id).toMatch(UUID);
+    expect(reply.id).toMatch(UUID);
+    expect(user.id).not.toBe(reply.id);
+  });
+
+  it('returns the text of a message by id', async () => {
+    const { id } = await service.addUserMessage({ conversationId: 'c1', text: 'xin chào' });
+
+    await expect(service.getMessageText({ id, userId: 'u' })).resolves.toBe('xin chào');
+    await expect(service.getMessageText({ id: 'unknown', userId: 'u' })).resolves.toBe('');
+  });
+
+  it('keeps the user role for user turns and the LATEST text of an updated reply', async () => {
+    await service.addUserMessage({ conversationId: 'c1', text: 'câu 1' });
+    const reply = await service.createMessage({ channelId: 'c1', content: '🤖 Đang xử lý...' });
+    await service.updateMessage({ id: reply.id, channelId: 'c1', content: 'trả lời 1' });
+    const second = await service.addUserMessage({ conversationId: 'c1', text: 'câu 2' });
+
+    await expect(history('c1', second.id)).resolves.toEqual([
+      { role: EMessageRole.USER, text: 'câu 1' },
+      { role: EMessageRole.MODEL, text: 'trả lời 1' },
+    ]);
+  });
+
+  it('updates a reply that was created in one call and updated without a channel id', async () => {
+    const user = await service.addUserMessage({ conversationId: 'c1', text: 'hỏi' });
+    const reply = await service.createMessage({ channelId: 'c1', content: 'placeholder' });
+    // Các nhánh lỗi của processor cập nhật mà không gửi channelId.
+    await service.tryUpdateMessage({ id: reply.id, content: '⚠️ lỗi hệ thống' });
+    const next = await service.addUserMessage({ conversationId: 'c1', text: 'tiếp' });
+
+    await expect(history('c1', next.id)).resolves.toEqual([
+      { role: EMessageRole.USER, text: 'hỏi' },
+      { role: EMessageRole.MODEL, text: '⚠️ lỗi hệ thống' },
+    ]);
+    expect(user.id).toMatch(UUID);
+  });
+
+  it('excludes the current message and everything after it from the history', async () => {
+    await service.addUserMessage({ conversationId: 'c1', text: 'cũ' });
+    const current = await service.addUserMessage({ conversationId: 'c1', text: 'hiện tại' });
+    await service.createMessage({ channelId: 'c1', content: 'placeholder' });
+
+    await expect(history('c1', current.id)).resolves.toEqual([
+      { role: EMessageRole.USER, text: 'cũ' },
+    ]);
+  });
+
+  it('honors the limit by keeping the most recent turns', async () => {
+    for (const text of ['a', 'b', 'c']) {
+      await service.addUserMessage({ conversationId: 'c1', text });
+    }
+    const current = await service.addUserMessage({ conversationId: 'c1', text: 'd' });
+
+    const turns = await history('c1', current.id, 2);
+
+    expect(turns.map((t) => t.text)).toEqual(['b', 'c']);
+  });
+
+  it('keeps conversations separate', async () => {
+    await service.addUserMessage({ conversationId: 'c1', text: 'của c1' });
+    const other = await service.addUserMessage({ conversationId: 'c2', text: 'của c2' });
+
+    await expect(history('c2', other.id)).resolves.toEqual([]);
+  });
+
+  it('leaves object messages (approval requests) out of the chat history', async () => {
+    await service.addUserMessage({ conversationId: 'c1', text: 'xoá dữ liệu' });
+    await service.createMessage({
+      channelId: 'c1',
+      content: { type: 'approval_request', tool: { name: 'execute_write_query' } },
+    });
+    const next = await service.addUserMessage({ conversationId: 'c1', text: 'tiếp' });
+
+    await expect(history('c1', next.id)).resolves.toEqual([
+      { role: EMessageRole.USER, text: 'xoá dữ liệu' },
+    ]);
+  });
+
+  it('records successful create calls into conversation memory when tool calls are attached', async () => {
+    const recordSuccessfulCreateCalls = jest.fn().mockResolvedValue(undefined);
+    const withMemory = new MessageClientService({ recordSuccessfulCreateCalls } as never);
+    const reply = await withMemory.createMessage({ channelId: 'c1', content: 'x' });
+    const toolCalls = [{ tool: 'sql.write', status: 'success' as never }];
+
+    await withMemory.updateMessage({ id: reply.id, channelId: 'c1', content: 'xong', toolCalls });
+
+    expect(recordSuccessfulCreateCalls).toHaveBeenCalledWith('c1', reply.id, toolCalls);
+  });
+
+  it('tryUpdateMessage swallows failures', async () => {
+    jest.spyOn(service, 'updateMessage').mockRejectedValue(new Error('db down'));
+
+    await expect(service.tryUpdateMessage({ id: 'x', content: 'y' })).resolves.toBeUndefined();
+  });
+});
