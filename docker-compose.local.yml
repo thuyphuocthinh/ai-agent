@@ -1,0 +1,42 @@
+# Hạ tầng cục bộ cho local runtime (chỉ dùng để phát triển/test, KHÔNG dùng cho production).
+# Mật khẩu bên dưới chỉ là mặc định local; cổng chỉ bind 127.0.0.1 nên không lộ ra mạng.
+#
+#   pnpm local:up      # khởi động và chờ cả 2 container healthy
+#   pnpm local:down    # dừng (giữ dữ liệu Postgres trong volume)
+#   pnpm local:reset   # dừng và XOÁ dữ liệu Postgres
+#
+# Giá trị mặc định khớp core/src/infrastructure/database/database.config.ts và .env.example.
+
+name: agent-local
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: agent-local-redis
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: agent-local-postgres
+    environment:
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASS:-postgres}
+      POSTGRES_DB: ${DB_NAME:-agent_db}
+    ports:
+      - "127.0.0.1:${DB_PORT:-5432}:5432"
+    volumes:
+      - agent-local-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-agent_db}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  agent-local-pgdata:

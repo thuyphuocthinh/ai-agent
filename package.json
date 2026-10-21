@@ -10,6 +10,9 @@
     "build": "pnpm -r run build",
     "test": "pnpm -r run test",
     "typecheck": "pnpm -r run typecheck",
-    "start:cli": "pnpm --filter @agent/cli start"
+    "start:cli": "pnpm --filter @agent/cli start",
+    "local:up": "docker compose -f docker-compose.local.yml up -d --wait",
+    "local:down": "docker compose -f docker-compose.local.yml down",
+    "local:reset": "docker compose -f docker-compose.local.yml down -v"
   }
 }
