@@ -161,7 +161,7 @@ describe('CheckpointService', () => {
           expiresAt: expect.anything(),
         },
       });
-      expect(result).toEqual([{ id: 'checkpoint-1' }]);
+      expect(result).toEqual([{ id: 'checkpoint-1', botUserId: 'agent-bot' }]);
     });
   });
 
@@ -180,7 +180,16 @@ describe('CheckpointService', () => {
       expect(result).toEqual({
         id: 'checkpoint-1',
         status: OrchestrationCheckpointStatus.APPROVED,
+        botUserId: 'agent-bot',
       });
+    });
+
+    it('falls back to the default bot user id when the stored agentId is null', async () => {
+      mockRepo.findOne.mockResolvedValue({ id: 'checkpoint-1', botUserId: null });
+
+      const result = await service.findById({ id: 'checkpoint-1' });
+
+      expect(result?.botUserId).toBe('agent-bot');
     });
 
     it('returns null when the id does not exist', async () => {
@@ -338,7 +347,7 @@ describe('CheckpointService', () => {
           toolExecutedAt: expect.anything(), // TypeORM IsNull()
         },
       });
-      expect(result).toEqual([{ id: 'stalled-1' }]);
+      expect(result).toEqual([{ id: 'stalled-1', botUserId: 'agent-bot' }]);
     });
 
     it('excludes checkpoints whose tool already finished running (toolExecutedAt set) — those are not stalled, just never left status=APPROVED after completion', async () => {

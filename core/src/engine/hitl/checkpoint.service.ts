@@ -152,7 +152,7 @@ export class CheckpointService {
       replyMessageId,
       runId: replyMessageId,
       userId,
-      botUserId,
+      botUserId: botUserId ?? 'agent-bot',
       channelId,
       conversationId: channelId,
       workspaceId,
