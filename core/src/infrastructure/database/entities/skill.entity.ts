@@ -22,9 +22,17 @@ export class SkillEntity {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ type: 'uuid', name: 'workspace_id' })
+  @Column({ type: 'uuid', name: 'tenant_id' })
   @Index()
-  workspaceId: string;
+  tenantId: string;
+
+  // Backward-compatibility alias
+  get workspaceId(): string {
+    return this.tenantId;
+  }
+  set workspaceId(value: string) {
+    this.tenantId = value;
+  }
 
   // Dùng để embed/so khớp với prompt hiện tại — nên là câu mô tả gốc của lần
   // đầu tiên đúc ra skill, KHÔNG tự đổi theo các lần chạy sau.

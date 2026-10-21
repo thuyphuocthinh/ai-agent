@@ -56,6 +56,7 @@ export class ChannelMemoryService {
       .map((tc) => {
         const joined = `${tc.tool}: ${tc.resultPreview}`;
         return {
+          conversationId: channelId,
           channelId,
           sourceMessageId,
           tool: tc.tool,
@@ -117,7 +118,13 @@ export class ChannelMemoryService {
         .insert()
         .into(ChannelMemoryEntity)
         .values([
-          { channelId, sourceMessageId, tool: 'user_declared_fact', content },
+          {
+            conversationId: channelId,
+            channelId,
+            sourceMessageId,
+            tool: 'user_declared_fact',
+            content,
+          },
         ])
         .orIgnore()
         .execute();

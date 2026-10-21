@@ -35,7 +35,7 @@ describe('SkillService', () => {
       const result = await service.findByWorkspace('ws-1');
 
       expect(mockRepo.find).toHaveBeenCalledWith({
-        where: { workspaceId: 'ws-1' },
+        where: { tenantId: 'ws-1' },
       });
       expect(result).toEqual([{ id: 'skill-1' }]);
     });

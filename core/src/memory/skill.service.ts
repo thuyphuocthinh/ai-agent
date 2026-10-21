@@ -22,13 +22,19 @@ export class SkillService {
     private readonly repo: Repository<SkillEntity>,
   ) {}
 
+  async findByTenant(tenantId: string): Promise<SkillEntity[]> {
+    return this.repo.find({ where: { tenantId } });
+  }
+
   async findByWorkspace(workspaceId: string): Promise<SkillEntity[]> {
-    return this.repo.find({ where: { workspaceId } });
+    return this.findByTenant(workspaceId);
   }
 
   async create(input: CreateSkillInput): Promise<SkillEntity> {
+    const tenantId = (input as any).tenantId ?? input.workspaceId;
     const skill = this.repo.create({
-      workspaceId: input.workspaceId,
+      tenantId,
+      workspaceId: tenantId,
       taskDescription: input.taskDescription,
       summaryMarkdown: input.summaryMarkdown,
       steps: input.steps,
@@ -37,7 +43,7 @@ export class SkillService {
     });
     const saved = await this.repo.save(skill);
     this.logger.log(
-      `create() workspaceId=${input.workspaceId} taskDescription="${input.taskDescription}"`,
+      `create() tenantId=${tenantId} taskDescription="${input.taskDescription}"`,
     );
     return saved;
   }

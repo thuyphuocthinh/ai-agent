@@ -50,17 +50,46 @@ export class OrchestrationCheckpointEntity {
   @Index()
   userId: string;
 
-  @Column({ type: 'uuid', name: 'bot_user_id', nullable: true })
-  botUserId: string;
+  @Column({ type: 'uuid', name: 'agent_id', nullable: true })
+  agentId: string | null;
 
-  @Column({ type: 'uuid', name: 'channel_id' })
-  channelId: string;
+  @Column({ type: 'uuid', name: 'conversation_id' })
+  conversationId: string;
 
-  @Column({ type: 'uuid', name: 'workspace_id' })
-  workspaceId: string;
+  @Column({ type: 'uuid', name: 'tenant_id' })
+  tenantId: string;
 
-  @Column({ type: 'varchar', name: 'channel_type' })
-  channelType: string;
+  @Column({ type: 'varchar', name: 'session_type' })
+  sessionType: string;
+
+  // Backward-compatibility aliases
+  get botUserId(): string | null {
+    return this.agentId;
+  }
+  set botUserId(value: string | null) {
+    this.agentId = value;
+  }
+
+  get channelId(): string {
+    return this.conversationId;
+  }
+  set channelId(value: string) {
+    this.conversationId = value;
+  }
+
+  get workspaceId(): string {
+    return this.tenantId;
+  }
+  set workspaceId(value: string) {
+    this.tenantId = value;
+  }
+
+  get channelType(): string {
+    return this.sessionType;
+  }
+  set channelType(value: string) {
+    this.sessionType = value;
+  }
 
   @Column({ type: 'text', name: 'original_prompt' })
   originalPrompt: string;

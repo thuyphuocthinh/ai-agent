@@ -39,14 +39,23 @@ export class CheckpointService {
     this.logger.log(
       `create() replyMessageId=${dto.replyMessageId} tool=${toolLabel} expiresAt=${expiresAt.toISOString()}`,
     );
+    const agentId = dto.botUserId ?? null;
+    const conversationId = dto.conversationId ?? dto.channelId;
+    const tenantId = dto.tenantId ?? dto.workspaceId ?? 'default';
+    const sessionType = dto.sessionType ?? dto.channelType ?? 'direct';
+
     const saved = await this.repo.save(
       this.repo.create({
         ...dto,
         replyMessageId: dto.runId ?? dto.replyMessageId,
+        agentId,
+        conversationId,
+        tenantId,
+        sessionType,
         botUserId: dto.botUserId ?? 'agent-bot',
-        channelId: dto.conversationId ?? dto.channelId,
-        workspaceId: dto.tenantId ?? dto.workspaceId ?? 'default',
-        channelType: dto.sessionType ?? dto.channelType ?? 'direct',
+        channelId: conversationId,
+        workspaceId: tenantId,
+        channelType: sessionType,
         expiresAt,
       }),
     );

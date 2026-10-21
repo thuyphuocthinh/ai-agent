@@ -68,6 +68,7 @@ describe('ChannelMemoryService', () => {
 
       expect(insertQb.values).toHaveBeenCalledWith([
         {
+          conversationId: 'chan-1',
           channelId: 'chan-1',
           sourceMessageId: 'msg-1',
           tool: 'notion.create_page',
@@ -116,6 +117,7 @@ describe('ChannelMemoryService', () => {
       ]);
       expect(insertQb.values).toHaveBeenCalledWith([
         {
+          conversationId: 'chan-1',
           channelId: 'chan-1',
           sourceMessageId: 'msg-1',
           tool: 'notion.create_page',
@@ -153,6 +155,7 @@ describe('ChannelMemoryService', () => {
       expect(repo.delete).not.toHaveBeenCalled();
       expect(insertQb.values).toHaveBeenCalledWith([
         {
+          conversationId: 'chan-1',
           channelId: 'chan-1',
           sourceMessageId: 'msg-1',
           tool: 'user_declared_fact',
@@ -179,6 +182,7 @@ describe('ChannelMemoryService', () => {
       expect(repo.delete).toHaveBeenCalledWith({ id: 'old-fact-id' });
       expect(insertQb.values).toHaveBeenCalledWith([
         {
+          conversationId: 'chan-1',
           channelId: 'chan-1',
           sourceMessageId: 'msg-2',
           tool: 'user_declared_fact',
