@@ -7,9 +7,9 @@ import {
 } from 'typeorm';
 
 // Lưu trữ các thực thể / fact ổn định vừa được tạo thành công
-// trong 1 hội thoại (conversationId), đọc lại làm gợi ý ngữ cảnh cho SupervisorService.plan().
+// trong 1 cuộc hội thoại (conversationId), đọc lại làm gợi ý ngữ cảnh cho SupervisorService.plan().
 @Entity('conversation_memory')
-export class ChannelMemoryEntity {
+export class ConversationMemoryEntity {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
@@ -31,7 +31,7 @@ export class ChannelMemoryEntity {
   @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
   createdAt: Date;
 
-  // Alias tương thích ngược
+  // Backward compatibility alias
   get channelId(): string {
     return this.conversationId;
   }
@@ -40,4 +40,5 @@ export class ChannelMemoryEntity {
   }
 }
 
-export { ChannelMemoryEntity as ConversationMemoryEntity };
+// Backward compatibility alias for existing imports
+export { ConversationMemoryEntity as ChannelMemoryEntity };

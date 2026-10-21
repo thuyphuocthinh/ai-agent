@@ -1,12 +1,12 @@
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { LessThan } from 'typeorm';
-import { ChannelMemoryService } from './channel-memory.service';
-import { ChannelMemoryEntity } from '../infrastructure/database/entities/channel-memory.entity';
+import { ConversationMemoryService } from './conversation-memory.service';
+import { ConversationMemoryEntity } from '../infrastructure/database/entities/conversation-memory.entity';
 import { OpenAiEmbeddingProvider } from '@agent/tools';
 
-describe('ChannelMemoryService', () => {
-  let service: ChannelMemoryService;
+describe('ConversationMemoryService', () => {
+  let service: ConversationMemoryService;
   let insertExecute: jest.Mock;
   let insertQb: {
     insert: jest.Mock;
@@ -40,13 +40,13 @@ describe('ChannelMemoryService', () => {
 
     const moduleRef = await Test.createTestingModule({
       providers: [
-        ChannelMemoryService,
-        { provide: getRepositoryToken(ChannelMemoryEntity), useValue: repo },
+        ConversationMemoryService,
+        { provide: getRepositoryToken(ConversationMemoryEntity), useValue: repo },
         { provide: OpenAiEmbeddingProvider, useValue: embeddingProvider },
       ],
     }).compile();
 
-    service = moduleRef.get(ChannelMemoryService);
+    service = moduleRef.get(ConversationMemoryService);
   });
 
   describe('recordSuccessfulCreateCalls', () => {
@@ -167,7 +167,7 @@ describe('ChannelMemoryService', () => {
     it('deletes the old fact and inserts the new one when they are near-duplicates', async () => {
       repo.find.mockResolvedValueOnce([
         { id: 'old-fact-id', content: 'mã khách VIP là KH-1111' },
-      ] as ChannelMemoryEntity[]);
+      ] as ConversationMemoryEntity[]);
       embeddingProvider.embed.mockResolvedValueOnce([
         [1, 0],
         [1, 0],
@@ -197,7 +197,7 @@ describe('ChannelMemoryService', () => {
           id: 'hotline-fact-id',
           content: 'số điện thoại hotline là 1900-0002',
         },
-      ] as ChannelMemoryEntity[]);
+      ] as ConversationMemoryEntity[]);
       embeddingProvider.embed.mockResolvedValueOnce([
         [1, 0],
         [0, 1],
@@ -216,7 +216,7 @@ describe('ChannelMemoryService', () => {
     it('still inserts the fact when the embedding call fails', async () => {
       repo.find.mockResolvedValueOnce([
         { id: 'old-fact-id', content: 'mã khách VIP là KH-1111' },
-      ] as ChannelMemoryEntity[]);
+      ] as ConversationMemoryEntity[]);
       embeddingProvider.embed.mockRejectedValueOnce(
         new Error('embedding API down'),
       );
@@ -270,7 +270,7 @@ describe('ChannelMemoryService', () => {
     it('returns rows ordered by newest first when they fit the char budget', async () => {
       const rows = [
         { id: '1', content: 'short fact' },
-      ] as ChannelMemoryEntity[];
+      ] as ConversationMemoryEntity[];
       repo.find.mockResolvedValueOnce(rows);
       const result = await service.getRecentMemories('chan-1', 6000);
       expect(result).toEqual(rows);
@@ -287,7 +287,7 @@ describe('ChannelMemoryService', () => {
         { id: '1', content: 'x'.repeat(50) },
         { id: '2', content: 'x'.repeat(50) },
         { id: '3', content: 'x'.repeat(50) },
-      ] as ChannelMemoryEntity[];
+      ] as ConversationMemoryEntity[];
       repo.find.mockResolvedValueOnce(rows);
 
       const result = await service.getRecentMemories('chan-1', 80);
@@ -298,7 +298,7 @@ describe('ChannelMemoryService', () => {
     it('keeps the newest row even when it alone exceeds the budget', async () => {
       const rows = [
         { id: '1', content: 'x'.repeat(500) },
-      ] as ChannelMemoryEntity[];
+      ] as ConversationMemoryEntity[];
       repo.find.mockResolvedValueOnce(rows);
 
       const result = await service.getRecentMemories('chan-1', 10);
@@ -309,7 +309,7 @@ describe('ChannelMemoryService', () => {
     it('uses the fixed default budget when none is passed', async () => {
       const rows = [
         { id: '1', content: 'short fact' },
-      ] as ChannelMemoryEntity[];
+      ] as ConversationMemoryEntity[];
       repo.find.mockResolvedValueOnce(rows);
 
       const result = await service.getRecentMemories('chan-1');
@@ -327,7 +327,7 @@ describe('ChannelMemoryService', () => {
         const rows = [
           { id: 'apple-row', content: 'apple' },
           { id: 'banana-row', content: 'banana' },
-        ] as ChannelMemoryEntity[];
+        ] as ConversationMemoryEntity[];
         repo.find.mockResolvedValueOnce(rows);
         embeddingProvider.embed.mockImplementation((texts: string[]) =>
           Promise.resolve(
@@ -348,7 +348,7 @@ describe('ChannelMemoryService', () => {
         const rows = [
           { id: '1', content: 'first' },
           { id: '2', content: 'second' },
-        ] as ChannelMemoryEntity[];
+        ] as ConversationMemoryEntity[];
         repo.find.mockResolvedValueOnce(rows);
         embeddingProvider.embed.mockRejectedValue(
           new Error('embedding API down'),
@@ -364,7 +364,7 @@ describe('ChannelMemoryService', () => {
       });
 
       it('does not call the embedding provider when queryText is not provided', async () => {
-        const rows = [{ id: '1', content: 'fact' }] as ChannelMemoryEntity[];
+        const rows = [{ id: '1', content: 'fact' }] as ConversationMemoryEntity[];
         repo.find.mockResolvedValueOnce(rows);
 
         await service.getRecentMemories('chan-1', 6000);

@@ -4,8 +4,8 @@ import {
   resolveHistoryCharBudget,
   resolveMemoryCharBudget,
 } from '@agent/tools';
-import { ChannelMemoryEntity } from '../infrastructure/database/entities/channel-memory.entity';
-import { ChannelMemoryService } from './channel-memory.service';
+import { ConversationMemoryEntity } from '../infrastructure/database/entities/conversation-memory.entity';
+import { ConversationMemoryService } from './conversation-memory.service';
 
 export interface ContextBudget {
   toolResultCharBudget: number;
@@ -18,7 +18,7 @@ export interface ContextBudget {
 // model with data meant for another.
 @Injectable()
 export class MemoryManagerService {
-  constructor(private readonly channelMemory: ChannelMemoryService) {}
+  constructor(private readonly memoryService: ConversationMemoryService) {}
 
   buildBudget(modelId: string): ContextBudget {
     return {
@@ -29,24 +29,24 @@ export class MemoryManagerService {
   }
 
   async getMemories(
-    channelId: string,
+    conversationId: string,
     modelId: string,
     queryText?: string,
-  ): Promise<ChannelMemoryEntity[]> {
-    return this.channelMemory.getRecentMemories(
-      channelId,
+  ): Promise<ConversationMemoryEntity[]> {
+    return this.memoryService.getRecentMemories(
+      conversationId,
       resolveMemoryCharBudget(modelId),
       queryText,
     );
   }
 
   async recordUserDeclaredFact(
-    channelId: string,
+    conversationId: string,
     sourceMessageId: string,
     fact: string,
   ): Promise<void> {
-    return this.channelMemory.recordUserDeclaredFact(
-      channelId,
+    return this.memoryService.recordUserDeclaredFact(
+      conversationId,
       sourceMessageId,
       fact,
     );

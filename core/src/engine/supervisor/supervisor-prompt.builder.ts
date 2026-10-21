@@ -1,15 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import { SupervisorRoundDto } from '../../contracts/dtos/supervisor.dto';
 import { ChatHistoryTurnDto } from '../../contracts/dtos/message-client.dto';
-import { ChannelMemoryEntity } from '../../infrastructure/database/entities/channel-memory.entity';
+import { ConversationMemoryEntity } from '../../infrastructure/database/entities/conversation-memory.entity';
 import { SkillEntity } from '../../infrastructure/database/entities/skill.entity';
 import { MemoryManagerService } from '../../memory/memory-manager.service';
 import { capRoundResults } from '@agent/tools';
 import { detectFrustration } from '../loop/detect-frustration.util';
 
-// Tách khỏi SupervisorService — trách nhiệm duy nhất: ghép channel_memory +
-// skill gợi ý + lịch sử hội thoại + prompt gốc + các round đã chạy trong turn
-// thành 1 prompt duy nhất, đúng thứ tự đã quyết định.
+// Ghép conversation_memory + skill gợi ý + lịch sử hội thoại + prompt gốc + các round đã chạy
+// thành 1 prompt duy nhất, đúng thứ tự.
 @Injectable()
 export class SupervisorPromptBuilder {
   constructor(private readonly memoryManager: MemoryManagerService) {}
@@ -18,7 +17,7 @@ export class SupervisorPromptBuilder {
     originalPrompt: string,
     previousRounds: SupervisorRoundDto[],
     history: ChatHistoryTurnDto[],
-    memories: ChannelMemoryEntity[],
+    memories: ConversationMemoryEntity[],
     modelId: string,
     matchedSkill: SkillEntity | null,
   ): string {

@@ -9,7 +9,7 @@ import {
   OPENAI_EMBEDDING_MODEL,
   OpenAiEmbeddingProvider,
 } from '@agent/tools';
-import { ChannelMemoryEntity } from '../infrastructure/database/entities/channel-memory.entity';
+import { ConversationMemoryEntity } from '../infrastructure/database/entities/conversation-memory.entity';
 import { ToolCallTraceDto } from '../contracts/dtos/react-loop.dto';
 import { isLikelyCreateToolCall } from './create-tool-heuristic.util';
 import { looksLikeInjection } from './memory-injection-heuristic.util';
@@ -26,17 +26,15 @@ interface IndexableMemory {
   description: string;
 }
 
-// ver3.md mục 1 (dài hạn) — ghi nhớ THỰC THỂ ổn định vừa được tạo thành công
-// trong 1 channel, đọc lại làm gợi ý ngữ cảnh cho SupervisorService.plan().
-// Ghi nhớ là concern PHỤ — lỗi ở đây tuyệt đối không được chặn luồng chính
-// (giống triết lý tryUpdateMessage()/buildTruncatedHistorySummary()).
+// Ghi nhớ THỰC THỂ ổn định vừa được tạo thành công trong 1 cuộc hội thoại,
+// đọc lại làm gợi ý ngữ cảnh cho SupervisorService.plan().
 @Injectable()
-export class ChannelMemoryService {
-  private readonly logger = new Logger(ChannelMemoryService.name);
+export class ConversationMemoryService {
+  private readonly logger = new Logger(ConversationMemoryService.name);
 
   constructor(
-    @InjectRepository(ChannelMemoryEntity)
-    private readonly repo: Repository<ChannelMemoryEntity>,
+    @InjectRepository(ConversationMemoryEntity)
+    private readonly repo: Repository<ConversationMemoryEntity>,
     private readonly embeddingProvider: OpenAiEmbeddingProvider,
   ) {}
 
@@ -80,7 +78,7 @@ export class ChannelMemoryService {
       await this.repo
         .createQueryBuilder()
         .insert()
-        .into(ChannelMemoryEntity)
+        .into(ConversationMemoryEntity)
         .values(rows)
         .orIgnore()
         .execute();
@@ -116,7 +114,7 @@ export class ChannelMemoryService {
       await this.repo
         .createQueryBuilder()
         .insert()
-        .into(ChannelMemoryEntity)
+        .into(ConversationMemoryEntity)
         .values([
           {
             conversationId: channelId,
@@ -161,7 +159,7 @@ export class ChannelMemoryService {
           attachEmbeddingCostMetadata(OPENAI_EMBEDDING_MODEL, estimatedTokens);
           return vectors;
         },
-        { name: 'channel-memory.findSupersededFactId', run_type: 'llm' },
+        { name: 'conversation-memory.findSupersededFactId', run_type: 'llm' },
       );
       const [queryVector, ...candidateVectors] = await embed();
 
@@ -199,7 +197,7 @@ export class ChannelMemoryService {
     charBudget: number = ORCHESTRATION_CONSTANTS.CHANNEL_MEMORY_READ_LIMIT *
       ORCHESTRATION_CONSTANTS.CHANNEL_MEMORY_CONTENT_MAX_CHARS,
     queryText?: string,
-  ): Promise<ChannelMemoryEntity[]> {
+  ): Promise<ConversationMemoryEntity[]> {
     try {
       const rows = await this.repo.find({
         where: { channelId },
@@ -219,9 +217,9 @@ export class ChannelMemoryService {
   }
 
   private async rankBySimilarity(
-    rows: ChannelMemoryEntity[],
+    rows: ConversationMemoryEntity[],
     queryText: string,
-  ): Promise<ChannelMemoryEntity[]> {
+  ): Promise<ConversationMemoryEntity[]> {
     if (rows.length === 0) return rows;
 
     // Ước lượng token thô từ tổng ký tự (rows + query) TRƯỚC khi gọi embedding
@@ -247,7 +245,7 @@ export class ChannelMemoryService {
         attachEmbeddingCostMetadata(OPENAI_EMBEDDING_MODEL, estimatedTokens);
         return searched;
       },
-      { name: 'channel-memory.rankBySimilarity', run_type: 'llm' },
+      { name: 'conversation-memory.rankBySimilarity', run_type: 'llm' },
     );
 
     try {
@@ -255,7 +253,7 @@ export class ChannelMemoryService {
       const byId = new Map(rows.map((row) => [row.id, row]));
       const result = ranked
         .map((item) => byId.get(item.name))
-        .filter((row): row is ChannelMemoryEntity => !!row);
+        .filter((row): row is ConversationMemoryEntity => !!row);
       return result.length > 0 ? result : rows;
     } catch (error) {
       this.logger.warn(
@@ -269,10 +267,10 @@ export class ChannelMemoryService {
   // riêng nó đã vượt budget — tránh trả về rỗng chỉ vì 1 model có context
   // window quá nhỏ, giống tinh thần safety net ở capToolResultSize().
   private capToCharBudget(
-    rows: ChannelMemoryEntity[],
+    rows: ConversationMemoryEntity[],
     charBudget: number,
-  ): ChannelMemoryEntity[] {
-    const kept: ChannelMemoryEntity[] = [];
+  ): ConversationMemoryEntity[] {
+    const kept: ConversationMemoryEntity[] = [];
     let used = 0;
     for (const row of rows) {
       const next = used + (row.content?.length ?? 0);
@@ -283,3 +281,6 @@ export class ChannelMemoryService {
     return kept;
   }
 }
+
+// Backward compatibility alias
+export { ConversationMemoryService as ChannelMemoryService };

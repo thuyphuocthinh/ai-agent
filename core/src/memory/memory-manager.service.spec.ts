@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { MemoryManagerService } from './memory-manager.service';
-import { ChannelMemoryService } from './channel-memory.service';
+import { ConversationMemoryService } from './conversation-memory.service';
 import {
   resolveDataCharBudget,
   resolveHistoryCharBudget,
@@ -15,7 +15,7 @@ describe('MemoryManagerService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         MemoryManagerService,
-        { provide: ChannelMemoryService, useValue: mockChannelMemory },
+        { provide: ConversationMemoryService, useValue: mockChannelMemory },
       ],
     }).compile();
 

@@ -11,7 +11,7 @@ import {
   UpdateOrchestrationMessageRequestDto,
 } from './dtos/message-client.dto';
 import { EMessageRole } from '@agent/core/constants';
-import { ChannelMemoryService } from '../memory/channel-memory.service';
+import { ConversationMemoryService } from '../memory/conversation-memory.service';
 
 @Injectable()
 export class MessageClientService implements IMessageSink {
@@ -21,7 +21,7 @@ export class MessageClientService implements IMessageSink {
   private messageCounter = 0;
 
   constructor(
-    @Optional() private readonly channelMemory?: ChannelMemoryService,
+    @Optional() private readonly channelMemory?: ConversationMemoryService,
   ) {}
 
   async getMessageText(dto: GetMessageTextRequestDto): Promise<string> {

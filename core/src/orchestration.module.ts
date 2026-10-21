@@ -19,10 +19,10 @@ import { MockStrategy } from './engine/strategy/mock.strategy';
 import { OrchestrationCheckpointEntity } from './infrastructure/database/entities/orchestration-checkpoint.entity';
 import { OrchestrationTriggerClaimEntity } from './infrastructure/database/entities/orchestration-trigger-claim.entity';
 import { DynamicProviderEntity } from './infrastructure/database/entities/dynamic-provider.entity';
-import { ChannelMemoryEntity } from './infrastructure/database/entities/channel-memory.entity';
+import { ConversationMemoryEntity } from './infrastructure/database/entities/conversation-memory.entity';
 import { SkillEntity } from './infrastructure/database/entities/skill.entity';
-import { ChannelMemoryService } from './memory/channel-memory.service';
-import { ChannelMemoryCleanupService } from './memory/channel-memory-cleanup.service';
+import { ConversationMemoryService } from './memory/conversation-memory.service';
+import { ConversationMemoryCleanupService } from './memory/conversation-memory-cleanup.service';
 import { MemoryManagerService } from './memory/memory-manager.service';
 import { SkillService } from './memory/skill.service';
 import { SkillRetrievalService } from './memory/skill-retrieval.service';
@@ -50,7 +50,7 @@ import { HealthCheckService } from './common/health-check.service';
       OrchestrationCheckpointEntity,
       OrchestrationTriggerClaimEntity,
       DynamicProviderEntity,
-      ChannelMemoryEntity,
+      ConversationMemoryEntity,
       SkillEntity,
     ]),
     ToolsModule,
@@ -76,8 +76,8 @@ import { HealthCheckService } from './common/health-check.service';
     MockStrategy,
     CheckpointService,
     CheckpointCleanupService,
-    ChannelMemoryService,
-    ChannelMemoryCleanupService,
+    ConversationMemoryService,
+    ConversationMemoryCleanupService,
     MemoryManagerService,
     SkillService,
     SkillRetrievalService,
