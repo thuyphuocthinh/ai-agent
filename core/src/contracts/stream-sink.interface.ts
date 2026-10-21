@@ -1,4 +1,5 @@
 import { EStepExecutionStatus } from '@agent/core/constants';
+import { PersonaDto } from './dtos/supervisor.dto';
 
 export const DEFAULT_STREAM_KEY = 'main';
 export const STREAM_SINK = Symbol('STREAM_SINK');
@@ -28,6 +29,12 @@ export interface AgentStreamStep {
   text?: string;
   label?: string;
   kind?: 'synthesize';
+  // Định danh duy nhất của 1 lần gọi tool, dùng chung cho cặp tool_call /
+  // tool_result — để client ghép đúng kết quả với lệnh gọi khi cùng 1 tool bị
+  // gọi nhiều lần trong 1 turn. Sink cũ bỏ qua field này.
+  toolCallId?: string;
+  // Persona của bước vừa bắt đầu (chỉ có ở step_start của 1 delegation).
+  persona?: PersonaDto;
 }
 
 export interface IStreamSink {

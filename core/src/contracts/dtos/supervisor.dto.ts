@@ -5,10 +5,21 @@ export class AvailableAgentDto {
   description: string;
 }
 
+// Vai trò chuyên môn hoá do Supervisor sinh cho 1 bước (Hybrid Persona). CHỈ là
+// chỉ dẫn văn bản ghép vào system prompt của Worker — không bao giờ mở rộng
+// hay thu hẹp tập tool mà Worker cố định được cấp.
+export class PersonaDto {
+  role: string;
+  goal: string;
+  constraints?: string[];
+  tone?: string;
+}
+
 export class DelegationDto {
   agent: string;
   task: string;
   mustExecute?: boolean;
+  persona?: PersonaDto;
 }
 
 // Plan-and-Execute (xem accuracy.md) — thay cho SupervisorDecisionDto cũ.

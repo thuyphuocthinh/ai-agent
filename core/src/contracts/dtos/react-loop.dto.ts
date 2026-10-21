@@ -1,5 +1,6 @@
 import { ChatHistoryTurnDto } from './message-client.dto';
 import { EStepExecutionStatus } from '@agent/core/constants';
+import { PersonaDto } from './supervisor.dto';
 
 export class RunReactLoopRequestDto {
   prompt: string;
@@ -29,6 +30,9 @@ export class RunReactLoopRequestDto {
   // Không truyền = dùng DEFAULT_STREAM_KEY (an toàn cho các chỗ gọi ĐƠN,
   // không có rủi ro chạy song song cùng messageId).
   streamKey?: string;
+  // Persona Supervisor giao cho Worker ở bước này (xem PersonaDto) — optional,
+  // không truyền = Worker chạy với system prompt mặc định như cũ.
+  persona?: PersonaDto;
 }
 
 export class ToolCallTraceDto {

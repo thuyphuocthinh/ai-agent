@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { Logger } from '@nestjs/common';
 import { traceable } from 'langsmith/traceable';
 import {
@@ -253,6 +254,9 @@ export class ToolCallExecutor {
   ): Promise<string> {
     const displayName = `${this.dto.provider}.${name}`;
     const argsPreview = formatArgsPreview(args);
+    // 1 id cho MỖI lời gọi tool của model — gắn vào cả tool_call lẫn tool_result
+    // để client ghép đúng cặp khi cùng 1 tool bị gọi nhiều lần trong 1 turn.
+    const toolCallId = `call_${randomUUID()}`;
 
     if (this.riskGate.isDestructive(name)) {
       return this.handleDestructiveToolCall(
@@ -260,10 +264,17 @@ export class ToolCallExecutor {
         args,
         displayName,
         argsPreview,
+        toolCallId,
       );
     }
 
-    return this.executeTrackedToolCall(name, args, displayName, argsPreview);
+    return this.executeTrackedToolCall(
+      name,
+      args,
+      displayName,
+      argsPreview,
+      toolCallId,
+    );
   }
 
   private async executeTrackedToolCall(
@@ -271,6 +282,7 @@ export class ToolCallExecutor {
     args: Record<string, unknown>,
     displayName: string,
     argsPreview: string,
+    toolCallId: string,
   ): Promise<string> {
     const signature = `${name}:${JSON.stringify(args)}`;
     const attempts = this.repeatGuard.recordAttempt(signature);
@@ -278,15 +290,34 @@ export class ToolCallExecutor {
     if (attempts > 1) {
       const cached = this.repeatGuard.getCachedSuccess(signature);
       if (cached) {
-        return this.reuseCachedCall(displayName, argsPreview, attempts, cached);
+        return this.reuseCachedCall(
+          displayName,
+          argsPreview,
+          attempts,
+          cached,
+          toolCallId,
+        );
       }
     }
 
     if (attempts > ORCHESTRATION_CONSTANTS.MAX_SAME_TOOL_CALL_REPEATS) {
-      return this.blockRepeatedCall(name, displayName, argsPreview, attempts);
+      return this.blockRepeatedCall(
+        name,
+        displayName,
+        argsPreview,
+        attempts,
+        toolCallId,
+      );
     }
 
-    return this.runToolCall(name, args, displayName, argsPreview, signature);
+    return this.runToolCall(
+      name,
+      args,
+      displayName,
+      argsPreview,
+      signature,
+      toolCallId,
+    );
   }
 
   /** Risk Gate (Giai đoạn 3, HITL) — chặn TRƯỚC KHI thực thi, trừ khi model
@@ -296,6 +327,7 @@ export class ToolCallExecutor {
     args: Record<string, unknown>,
     displayName: string,
     argsPreview: string,
+    toolCallId: string,
   ): Promise<string> {
     const shortfallMessage = await this.riskGate.checkBulkInsertShortfall(
       displayName,
@@ -311,6 +343,7 @@ export class ToolCallExecutor {
         EStepExecutionStatus.ERROR,
         shortfallMessage,
         argsPreview,
+        toolCallId,
       );
       return shortfallMessage;
     }
@@ -324,6 +357,7 @@ export class ToolCallExecutor {
         args,
         displayName,
         argsPreview,
+        toolCallId,
       );
       this.riskGate.clearAccumulatorFor(args.query as string);
       return result;
@@ -343,16 +377,23 @@ export class ToolCallExecutor {
     argsPreview: string,
     attempts: number,
     cached: { resultPreview: string; feedText: string },
+    toolCallId: string,
   ): Promise<string> {
     this.logger.log(
       `tool_call ${displayName} lặp lại lần ${attempts}, ĐÚNG tham số đã thành công trước đó — dùng lại kết quả cũ, không gọi tool thật lần nữa`,
     );
-    await this.emitStep({ type: 'tool_call', tool: displayName, argsPreview });
+    await this.emitStep({
+      type: 'tool_call',
+      tool: displayName,
+      argsPreview,
+      toolCallId,
+    });
     await this.recordResult(
       displayName,
       EStepExecutionStatus.SUCCESS,
       cached.resultPreview,
       argsPreview,
+      toolCallId,
     );
     return cached.feedText;
   }
@@ -362,6 +403,7 @@ export class ToolCallExecutor {
     displayName: string,
     argsPreview: string,
     attempts: number,
+    toolCallId: string,
   ): Promise<string> {
     const otherToolNames = this.mcpTools
       .map((t) => t.name)
@@ -379,6 +421,7 @@ export class ToolCallExecutor {
       EStepExecutionStatus.ERROR,
       resultPreview,
       argsPreview,
+      toolCallId,
     );
     return resultPreview;
   }
@@ -389,9 +432,15 @@ export class ToolCallExecutor {
     displayName: string,
     argsPreview: string,
     signature: string,
+    toolCallId: string,
   ): Promise<string> {
     this.logger.log(`tool_call ${displayName} args=${JSON.stringify(args)}`);
-    await this.emitStep({ type: 'tool_call', tool: displayName, argsPreview });
+    await this.emitStep({
+      type: 'tool_call',
+      tool: displayName,
+      argsPreview,
+      toolCallId,
+    });
 
     let result: CallToolResponseDto;
     let text: string;
@@ -427,6 +476,7 @@ export class ToolCallExecutor {
           EStepExecutionStatus.ERROR,
           errorMessage,
           argsPreview,
+          toolCallId,
         );
         return capToolResultSize(
           errorMessage,
@@ -463,7 +513,13 @@ export class ToolCallExecutor {
       this.logger.log(`tool_result ${displayName} ok: ${resultPreview}`);
     }
 
-    await this.recordResult(displayName, status, resultPreview, argsPreview);
+    await this.recordResult(
+      displayName,
+      status,
+      resultPreview,
+      argsPreview,
+      toolCallId,
+    );
     const feedText = capToolResultSize(
       text,
       this.memoryManager.buildBudget(this.reactModelId).toolResultCharBudget,
@@ -479,8 +535,15 @@ export class ToolCallExecutor {
     status: EStepExecutionStatus,
     resultPreview: string,
     argsPreview?: string,
+    toolCallId?: string,
   ): Promise<void> {
-    await this.emitStep({ type: 'tool_result', tool, status, resultPreview });
+    await this.emitStep({
+      type: 'tool_result',
+      tool,
+      status,
+      resultPreview,
+      toolCallId,
+    });
     this.toolCalls.push({ tool, status, resultPreview, argsPreview });
   }
 
@@ -490,6 +553,7 @@ export class ToolCallExecutor {
     status?: EStepExecutionStatus;
     resultPreview?: string;
     argsPreview?: string;
+    toolCallId?: string;
   }): Promise<void> {
     return this.agentStream.emitStep(
       {

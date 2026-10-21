@@ -18,6 +18,8 @@ import { capToolResultSize } from '@agent/tools';
 import { MemoryManagerService } from '../../memory/memory-manager.service';
 import { ReactLoopRun } from './react-loop-run';
 import { ToolRepeatGuard } from './tool-repeat-guard';
+import { formatPersonaPrompt } from './persona-prompt.util';
+import { PersonaDto } from '../../contracts/dtos/supervisor.dto';
 
 // Ghi chú thiết kế đầy đủ (WHY): docs/orchestration/code-notes/react-loop.service.md
 // Logic chi tiết 1 lượt chạy (tool call, self-check, quantity-nudge...) nằm
@@ -86,6 +88,7 @@ export class ReactLoopService {
             reactModelId,
             signal,
             dto.workspaceId,
+            dto.persona,
           ),
         ]);
 
@@ -143,6 +146,7 @@ export class ReactLoopService {
     modelId: string,
     signal?: AbortSignal,
     workspaceId?: string,
+    persona?: PersonaDto,
   ): Promise<string> {
     const mcpResources = await this.mcpClient.getResources(
       provider,
@@ -170,6 +174,11 @@ export class ReactLoopService {
     );
 
     let systemInstruction = ORCHESTRATION_SYSTEM_PROMPT;
+    // Persona chỉ là chỉ dẫn văn bản — tập tool (mcpTools) ở run() không phụ thuộc vào nó.
+    const personaPrompt = formatPersonaPrompt(persona);
+    if (personaPrompt) {
+      systemInstruction += `\n\n${personaPrompt}`;
+    }
     const injectedResources = resourceContents.filter(Boolean).join('\n');
     if (injectedResources) {
       systemInstruction += `\n\nBạn có sẵn các Context/Resources sau trong bộ nhớ để tham khảo, tuyệt đối ưu tiên sử dụng thông tin này nếu liên quan đến câu hỏi của người dùng:\n${injectedResources}`;

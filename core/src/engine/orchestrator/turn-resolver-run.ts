@@ -26,6 +26,11 @@ import { buildOnToken } from './agent-stream-token.util';
 import { capRoundResultsWeighted } from '@agent/tools';
 import { MemoryManagerService } from '../../memory/memory-manager.service';
 import { hasPendingActionStep } from '../../common/pending-action-step.util';
+import { sanitizePersona } from '../loop/persona-prompt.util';
+import {
+  buildUngroundedNumbersDisclaimer,
+  verifyNumericFactConsistency,
+} from '../../security/numeric-fact-consistency.util';
 import {
   AnswerResult,
   ApprovalRequiredDelegateResult,
@@ -108,6 +113,11 @@ export class TurnResolverRun {
   private readonly rounds: SupervisorRoundDto[];
   private readonly toolCalls: ToolCallTraceDto[];
   private readonly signal?: AbortSignal;
+  // Kết quả các round ĐÃ CÓ trước khi lượt chạy này bắt đầu (resume sau HITL:
+  // toolCalls bắt đầu rỗng nhưng rounds mang kết quả cũ) — chỉ chúng mới được
+  // dùng làm nguồn đối soát số liệu; round chạy trong lượt này đối soát bằng
+  // output tool thật, không bằng chính lời tóm tắt của worker.
+  private readonly priorRoundResults: string[];
 
   private readonly repeatGuard = new ToolRepeatGuard();
 
@@ -130,6 +140,7 @@ export class TurnResolverRun {
     this.agents = options.agents;
     this.history = options.history;
     this.rounds = options.rounds;
+    this.priorRoundResults = options.rounds.map((r) => r.result);
     this.toolCalls = options.toolCalls;
     this.signal = options.signal;
 
@@ -443,7 +454,7 @@ export class TurnResolverRun {
       this.signal,
     );
     return buildAnswer(
-      await this.appendCumulativeQuantityDisclaimer(finalAnswer),
+      await this.appendDisclaimers(finalAnswer),
       this.toolCalls,
     );
   }
@@ -454,7 +465,7 @@ export class TurnResolverRun {
 
     if (this.rounds.length === 1) {
       return buildAnswer(
-        await this.appendCumulativeQuantityDisclaimer(this.rounds[0].result),
+        await this.appendDisclaimers(this.rounds[0].result),
         this.toolCalls,
       );
     }
@@ -494,7 +505,7 @@ export class TurnResolverRun {
         this.signal,
       );
       return buildAnswer(
-        await this.appendCumulativeQuantityDisclaimer(finalAnswer),
+        await this.appendDisclaimers(finalAnswer),
         this.toolCalls,
       );
     }
@@ -502,6 +513,38 @@ export class TurnResolverRun {
       answerHint || 'Xin lỗi, mình chưa có câu trả lời phù hợp.',
       this.toolCalls,
     );
+  }
+
+  // Gắn các cảnh báo vào câu trả lời cuối. Số liệu phải được đối soát TRƯỚC khi
+  // cảnh báo số lượng được nối vào, kẻo chính các con số trong cảnh báo đó bị
+  // coi là chưa có nguồn.
+  private async appendDisclaimers(answer: string): Promise<string> {
+    const numericDisclaimer = this.buildUngroundedNumbersDisclaimer(answer);
+    const withQuantity = await this.appendCumulativeQuantityDisclaimer(answer);
+    return numericDisclaimer
+      ? `${withQuantity}\n\n${numericDisclaimer}`
+      : withQuantity;
+  }
+
+  // Chống ảo giác số liệu (AC-6): mọi con số trong câu trả lời phải có trong
+  // prompt, lịch sử, kết quả round cũ (resume) hoặc output tool thật của turn.
+  // Chỉ cảnh báo, không chặn. Bỏ qua khi turn không gọi tool nào (không có nguồn
+  // dữ liệu thật để đối soát — câu trả lời đến từ kiến thức của model).
+  private buildUngroundedNumbersDisclaimer(answer: string): string | null {
+    if (this.toolCalls.length === 0) return null;
+
+    const { ungrounded } = verifyNumericFactConsistency(answer, [
+      this.prompt,
+      ...this.history.map((turn) => turn.text),
+      ...this.priorRoundResults,
+      ...this.toolCalls.map((call) => call.resultPreview ?? ''),
+    ]);
+    if (ungrounded.length === 0) return null;
+
+    this.logger.warn(
+      `[numeric-fact-consistency] ${ungrounded.length} số trong câu trả lời không có trong nguồn: ${ungrounded.join(', ')}`,
+    );
+    return buildUngroundedNumbersDisclaimer(ungrounded);
   }
 
   // HH1 (manual_test_bank_heavy.md) — Fix #3 (react-loop-run.ts) chỉ so
@@ -634,6 +677,8 @@ export class TurnResolverRun {
     }
     const promptWithContext = contextBlocks.join('\n\n');
     const streamKey = `r${round}-${targetAgent.provider}`;
+    // Persona do LLM sinh nên sanitize trước khi đưa ra client (giống khi tiêm prompt).
+    const persona = sanitizePersona(delegation.persona);
     await this.agentStream
       .emitStep(
         {
@@ -643,7 +688,11 @@ export class TurnResolverRun {
           channelType,
           streamKey,
         },
-        { type: 'step_start', label: `${targetAgent.label}: ${task}` },
+        {
+          type: 'step_start',
+          label: `${targetAgent.label}: ${task}`,
+          ...(persona ? { persona } : {}),
+        },
       )
       .catch(() => {});
     try {
@@ -658,6 +707,7 @@ export class TurnResolverRun {
           channelType,
           history: this.history,
           streamKey,
+          persona: delegation.persona,
         },
         this.signal,
         this.repeatGuard,

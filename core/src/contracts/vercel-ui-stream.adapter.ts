@@ -1,0 +1,290 @@
+import { Logger } from '@nestjs/common';
+// `import type` bị xoá lúc biên dịch: adapter không kéo runtime ESM của `ai`
+// vào core, chỉ mượn hợp đồng UIMessageChunk của v7.
+import type { UIMessageChunk } from 'ai';
+import {
+  AgentStreamContext,
+  AgentStreamStep,
+  DEFAULT_STREAM_KEY,
+} from './stream-sink.interface';
+
+/** Phần của AgentStreamService mà adapter cần (đã có sẵn hook `onStep`). */
+export interface AgentStepSource {
+  onStep(
+    listener: (context: AgentStreamContext, step: AgentStreamStep) => void,
+  ): () => void;
+}
+
+export type UiChunkWriter = (chunk: UIMessageChunk) => void | Promise<void>;
+
+export interface VercelUiStreamOptions {
+  /** messageId của tin nhắn bot (reply) — chỉ event của message này được chuyển tiếp. */
+  messageId: string;
+  write: UiChunkWriter;
+}
+
+const EMPTY_TOOL_INPUT = {};
+
+// argsPreview là chuỗi để hiển thị: JSON của object (đã stringify), hoặc
+// code/SQL/chuỗi đơn nguyên văn. Chỉ object mới dùng được làm `input`.
+function toToolInput(argsPreview?: string): unknown {
+  if (!argsPreview) return EMPTY_TOOL_INPUT;
+  try {
+    const parsed: unknown = JSON.parse(argsPreview);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed;
+    }
+  } catch {
+    // không phải JSON — rơi xuống nhánh bọc bên dưới
+  }
+  return { preview: argsPreview };
+}
+
+/**
+ * Adapter Layer 1: đổi AgentStreamStep của 1 turn thành UI Message Stream của
+ * Vercel AI SDK v7 (`useChat` đọc được). Engine không biết adapter này tồn tại —
+ * nó chỉ nghe qua AgentStreamService.onStep, nên các sink khác (CLI, DB) vẫn
+ * nhận nguyên vẹn mọi event.
+ *
+ * Luôn giữ stream đúng cấu trúc: text được đóng trước tool/step/finish, mỗi
+ * tool-output có tool-input đi trước, và `finish` chỉ phát một lần.
+ *
+ * Dùng cho HIỂN THỊ: argsPreview/resultPreview là bản xem trước, không dùng để
+ * chạy lại tool.
+ */
+export class VercelUiStreamAdapter {
+  private readonly logger = new Logger(VercelUiStreamAdapter.name);
+  private readonly messageId: string;
+  private readonly write: UiChunkWriter;
+
+  private writeChain: Promise<void> = Promise.resolve();
+  private detachListener?: () => void;
+  private broken = false;
+  private started = false;
+  private stepOpen = false;
+  private finishedFlag = false;
+  private partCounter = 0;
+  private fallbackCallCounter = 0;
+
+  // Text part đang mở theo streamKey (các agent chạy song song có streamKey riêng).
+  private readonly openTextParts = new Map<string, string>();
+  // Phản chiếu `confirmedText` của ReactLoop theo streamKey, để biết resync()
+  // có thật sự sửa nội dung đã stream hay không.
+  private readonly confirmedText = new Map<string, string>();
+  private readonly announcedToolCalls = new Set<string>();
+  // Ghép call/result theo tên tool khi producer cũ không gửi toolCallId.
+  private readonly pendingIdsByTool = new Map<string, string[]>();
+
+  constructor(options: VercelUiStreamOptions) {
+    this.messageId = options.messageId;
+    this.write = options.write;
+  }
+
+  get finished(): boolean {
+    return this.finishedFlag;
+  }
+
+  /** Đăng ký vào nguồn event; trả hàm huỷ đăng ký (cũng tự gọi khi turn kết thúc). */
+  attach(source: AgentStepSource): () => void {
+    this.detachListener?.();
+    const unsubscribe = source.onStep((context, step) =>
+      this.handle(context, step),
+    );
+    const detach = () => {
+      unsubscribe();
+      if (this.detachListener === detach) this.detachListener = undefined;
+    };
+    this.detachListener = detach;
+    return detach;
+  }
+
+  /** Chờ mọi chunk đã xếp hàng được ghi xong (dùng trước khi đóng response). */
+  flush(): Promise<void> {
+    return this.writeChain;
+  }
+
+  handle(context: AgentStreamContext, step: AgentStreamStep): void {
+    if (this.finishedFlag || this.broken) return;
+    if (context.messageId !== this.messageId) return;
+
+    const streamKey = context.streamKey ?? DEFAULT_STREAM_KEY;
+    switch (step.type) {
+      case 'step_start':
+        return this.onStepStart(streamKey, step);
+      case 'token':
+        return this.onToken(streamKey, step.text ?? '');
+      case 'resync':
+        return this.onResync(streamKey, step.text ?? '');
+      case 'tool_call':
+        return this.onToolCall(streamKey, step);
+      case 'tool_result':
+        return this.onToolResult(streamKey, step);
+      case 'done':
+        return this.onDone();
+    }
+  }
+
+  private onStepStart(streamKey: string, step: AgentStreamStep): void {
+    this.closeStep();
+    this.openStep();
+    if (step.persona) {
+      this.emit({ type: 'data-persona', id: streamKey, data: step.persona });
+    }
+  }
+
+  private onToken(streamKey: string, text: string): void {
+    if (!text) return;
+    this.openStep();
+    this.confirmedText.set(
+      streamKey,
+      (this.confirmedText.get(streamKey) ?? '') + text,
+    );
+
+    let id = this.openTextParts.get(streamKey);
+    if (!id) {
+      id = `text-${++this.partCounter}`;
+      this.openTextParts.set(streamKey, id);
+      this.emit({ type: 'text-start', id });
+    }
+    this.emit({ type: 'text-delta', id, delta: text });
+  }
+
+  // Stream chỉ nối thêm (append-only), không thu hồi được text đã gửi. Khi
+  // engine sửa lại nội dung (VD bỏ phần self-check bị revert) ta đóng text part
+  // hiện tại và báo nội dung chuẩn bằng data-resync để UI nào quan tâm thì thay.
+  private onResync(streamKey: string, text: string): void {
+    const streamed = this.confirmedText.get(streamKey) ?? '';
+    this.closeText(streamKey);
+    if (text && text !== streamed) {
+      this.openStep();
+      this.emit({ type: 'data-resync', id: streamKey, data: { text } });
+    }
+    this.confirmedText.set(streamKey, text);
+  }
+
+  private onToolCall(streamKey: string, step: AgentStreamStep): void {
+    this.openStep();
+    this.closeText(streamKey);
+
+    const toolName = step.tool ?? 'unknown';
+    const toolCallId = step.toolCallId ?? this.registerFallbackId(toolName);
+    if (this.announcedToolCalls.has(toolCallId)) return;
+
+    this.announceToolCall(toolCallId, toolName, toToolInput(step.argsPreview));
+  }
+
+  private onToolResult(streamKey: string, step: AgentStreamStep): void {
+    this.openStep();
+    this.closeText(streamKey);
+
+    const toolName = step.tool ?? 'unknown';
+    const toolCallId =
+      step.toolCallId ??
+      this.pendingIdsByTool.get(toolName)?.shift() ??
+      this.nextFallbackId();
+
+    // Kết quả mồ côi (VD tool bị chặn vì lặp quá nhiều lần, chưa từng phát
+    // tool_call) vẫn cần 1 tool-input đi trước để part hợp lệ.
+    if (!this.announcedToolCalls.has(toolCallId)) {
+      this.announceToolCall(toolCallId, toolName, EMPTY_TOOL_INPUT);
+    }
+
+    if (step.status === 'error') {
+      this.emit({
+        type: 'tool-output-error',
+        toolCallId,
+        errorText: step.resultPreview || 'Tool execution failed',
+        dynamic: true,
+      });
+      return;
+    }
+    this.emit({
+      type: 'tool-output-available',
+      toolCallId,
+      output: step.resultPreview ?? '',
+      dynamic: true,
+    });
+  }
+
+  private onDone(): void {
+    this.closeStep();
+    this.ensureStarted();
+    this.emit({ type: 'finish', finishReason: 'stop' });
+    this.finishedFlag = true;
+    this.detachListener?.();
+  }
+
+  private announceToolCall(
+    toolCallId: string,
+    toolName: string,
+    input: unknown,
+  ): void {
+    this.announcedToolCalls.add(toolCallId);
+    this.emit({
+      type: 'tool-input-available',
+      toolCallId,
+      toolName,
+      input,
+      dynamic: true,
+    });
+  }
+
+  private nextFallbackId(): string {
+    return `${this.messageId}-tool-${++this.fallbackCallCounter}`;
+  }
+
+  private registerFallbackId(toolName: string): string {
+    const id = this.nextFallbackId();
+    const queue = this.pendingIdsByTool.get(toolName) ?? [];
+    queue.push(id);
+    this.pendingIdsByTool.set(toolName, queue);
+    return id;
+  }
+
+  private ensureStarted(): void {
+    if (this.started) return;
+    this.started = true;
+    this.emit({ type: 'start', messageId: this.messageId });
+  }
+
+  private openStep(): void {
+    this.ensureStarted();
+    if (this.stepOpen) return;
+    this.stepOpen = true;
+    this.emit({ type: 'start-step' });
+  }
+
+  private closeText(streamKey: string): void {
+    const id = this.openTextParts.get(streamKey);
+    if (!id) return;
+    this.openTextParts.delete(streamKey);
+    this.emit({ type: 'text-end', id });
+  }
+
+  private closeStep(): void {
+    for (const streamKey of [...this.openTextParts.keys()]) {
+      this.closeText(streamKey);
+    }
+    if (!this.stepOpen) return;
+    this.stepOpen = false;
+    this.emit({ type: 'finish-step' });
+  }
+
+  // Ghi tuần tự qua 1 hàng đợi (writer có thể async). Lỗi ghi (VD client đã
+  // ngắt kết nối) không bao giờ ném ngược vào engine: ghi nhận, ngừng gửi tiếp
+  // và huỷ đăng ký để không rò listener.
+  private emit(chunk: UIMessageChunk): void {
+    this.writeChain = this.writeChain.then(async () => {
+      if (this.broken) return;
+      try {
+        await this.write(chunk);
+      } catch (error) {
+        this.broken = true;
+        this.detachListener?.();
+        this.logger.warn(
+          `UI stream write failed, stopping adapter for message ${this.messageId}: ${(error as Error).message}`,
+        );
+      }
+    });
+  }
+}
