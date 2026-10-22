@@ -1,5 +1,6 @@
 import { Logger } from '@nestjs/common';
 import {
+  EStepExecutionStatus,
   ORCHESTRATION_CONSTANTS,
   ORCHESTRATION_SELF_CHECK_PROMPT,
 } from '@agent/core/constants';
@@ -24,6 +25,10 @@ import { ToolRepeatGuard } from './tool-repeat-guard';
 import { InsertAccumulator } from './insert-accumulator';
 import { ToolRiskGate } from './tool-risk-gate';
 import { ToolCallExecutor } from './tool-call-executor';
+import { ToolCallTraceDto } from '../../contracts/dtos/react-loop.dto';
+
+const METADATA_TOOL_REGEX =
+  /schema|list_tables|describe|columns|metadata|list_channels|list_spreadsheets|list_repositories/i;
 
 export interface ReactLoopRunOptions {
   dto: RunReactLoopRequestDto;
@@ -196,6 +201,18 @@ export class ReactLoopRun {
       return { done: true, response: { answer, toolCalls } };
     }
 
+    // Fast-path: nếu đã có ít nhất 1 tool gọi dữ liệu/hành động thật (không chỉ metadata/schema)
+    // thành công và số lượng (nếu có) đã khớp, thì bỏ qua self-check nudge để tiết kiệm 1 LLM call (1.5-2.5s).
+    if (this.hasRealDataExecution(toolCalls)) {
+      this.logger.log(
+        `run() done at step=${step} toolCalls=${toolCalls.length} (fast-path: real data fetched, bypassing self-check)`,
+      );
+      const answer =
+        answerBeforeSelfCheck || 'Xin lỗi, mình chưa có câu trả lời phù hợp.';
+      resync(answer);
+      return { done: true, response: { answer, toolCalls } };
+    }
+
     this.logger.log('self-check nudge triggered');
     const selfCheckTurn = await this.sendMessage(
       ORCHESTRATION_SELF_CHECK_PROMPT,
@@ -257,6 +274,14 @@ export class ReactLoopRun {
           { signal: this.signal, canRetry: () => !streamedAnything },
         ),
       this.signal,
+    );
+  }
+
+  private hasRealDataExecution(toolCalls: ToolCallTraceDto[]): boolean {
+    return toolCalls.some(
+      (tc) =>
+        tc.status === EStepExecutionStatus.SUCCESS &&
+        !METADATA_TOOL_REGEX.test(tc.tool),
     );
   }
 

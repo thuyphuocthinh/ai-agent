@@ -239,7 +239,7 @@ export class TurnResolverRun {
     | { done: false; steps: DelegationDto[]; needsPlan: boolean }
   > {
     const lastRound = this.rounds[this.rounds.length - 1];
-    const outcome = await this.runEvaluateAndDecide(lastRound, steps);
+    const outcome = await this.runEvaluateAndDecide(lastRound, steps, true);
     if (outcome === 'finalize') {
       return { done: true, answer: await this.finalizeAnswer() };
     }
@@ -633,7 +633,21 @@ export class TurnResolverRun {
   private async runEvaluateAndDecide(
     completedRound: SupervisorRoundDto,
     remainingSteps: DelegationDto[],
+    forceEvaluate = false,
   ): Promise<EvaluateOutcome> {
+    const hasPendingAction = hasPendingActionStep(remainingSteps);
+    const roundHasError =
+      completedRound.result.includes('Lỗi') ||
+      completedRound.result.includes('Error') ||
+      completedRound.result.includes('chưa khả dụng');
+
+    if (!forceEvaluate && hasPendingAction && !roundHasError) {
+      this.logger.log(
+        `runEvaluateAndDecide: fast-path skipping evaluate() because remaining steps have pending actions (${remainingSteps.length} steps left)`,
+      );
+      return ESupervisorVerdict.CONTINUE;
+    }
+
     const verdict = await this.supervisor.evaluate(
       this.prompt,
       completedRound,

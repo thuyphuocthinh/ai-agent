@@ -92,7 +92,11 @@ describe('TurnResolverService (Plan-and-Execute, xem accuracy.md)', () => {
     service = module.get<TurnResolverService>(TurnResolverService);
   });
 
-  afterEach(() => jest.clearAllMocks());
+  afterEach(() => {
+    jest.clearAllMocks();
+    mockSupervisor.evaluate.mockReset();
+    mockSupervisor.evaluate.mockResolvedValue({ verdict: 'done' });
+  });
 
   const resolve = (jobData: IProcessAiTriggerJobData = data) =>
     service.resolveAnswer(jobData, replyMessageId);
@@ -367,9 +371,7 @@ describe('TurnResolverService (Plan-and-Execute, xem accuracy.md)', () => {
         answer: 'Đã tạo issue #12',
         toolCalls: [{ tool: 'github.create_issue', status: 'success' }],
       });
-    mockSupervisor.evaluate
-      .mockResolvedValueOnce({ verdict: 'continue' }) // sau bước 1
-      .mockResolvedValueOnce({ verdict: 'done' }); // sau bước 2
+    mockSupervisor.evaluate.mockResolvedValueOnce({ verdict: 'done' }); // sau bước 2 (bước 1 fast-path skip evaluate)
     mockSupervisor.synthesize.mockResolvedValue(
       'Đã tìm khách VIP và tạo issue GitHub nhắc follow-up.',
     );

@@ -114,21 +114,12 @@ export const PLAYGROUND_HTML = /* html */ `<!doctype html>
   }
   @keyframes pulse-subtle { 0%, 100% { opacity: 0.3; } 50% { opacity: 1; } }
 
-  /* Parallel Agents Grid (Chạy song song) */
+  /* Sequential Agents Flow (Chạy tuần tự từng bước) */
   .agents-grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
+    display: flex;
+    flex-direction: column;
     gap: 12px;
     width: 100%;
-  }
-  @media (max-width: 640px) {
-    .agents-grid {
-      grid-template-columns: 1fr;
-    }
-  }
-  /* Nếu lẻ card cuối cùng HOẶC chỉ có 1 card duy nhất -> Chiếm trọn 100% width */
-  .agents-grid > .agent-card:last-child:nth-child(odd) {
-    grid-column: 1 / -1;
   }
 
   /* Workflow Progress Bar (Cố định ngay trên phần nhập câu hỏi) */

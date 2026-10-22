@@ -77,6 +77,7 @@ describe('1 turn thật → AgentStreamService → VercelUiStreamAdapter → ai@
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    mockSession.sendMessage.mockReset();
     mockStrategy.startChat.mockReturnValue(mockSession);
     mockStrategy.generateStructured.mockResolvedValue({ requiredCount: 0 });
     mockMcp.getTools.mockResolvedValue([
@@ -180,10 +181,6 @@ describe('1 turn thật → AgentStreamService → VercelUiStreamAdapter → ai@
         onToken?.(answer.slice(0, 10));
         onToken?.(answer.slice(10));
         return { text: answer, toolCalls: [] };
-      })
-      .mockImplementationOnce(async (_input: unknown, onToken?: (chunk: string) => void) => {
-        onToken?.(' (đã tự kiểm tra lại)');
-        return { text: `${answer} (đã tự kiểm tra lại)`, toolCalls: [] };
       });
   };
 
@@ -249,7 +246,22 @@ describe('1 turn thật → AgentStreamService → VercelUiStreamAdapter → ai@
   });
 
   it('reports the engine-corrected text when the self-check round is reverted (data-resync)', async () => {
-    scriptModel('Doanh thu là 1.250.000đ.');
+    mockMcp.getTools.mockResolvedValue([
+      { name: 'get_database_schema', description: 'schema', inputSchema: {} },
+    ]);
+    mockSession.sendMessage
+      .mockResolvedValueOnce({
+        text: '',
+        toolCalls: [{ name: 'get_database_schema', args: {} }],
+      })
+      .mockImplementationOnce(async (_input: unknown, onToken?: (chunk: string) => void) => {
+        onToken?.('Doanh thu là 1.250.000đ.');
+        return { text: 'Doanh thu là 1.250.000đ.', toolCalls: [] };
+      })
+      .mockImplementationOnce(async (_input: unknown, onToken?: (chunk: string) => void) => {
+        onToken?.(' (đã tự kiểm tra lại)');
+        return { text: 'Doanh thu là 1.250.000đ. (đã tự kiểm tra lại)', toolCalls: [] };
+      });
 
     const { message } = await runTurn();
 

@@ -19,6 +19,8 @@ export interface QuantityCheckResult {
   achievedCount: number;
 }
 
+const HAS_DIGITS_REGEX = /\d+/;
+
 function generate<T>(
   strategy: LlmStrategy,
   model: string,
@@ -60,6 +62,11 @@ export async function extractRequiredCount(
   logger: Logger,
   signal?: AbortSignal,
 ): Promise<number> {
+  // Fast-path: Nếu câu task không chứa bất kỳ chữ số nào (0-9), chắc chắn không có yêu cầu số lượng cụ thể
+  if (!HAS_DIGITS_REGEX.test(task)) {
+    return 0;
+  }
+
   try {
     const required = await generate<QuantityCheckRequiredDto>(
       strategy,

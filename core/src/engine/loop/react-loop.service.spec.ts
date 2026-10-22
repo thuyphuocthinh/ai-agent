@@ -105,6 +105,7 @@ describe('ReactLoopService', () => {
     // resync()/onToken() luôn gọi emitStep(...).catch(...) — cần resolve thật
     // (không phải undefined mặc định của jest.fn()) để .catch() không throw.
     mockAgentStream.emitStep.mockResolvedValue(undefined);
+    mockSession.sendMessage.mockResolvedValue({ text: 'ok', toolCalls: [] });
     mockStrategy.generateStructured.mockResolvedValue({ requiredCount: 0 });
 
     const module: TestingModule = await Test.createTestingModule({
@@ -122,7 +123,13 @@ describe('ReactLoopService', () => {
     service = module.get<ReactLoopService>(ReactLoopService);
   });
 
-  afterEach(() => jest.clearAllMocks());
+  afterEach(() => {
+    jest.clearAllMocks();
+    mockSession.sendMessage.mockReset();
+    mockSession.sendMessage.mockResolvedValue({ text: 'ok', toolCalls: [] });
+    mockStrategy.generateStructured.mockReset();
+    mockStrategy.generateStructured.mockResolvedValue({ requiredCount: 0 });
+  });
 
   it('returns the answer immediately when the model never calls a tool', async () => {
     mockSession.sendMessage.mockResolvedValueOnce({
@@ -236,7 +243,10 @@ describe('ReactLoopService', () => {
         })
         .mockResolvedValueOnce({ text: 'Đã tạo đủ 5.', toolCalls: [] });
 
-      const result = await service.run(baseDto);
+      const result = await service.run({
+        ...baseDto,
+        prompt: 'tạo 5 sản phẩm ngẫu nhiên',
+      });
 
       expect(result.answer).toBe('Đã tạo đủ 5.');
       expect(mockSession.sendMessage).toHaveBeenNthCalledWith(
@@ -263,7 +273,10 @@ describe('ReactLoopService', () => {
         .mockResolvedValueOnce({ text: 'Đã tạo xong.', toolCalls: [] })
         .mockResolvedValueOnce({ text: 'vẫn giữ nguyên', toolCalls: [] });
 
-      const result = await service.run(baseDto);
+      const result = await service.run({
+        ...baseDto,
+        prompt: 'tạo 5 sản phẩm ngẫu nhiên',
+      });
 
       expect(result.answer).toBe(
         'Đã tạo xong.\n\n⚠️ Yêu cầu cần xử lý đúng 5, nhưng theo kết quả tool THẬT chỉ xác nhận được 1.',
@@ -283,7 +296,10 @@ describe('ReactLoopService', () => {
         .mockResolvedValueOnce({ text: 'Đây là schema.', toolCalls: [] })
         .mockResolvedValueOnce({ text: 'đã xác nhận', toolCalls: [] });
 
-      const result = await service.run(baseDto);
+      const result = await service.run({
+        ...baseDto,
+        prompt: 'xem thông tin đơn hàng số 1024',
+      });
 
       expect(result.answer).toBe('Đây là schema.');
       expect(mockStrategy.generateStructured).toHaveBeenCalledTimes(1);
@@ -295,7 +311,7 @@ describe('ReactLoopService', () => {
       );
     });
 
-    it('falls through to the freeform self-check when the required and achieved counts already match', async () => {
+    it('bypasses self-check when real data tool succeeded and required count matches', async () => {
       mockStrategy.generateStructured
         .mockResolvedValueOnce({ requiredCount: 3 })
         .mockResolvedValueOnce({ achievedCount: 3 });
@@ -304,14 +320,16 @@ describe('ReactLoopService', () => {
           text: '',
           toolCalls: [{ name: 'execute_write_query', args: {} }],
         })
-        .mockResolvedValueOnce({ text: 'Đã tạo đủ 3.', toolCalls: [] })
-        .mockResolvedValueOnce({ text: 'đã xác nhận', toolCalls: [] });
+        .mockResolvedValueOnce({ text: 'Đã tạo đủ 3.', toolCalls: [] });
 
-      const result = await service.run(baseDto);
+      const result = await service.run({
+        ...baseDto,
+        prompt: 'tạo 3 sản phẩm ngẫu nhiên',
+      });
 
       expect(result.answer).toBe('Đã tạo đủ 3.');
-      expect(mockSession.sendMessage).toHaveBeenNthCalledWith(
-        3,
+      expect(mockSession.sendMessage).toHaveBeenCalledTimes(2);
+      expect(mockSession.sendMessage).not.toHaveBeenCalledWith(
         ORCHESTRATION_SELF_CHECK_PROMPT,
         expect.any(Function),
         expect.anything(),
@@ -330,7 +348,10 @@ describe('ReactLoopService', () => {
         .mockResolvedValueOnce({ text: 'Đây là schema.', toolCalls: [] })
         .mockResolvedValueOnce({ text: 'đã xác nhận', toolCalls: [] });
 
-      const result = await service.run(baseDto);
+      const result = await service.run({
+        ...baseDto,
+        prompt: 'tạo 5 sản phẩm ngẫu nhiên',
+      });
 
       expect(result.answer).toBe('Đây là schema.');
       expect(mockSession.sendMessage).toHaveBeenNthCalledWith(
@@ -373,7 +394,7 @@ describe('ReactLoopService', () => {
         ],
       })
       .mockResolvedValueOnce({ text: 'đã tổng hợp xong 2 bảng', toolCalls: [] })
-      .mockResolvedValueOnce({ text: 'xác nhận đã xong', toolCalls: [] });
+
 
     let activeCalls = 0;
     let maxConcurrent = 0;
@@ -423,7 +444,7 @@ describe('ReactLoopService', () => {
         ],
       })
       .mockResolvedValueOnce({ text: 'đã thêm xong 2 sản phẩm', toolCalls: [] })
-      .mockResolvedValueOnce({ text: 'xác nhận đã xong', toolCalls: [] });
+
 
     const result = await service.run(baseDto);
 
@@ -1374,8 +1395,7 @@ describe('ReactLoopService', () => {
         .mockResolvedValueOnce({
           text: 'đã tạo xong 5 sản phẩm',
           toolCalls: [],
-        })
-        .mockResolvedValueOnce({ text: 'đã xác nhận', toolCalls: [] });
+        });
 
       const result = await service.run({
         ...baseDto,
@@ -1440,12 +1460,7 @@ describe('ReactLoopService', () => {
         .mockResolvedValueOnce({
           text: 'đã tạo xong 5 sản phẩm (lần 2)',
           toolCalls: [],
-        })
-        // Self-check round (handleNoMoreToolCalls) — checkQuantity() tự gọi lại
-        // extractRequiredCount() riêng, không dùng chung mock đã cấp cho
-        // getRequiredCount() nên rơi về 0 (an toàn, khớp đúng test gốc), bỏ
-        // qua nhánh nudge, tới thẳng self-check prompt.
-        .mockResolvedValueOnce({ text: 'đã xác nhận', toolCalls: [] });
+        });
 
       const result = await service.run({
         ...baseDto,
@@ -1504,8 +1519,7 @@ describe('ReactLoopService', () => {
         .mockResolvedValueOnce({
           text: 'đã tạo xong 3 khách hàng',
           toolCalls: [],
-        })
-        .mockResolvedValueOnce({ text: 'đã xác nhận', toolCalls: [] });
+        });
 
       const result = await service.run({
         ...baseDto,
@@ -1543,8 +1557,7 @@ describe('ReactLoopService', () => {
         .mockResolvedValueOnce({
           text: 'đã thêm khách hàng mới',
           toolCalls: [],
-        })
-        .mockResolvedValueOnce({ text: 'đã xác nhận', toolCalls: [] });
+        });
 
       const result = await service.run({
         ...baseDto,

@@ -51,9 +51,36 @@ describe('checkQuantity', () => {
 
   afterEach(() => jest.clearAllMocks());
 
+  it('fast-paths to 0 without any LLM call when task contains no digits', async () => {
+    const result = await extractRequiredCount(
+      'xem thông tin người dùng Nguyễn Văn A',
+      mockStrategy,
+      'gpt-4o-mini',
+      mockCircuitBreaker as any,
+      logger,
+    );
+
+    expect(result).toBe(0);
+    expect(mockStrategy.generateStructured).not.toHaveBeenCalled();
+  });
+
   it('returns requiredCount=0 without an achieved-count call when the task states no explicit quantity', async () => {
     mockStrategy.generateStructured.mockResolvedValueOnce({ requiredCount: 0 });
 
+    const result = await checkQuantity(
+      'xem chi tiết đơn hàng số 1024',
+      '',
+      mockStrategy,
+      'gpt-4o-mini',
+      mockCircuitBreaker as any,
+      logger,
+    );
+
+    expect(result).toEqual({ requiredCount: 0, achievedCount: 0 });
+    expect(mockStrategy.generateStructured).toHaveBeenCalledTimes(1);
+  });
+
+  it('fast-paths checkQuantity to requiredCount=0 without any LLM call when task contains no digits', async () => {
     const result = await checkQuantity(
       'xem schema bảng Customers',
       '',
@@ -64,7 +91,7 @@ describe('checkQuantity', () => {
     );
 
     expect(result).toEqual({ requiredCount: 0, achievedCount: 0 });
-    expect(mockStrategy.generateStructured).toHaveBeenCalledTimes(1);
+    expect(mockStrategy.generateStructured).not.toHaveBeenCalled();
   });
 
   it('returns both counts when the task states an explicit quantity', async () => {
