@@ -82,6 +82,7 @@ describe('VercelUiStreamAdapter (AC-2, AC-3, AC-7)', () => {
       expect(types(chunks)).toEqual([
         'start',
         'start-step',
+        'data-status',
         'text-start',
         'text-delta',
         'text-delta',
@@ -137,6 +138,44 @@ describe('VercelUiStreamAdapter (AC-2, AC-3, AC-7)', () => {
         .filter((p) => p.type === 'text')
         .map((p) => (p as { text: string }).text);
       expect(texts.sort()).toEqual(['A1 A2', 'B1 B2']);
+    });
+
+    it('handles parallel sub-agents starting and streaming concurrently without clobbering text or stranding status', async () => {
+      const personaA = { role: 'SQL Analyst', goal: 'Get revenue' };
+      const personaB = { role: 'Jira Tracker', goal: 'Count bugs' };
+
+      const { chunks } = await run([
+        [{ type: 'step_start', label: 'Planning...', kind: 'planning' }, { streamKey: 'planning' }],
+        [{ type: 'step_start', label: 'SQL Server: get revenue', persona: personaA }, { streamKey: 'r0-sql' }],
+        [{ type: 'step_start', label: 'Jira: count bugs', persona: personaB }, { streamKey: 'r1-jira' }],
+        [{ type: 'token', text: 'Revenue: ' }, { streamKey: 'r0-sql' }],
+        [{ type: 'token', text: 'Bugs: ' }, { streamKey: 'r1-jira' }],
+        [{ type: 'token', text: '$1,000' }, { streamKey: 'r0-sql' }],
+        [{ type: 'token', text: '5 open' }, { streamKey: 'r1-jira' }],
+        [{ type: 'done' }],
+      ]);
+
+      const message = await readMessage(chunks);
+      expect(message.id).toBe(MESSAGE_ID);
+
+      expect(message.parts).toContainEqual(
+        expect.objectContaining({ type: 'data-persona', data: personaA }),
+      );
+      expect(message.parts).toContainEqual(
+        expect.objectContaining({ type: 'data-persona', data: personaB }),
+      );
+
+      expect(message.parts).toContainEqual(
+        expect.objectContaining({ type: 'data-status', data: { label: 'SQL Server: get revenue' } }),
+      );
+      expect(message.parts).toContainEqual(
+        expect.objectContaining({ type: 'data-status', data: { label: 'Jira: count bugs' } }),
+      );
+
+      const texts = message.parts
+        .filter((p) => p.type === 'text')
+        .map((p) => (p as { text: string }).text);
+      expect(texts.sort()).toEqual(['Bugs: 5 open', 'Revenue: $1,000']);
     });
   });
 
@@ -274,6 +313,62 @@ describe('VercelUiStreamAdapter (AC-2, AC-3, AC-7)', () => {
       const { chunks } = await run([[{ type: 'step_start', label: 'x' }]]);
 
       expect(types(chunks)).not.toContain('data-persona');
+    });
+  });
+
+  describe('planning and step status (AC-8)', () => {
+    it('emits data-status when step_start has a label (planning or worker delegation)', async () => {
+      const { chunks } = await run([
+        [
+          {
+            type: 'step_start',
+            label: '🧠 Đang phân tích yêu cầu và lập kế hoạch...',
+            kind: 'planning',
+          },
+          { streamKey: 'planning' },
+        ],
+        [{ type: 'done' }],
+      ]);
+
+      const statusChunk = chunks.find((c) => (c.type as string) === 'data-status');
+      expect(statusChunk).toBeDefined();
+      expect(statusChunk).toMatchObject({
+        type: 'data-status',
+        id: 'planning',
+        data: {
+          label: '🧠 Đang phân tích yêu cầu và lập kế hoạch...',
+          kind: 'planning',
+        },
+      });
+    });
+
+    it('emits no data-status when step_start has no label', async () => {
+      const { chunks } = await run([[{ type: 'step_start' }], [{ type: 'done' }]]);
+      expect(types(chunks)).not.toContain('data-status');
+    });
+  });
+
+  describe('tool calls with friendlySummary (AC-9)', () => {
+    it('passes friendlySummary as title and in toolMetadata of tool-input-available', async () => {
+      const { chunks } = await run([
+        [
+          {
+            type: 'tool_call',
+            tool: 'sql_server.execute_write_query',
+            toolCallId: 'call-1',
+            argsPreview: '{"query":"UPDATE Orders SET Status=\'Done\'"}',
+            friendlySummary: '✏️ Cập nhật dữ liệu bảng Orders',
+          },
+        ],
+        [{ type: 'done' }],
+      ]);
+
+      const toolChunk = chunks.find((c) => c.type === 'tool-input-available') as any;
+      expect(toolChunk).toBeDefined();
+      expect(toolChunk.title).toBe('✏️ Cập nhật dữ liệu bảng Orders');
+      expect(toolChunk.toolMetadata).toEqual({
+        friendlySummary: '✏️ Cập nhật dữ liệu bảng Orders',
+      });
     });
   });
 

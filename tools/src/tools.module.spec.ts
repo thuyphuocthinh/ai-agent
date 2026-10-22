@@ -43,23 +43,36 @@ describe('ToolsModule MOCK_TOOLS switch (AC-8)', () => {
     expect(auth.useClass.name).toBe('MockMcpAuthClientService');
   });
 
-  it('lets the Supervisor list the mock agent by giving sql_server an endpoint', () => {
-    const previousEndpoint = process.env.AGENT_SQL_SERVER_URL;
-    delete process.env.AGENT_SQL_SERVER_URL;
-    let endpoint: string | undefined;
+  it('lets the Supervisor list every mock agent by giving each one an endpoint', () => {
+    const endpointVars = [
+      'AGENT_SQL_SERVER_URL',
+      'AGENT_GOOGLE_SHEETS_URL',
+      'AGENT_GOOGLE_MAIL_URL',
+      'AGENT_SLACK_URL',
+      'AGENT_GITHUB_URL',
+    ];
+    const saved = Object.fromEntries(endpointVars.map((name) => [name, process.env[name]]));
+    endpointVars.forEach((name) => delete process.env[name]);
+    const endpoints: Record<string, string | undefined> = {};
+    let ids: string[] = [];
+    const previous = process.env.MOCK_TOOLS;
     try {
-      const previous = process.env.MOCK_TOOLS;
       process.env.MOCK_TOOLS = 'true';
       jest.isolateModules(() => {
         require('./tools.module');
-        endpoint = require('./registry/agents.registry').AGENT_REGISTRY.sql_server.endpoint;
+        const { AGENT_REGISTRY } = require('./registry/agents.registry');
+        ids = require('./mock').MOCK_PROVIDER_IDS;
+        ids.forEach((id) => (endpoints[id] = AGENT_REGISTRY[id]?.endpoint));
       });
+    } finally {
       if (previous === undefined) delete process.env.MOCK_TOOLS;
       else process.env.MOCK_TOOLS = previous;
-    } finally {
-      if (previousEndpoint !== undefined) process.env.AGENT_SQL_SERVER_URL = previousEndpoint;
+      for (const [name, value] of Object.entries(saved)) {
+        if (value !== undefined) process.env[name] = value;
+      }
     }
 
-    expect(endpoint).toBeTruthy();
+    expect(ids).toHaveLength(5);
+    expect(endpoints).toEqual(Object.fromEntries(ids.map((id) => [id, `mock://${id}`])));
   });
 });

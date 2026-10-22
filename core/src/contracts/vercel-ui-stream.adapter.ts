@@ -66,6 +66,7 @@ export class VercelUiStreamAdapter {
   private broken = false;
   private started = false;
   private stepOpen = false;
+  private currentStepKind?: 'planning' | 'synthesize' | 'execution';
   private finishedFlag = false;
   private partCounter = 0;
   private fallbackCallCounter = 0;
@@ -152,10 +153,28 @@ export class VercelUiStreamAdapter {
   }
 
   private onStepStart(streamKey: string, step: AgentStreamStep): void {
-    this.closeStep();
+    const nextKind = step.kind ?? 'execution';
+
+    if (this.openTextParts.has(streamKey)) {
+      this.closeText(streamKey);
+    }
+
+    if (this.currentStepKind && this.currentStepKind !== nextKind) {
+      this.closeStep();
+    }
+
+    this.currentStepKind = nextKind;
     this.openStep();
+
     if (step.persona) {
       this.emit({ type: 'data-persona', id: streamKey, data: step.persona });
+    }
+    if (step.label) {
+      this.emit({
+        type: 'data-status' as any,
+        id: streamKey,
+        data: { label: step.label, kind: step.kind },
+      });
     }
   }
 
@@ -169,7 +188,10 @@ export class VercelUiStreamAdapter {
 
     let id = this.openTextParts.get(streamKey);
     if (!id) {
-      id = `text-${++this.partCounter}`;
+      id =
+        streamKey !== DEFAULT_STREAM_KEY
+          ? `${streamKey}__text-${++this.partCounter}`
+          : `text-${++this.partCounter}`;
       this.openTextParts.set(streamKey, id);
       this.emit({ type: 'text-start', id });
     }
@@ -197,7 +219,13 @@ export class VercelUiStreamAdapter {
     const toolCallId = step.toolCallId ?? this.registerFallbackId(toolName);
     if (this.announcedToolCalls.has(toolCallId)) return;
 
-    this.announceToolCall(toolCallId, toolName, toToolInput(step.argsPreview));
+    this.announceToolCall(
+      toolCallId,
+      toolName,
+      toToolInput(step.argsPreview),
+      step.friendlySummary,
+      streamKey,
+    );
   }
 
   private onToolResult(streamKey: string, step: AgentStreamStep): void {
@@ -213,7 +241,7 @@ export class VercelUiStreamAdapter {
     // Kết quả mồ côi (VD tool bị chặn vì lặp quá nhiều lần, chưa từng phát
     // tool_call) vẫn cần 1 tool-input đi trước để part hợp lệ.
     if (!this.announcedToolCalls.has(toolCallId)) {
-      this.announceToolCall(toolCallId, toolName, EMPTY_TOOL_INPUT);
+      this.announceToolCall(toolCallId, toolName, EMPTY_TOOL_INPUT, undefined, streamKey);
     }
 
     if (step.status === 'error') {
@@ -245,6 +273,8 @@ export class VercelUiStreamAdapter {
     toolCallId: string,
     toolName: string,
     input: unknown,
+    friendlySummary?: string,
+    streamKey?: string,
   ): void {
     this.announcedToolCalls.add(toolCallId);
     this.emit({
@@ -253,6 +283,19 @@ export class VercelUiStreamAdapter {
       toolName,
       input,
       dynamic: true,
+      ...(friendlySummary
+        ? {
+            title: friendlySummary,
+            toolMetadata: {
+              friendlySummary,
+              ...(streamKey && streamKey !== DEFAULT_STREAM_KEY
+                ? { streamKey }
+                : {}),
+            },
+          }
+        : streamKey && streamKey !== DEFAULT_STREAM_KEY
+          ? { toolMetadata: { streamKey } }
+          : {}),
     });
   }
 
@@ -294,6 +337,7 @@ export class VercelUiStreamAdapter {
     }
     if (!this.stepOpen) return;
     this.stepOpen = false;
+    this.currentStepKind = undefined;
     this.emit({ type: 'finish-step' });
   }
 

@@ -12,6 +12,7 @@
     "typecheck": "pnpm -r run typecheck",
     "start:cli": "pnpm --filter @agent/cli start",
     "cli:web": "pnpm --filter @agent/cli web",
+    "dev": "pnpm --parallel --filter @agent/core --filter @agent/cli run \"/^(start:dev|web)$/\"",
     "local:up": "docker compose -f docker-compose.local.yml up -d --wait",
     "local:down": "docker compose -f docker-compose.local.yml down",
     "local:reset": "docker compose -f docker-compose.local.yml down -v"

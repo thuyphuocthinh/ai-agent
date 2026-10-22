@@ -245,6 +245,7 @@ export class ChatService {
             messageId: event.id,
             tool: event.content.tool,
             preview: event.content.preview,
+            friendlySummary: (event.content as Record<string, unknown>).friendlySummary,
           },
         });
         return;

@@ -26,6 +26,8 @@ const ACTION_TASK_KEYWORDS = [
   'xoá',
   'xóa',
   'lưu',
+  'gửi',
+  'đăng',
   'insert',
   'update',
   'delete',
@@ -34,7 +36,13 @@ const ACTION_TASK_KEYWORDS = [
   'save',
   'append',
   'remove',
+  'send',
+  'post',
+  'publish',
 ];
+// "gửi/đăng/send/post/publish" đứng 1 mình trong 1 bước (gửi email, đăng Slack...) từng lọt
+// qua khi planner đánh mustExecute=false. Khớp nhầm (VD "đăng nhập", "postgres") chỉ tốn
+// thêm 1 vòng chạy, còn bỏ sót 1 hành động ghi thì mất hẳn việc user nhờ.
 
 const VERIFICATION_TASK_KEYWORDS = [
   'kiểm tra',

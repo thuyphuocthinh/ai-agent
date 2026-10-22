@@ -61,6 +61,20 @@ function failure(error: unknown): MockQueryResult {
   return { ok: false, error: (error as Error).message };
 }
 
+// Cột `status` kèm các giá trị đang có: không có dòng này model đoán `status = 'completed'`
+// (giá trị thật là 'success'), câu SQL không lỗi mà trả NULL nên báo sai số liệu.
+function describeStatusValues(
+  db: DatabaseSync,
+  table: string,
+  columns: Array<{ name: string }>,
+): string[] {
+  if (!columns.some((c) => c.name === 'status')) return [];
+  const rows = db
+    .prepare(`SELECT DISTINCT status FROM ${table} ORDER BY status`)
+    .all() as Array<{ status: string }>;
+  return [`  status có các giá trị: ${rows.map((r) => `'${r.status}'`).join(', ')}`];
+}
+
 export function describeMockSchema(db: DatabaseSync, table?: string): MockQueryResult {
   const tables = db
     .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
@@ -80,7 +94,8 @@ export function describeMockSchema(db: DatabaseSync, table?: string): MockQueryR
         name: string;
         type: string;
       }>;
-      return `${name}(${columns.map((c) => `${c.name} ${c.type.toLowerCase()}`).join(', ')})`;
+      const header = `${name}(${columns.map((c) => `${c.name} ${c.type.toLowerCase()}`).join(', ')})`;
+      return [header, ...describeStatusValues(db, name, columns)].join('\n');
     })
     .join('\n');
   return { ok: true, text };

@@ -202,6 +202,7 @@ describe('ChatService', () => {
           type: 'approval_request',
           tool: { provider: 'sql_server', name: 'execute_write_query', args: { query: 'UPDATE products SET price = 1' } },
           preview: 'Sẽ gọi execute_write_query',
+          friendlySummary: '✏️ Cập nhật dữ liệu bảng products',
         },
       });
 
@@ -220,7 +221,12 @@ describe('ChatService', () => {
       const { chunks, approvalId } = await pausedTurn();
 
       expect(chunks.find((c) => (c.type as string) === 'data-approval')).toMatchObject({
-        data: { messageId: approvalId, tool: { name: 'execute_write_query' }, preview: 'Sẽ gọi execute_write_query' },
+        data: {
+          messageId: approvalId,
+          tool: { name: 'execute_write_query' },
+          preview: 'Sẽ gọi execute_write_query',
+          friendlySummary: '✏️ Cập nhật dữ liệu bảng products',
+        },
       });
     });
 

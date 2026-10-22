@@ -19,6 +19,7 @@ describe('Supervisor persona (AC-4)', () => {
       'goal',
       'constraints',
       'tone',
+      'outputFormat',
     ]);
     // Persona là tuỳ chọn trên step: thiếu persona không được làm plan bị từ chối.
     expect(step.required).toEqual(['agent', 'task', 'mustExecute']);

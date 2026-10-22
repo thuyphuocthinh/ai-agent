@@ -1,5 +1,6 @@
 import {
   MOCK_PROVIDER_ID,
+  MOCK_PROVIDER_IDS,
   MockMcpAuthClientService,
   MockMcpClientService,
 } from './mock-tools.services';
@@ -29,16 +30,62 @@ describe('MockMcpClientService (AC-6)', () => {
       expect(tools.find((t) => t.name === 'execute_write_query')?.annotations).toEqual({ destructiveHint: true });
     });
 
-    it('offers nothing for any other provider and has no resources', async () => {
-      await expect(client.getTools('github')).resolves.toEqual([]);
-      await expect(client.getResources()).resolves.toEqual([]);
-      await expect(client.readResource()).resolves.toBe('');
+    it('offers nothing for a provider that is not mocked', async () => {
+      await expect(client.getTools('notion')).resolves.toEqual([]);
+      await expect(client.getResources('notion')).resolves.toEqual([]);
+      await expect(client.readResource('notion', 'mock://sql_server/schema')).resolves.toBe('');
+      await expect(client.readResource('slack', 'mock://sql_server/schema')).resolves.toBe('');
     });
 
-    it('reports the mock agent as connected', async () => {
-      await expect(new MockMcpAuthClientService().getConnectionStatus()).resolves.toEqual([
-        { provider_id: 'sql_server', is_connected: true, status: 'connected', connected_at: null },
-      ]);
+    it('exposes the schema as a resource so every worker knows the real column names', async () => {
+      const resources = await client.getResources(MOCK_PROVIDER_ID);
+      expect(resources).toHaveLength(1);
+
+      const schema = await client.readResource(MOCK_PROVIDER_ID, resources[0].uri);
+
+      expect(schema).toContain('orders(id integer, customer text, total integer, status text, created_at text)');
+      expect(schema).toContain('payments(id integer, order_id integer, amount integer, status text)');
+      expect(schema).toContain('products(id integer, name text, price integer, stock integer)');
+      await expect(client.readResource(MOCK_PROVIDER_ID, 'mock://other')).resolves.toBe('');
+    });
+
+    it('reports every mock agent as connected', async () => {
+      const statuses = await new MockMcpAuthClientService().getConnectionStatus();
+
+      expect(statuses.map((s) => s.provider_id)).toEqual(MOCK_PROVIDER_IDS);
+      expect(MOCK_PROVIDER_IDS).toEqual(['sql_server', 'google_sheets', 'google_mail', 'slack', 'github']);
+      expect(statuses.every((s) => s.is_connected && s.status === 'connected')).toBe(true);
+    });
+
+    it('serves tools for every connected agent, each with its own tool names', async () => {
+      const names: Record<string, string[]> = {};
+      for (const id of MOCK_PROVIDER_IDS) {
+        names[id] = (await client.getTools(id)).map((t) => t.name);
+        expect(names[id].length).toBeGreaterThan(0);
+      }
+
+      expect(names.google_mail).toContain('send_email');
+      expect(names.slack).toContain('post_message');
+      expect(names.github).toContain('create_issue');
+      expect(names.google_sheets).toContain('read_range');
+      expect(new Set(Object.values(names).flat()).size).toBe(Object.values(names).flat().length);
+    });
+
+    it('routes a call to the provider named in the request, and refuses a tool of another provider', async () => {
+      const channels = await client.callTool({ name: 'list_channels', args: {}, provider: 'slack' });
+      expect(channels.isError).toBe(false);
+      expect(text(channels)).toContain('#ops');
+
+      const wrong = await client.callTool({ name: 'list_channels', args: {}, provider: 'github' });
+      expect(wrong.isError).toBe(true);
+      expect(text(wrong)).toContain('không tồn tại');
+    });
+
+    it('serves each provider resource through readResource', async () => {
+      const [resource] = await client.getResources('slack');
+
+      await expect(client.readResource('slack', resource.uri)).resolves.toContain('#ops');
+      await expect(client.getResources('google_mail')).resolves.toEqual([]);
     });
   });
 
@@ -52,6 +99,20 @@ describe('MockMcpClientService (AC-6)', () => {
       expect(text(await call('table_schema', { table: 'Products' }))).toBe(
         'products(id integer, name text, price integer, stock integer)',
       );
+    });
+
+    it('lists the values of every status column so the model does not guess them', async () => {
+      const all = text(await call('table_schema'));
+
+      expect(all).toContain("status có các giá trị: 'paid', 'pending'");
+      expect(all).toContain("status có các giá trị: 'success'");
+      expect(text(await call('table_schema', { table: 'products' }))).not.toContain('status có');
+    });
+
+    it('reflects status values written later', async () => {
+      await call('execute_write_query', { query: "UPDATE orders SET status = 'cancelled' WHERE id = 102" });
+
+      expect(text(await call('table_schema', { table: 'orders' }))).toContain("'cancelled', 'paid'");
     });
 
     it('fails for an unknown table and lists the available ones', async () => {
@@ -127,6 +188,17 @@ describe('MockMcpClientService (AC-6)', () => {
 
       expect(result.isError).toBe(true);
       expect(text(result)).toContain(message);
+    });
+
+    it('appends the real schema to a wrong table or column error', async () => {
+      const column = await call('read_query', { query: 'SELECT total_amount FROM orders' });
+      const table = await call('execute_write_query', { query: 'UPDATE nope SET a = 1' });
+
+      for (const result of [column, table]) {
+        expect(result.isError).toBe(true);
+        expect(text(result)).toContain('orders(id integer, customer text, total integer, status text, created_at text)');
+      }
+      expect(text(await call('read_query', { query: 'SELECT FROM orders' }))).not.toContain('Schema thật');
     });
 
     it.each([

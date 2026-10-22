@@ -783,7 +783,7 @@ describe('TurnResolverService (Plan-and-Execute, xem accuracy.md)', () => {
     const stepStartOf = () =>
       mockAgentStream.emitStep.mock.calls
         .map(([, step]) => step)
-        .find((step) => step.type === 'step_start' && step.kind !== 'synthesize');
+        .find((step) => step.type === 'step_start' && !step.kind);
 
     beforeEach(() => {
       mockReactLoop.run.mockResolvedValue({ answer: 'ok', toolCalls: [] });
@@ -830,6 +830,33 @@ describe('TurnResolverService (Plan-and-Execute, xem accuracy.md)', () => {
   });
 
   describe('trace UI — step_start events (FE hiện trace theo từng bước, giống Claude Code)', () => {
+    it('emits a step_start with kind="planning" before supervisor.plan() (AC-8)', async () => {
+      mockSupervisor.plan.mockResolvedValue({
+        action: 'respond',
+        answer: 'Chào bạn!',
+      });
+
+      await resolve();
+
+      const planningStep = mockAgentStream.emitStep.mock.calls.find(
+        ([, step]) => step.type === 'step_start' && step.kind === 'planning',
+      );
+      expect(planningStep).toBeDefined();
+      const [, step] = planningStep!;
+      expect(step).toEqual({
+        type: 'step_start',
+        label: '🧠 Đang phân tích yêu cầu và lập kế hoạch...',
+        kind: 'planning',
+      });
+      const planningOrder =
+        mockAgentStream.emitStep.mock.invocationCallOrder[
+          mockAgentStream.emitStep.mock.calls.indexOf(planningStep!)
+        ];
+      expect(planningOrder).toBeLessThan(
+        mockSupervisor.plan.mock.invocationCallOrder[0],
+      );
+    });
+
     it('emits a step_start event with a human-readable label BEFORE reactLoop.run(), on the SAME streamKey', async () => {
       mockSupervisor.plan.mockResolvedValue({
         action: 'plan',
@@ -843,7 +870,7 @@ describe('TurnResolverService (Plan-and-Execute, xem accuracy.md)', () => {
       await resolve();
 
       const stepStartCall = mockAgentStream.emitStep.mock.calls.find(
-        ([, step]) => step.type === 'step_start',
+        ([, step]) => step.type === 'step_start' && !step.kind,
       );
       expect(stepStartCall).toBeDefined();
       const [context, step] = stepStartCall!;
@@ -1482,6 +1509,54 @@ describe('TurnResolverService (Plan-and-Execute, xem accuracy.md)', () => {
       expect(sentPrompt).not.toContain('Dữ liệu THẬT đã thu thập');
     });
 
+    it('tells each worker to do ONLY its own step when the plan has other steps, so step 1 does not run the work of steps 2-4', async () => {
+      mockSupervisor.plan.mockResolvedValue({
+        action: 'plan',
+        steps: [
+          { agent: 'sql_server', task: 'lấy tổng số đơn', mustExecute: true },
+          { agent: 'sql_server', task: 'lấy tồn kho thấp nhất', mustExecute: true },
+        ],
+      });
+      mockSupervisor.evaluate.mockResolvedValue({ verdict: 'continue' });
+      mockReactLoop.run.mockResolvedValue({ answer: 'xong', toolCalls: [] });
+
+      await service.continueRounds(
+        data,
+        replyMessageId,
+        'cho biết tổng số đơn và tồn kho thấp nhất',
+        availableAgents,
+        [],
+        [],
+        [],
+      );
+
+      const [first, second] = mockReactLoop.run.mock.calls.map((c) => c[0].prompt);
+      expect(first).toContain('lấy tổng số đơn');
+      expect(first).toContain('KHÔNG làm thay');
+      expect(first).toContain('cho biết tổng số đơn và tồn kho thấp nhất');
+      expect(second).toContain('KHÔNG làm thay');
+    });
+
+    it('does NOT limit the worker to its task when the plan is a single step (nothing else would do the rest of the request)', async () => {
+      mockSupervisor.plan.mockResolvedValue({
+        action: 'plan',
+        steps: [{ agent: 'sql_server', task: 'liệt kê bảng' }],
+      });
+      mockReactLoop.run.mockResolvedValue({ answer: 'Có 2 bảng.', toolCalls: [] });
+
+      await service.continueRounds(
+        data,
+        replyMessageId,
+        'có bao nhiêu bảng?',
+        availableAgents,
+        [],
+        [],
+        [],
+      );
+
+      expect(mockReactLoop.run.mock.calls[0][0].prompt).not.toContain('KHÔNG làm thay');
+    });
+
     it("stores the SHORT original task (not the context-enriched prompt) in the round pushed forward — otherwise each later step would duplicate all prior rounds' data again", async () => {
       const existingRounds = [
         {
@@ -1973,6 +2048,132 @@ describe('TurnResolverService (Plan-and-Execute, xem accuracy.md)', () => {
         name: 'TurnCancelledError',
         partialText: 'partial stream',
       });
+    });
+  });
+
+  describe('parallel fan-out execution (stage)', () => {
+    it('executes steps in parallel when they share the same stage, then executes subsequent stages sequentially', async () => {
+      const multiAgents = [
+        { provider: 'sql_server', label: 'SQL Server', description: 'desc' },
+        { provider: 'jira', label: 'Jira', description: 'desc' },
+        { provider: 'slack', label: 'Slack', description: 'desc' },
+      ];
+      mockSupervisor.getAvailableAgents.mockResolvedValue(multiAgents);
+
+      mockSupervisor.plan.mockResolvedValue({
+        action: 'plan',
+        steps: [
+          { agent: 'sql_server', task: 'lấy doanh thu', stage: 0 },
+          { agent: 'jira', task: 'lấy số bug', stage: 0 },
+          { agent: 'slack', task: 'gửi thông báo', stage: 1 },
+        ],
+      });
+
+      let runningCount = 0;
+      let maxConcurrent = 0;
+
+      mockReactLoop.run.mockImplementation(async (opts) => {
+        runningCount++;
+        if (runningCount > maxConcurrent) maxConcurrent = runningCount;
+        await new Promise((res) => setTimeout(res, 30));
+        runningCount--;
+        return { answer: `Kết quả từ ${opts.provider}`, toolCalls: [] };
+      });
+
+      mockSupervisor.evaluate.mockResolvedValue({ verdict: 'continue' });
+      mockSupervisor.synthesize.mockResolvedValue('Báo cáo hoàn tất');
+
+      const result = await resolve();
+
+      expect(maxConcurrent).toBeGreaterThanOrEqual(2);
+      expect(mockReactLoop.run).toHaveBeenCalledTimes(3);
+
+      expect(mockReactLoop.run).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({ provider: 'sql_server', streamKey: 'r0-sql_server' }),
+        expect.anything(),
+        expect.anything(),
+      );
+      expect(mockReactLoop.run).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({ provider: 'jira', streamKey: 'r1-jira' }),
+        expect.anything(),
+        expect.anything(),
+      );
+      expect(mockReactLoop.run).toHaveBeenNthCalledWith(
+        3,
+        expect.objectContaining({ provider: 'slack', streamKey: 'r2-slack' }),
+        expect.anything(),
+        expect.anything(),
+      );
+
+      expect(mockSupervisor.synthesize).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.arrayContaining([
+          expect.objectContaining({ agent: 'sql_server', result: 'Kết quả từ sql_server' }),
+          expect.objectContaining({ agent: 'jira', result: 'Kết quả từ jira' }),
+          expect.objectContaining({ agent: 'slack', result: 'Kết quả từ slack' }),
+        ]),
+        expect.anything(),
+        expect.anything(),
+      );
+      expect(result.content).toBe('Báo cáo hoàn tất');
+    });
+
+    it('pauses for approval and safely preserves completed parallel steps when one step hits the Risk Gate', async () => {
+      const multiAgents = [
+        { provider: 'sql_server', label: 'SQL Server', description: 'desc' },
+        { provider: 'jira', label: 'Jira', description: 'desc' },
+      ];
+      mockSupervisor.getAvailableAgents.mockResolvedValue(multiAgents);
+
+      mockSupervisor.plan.mockResolvedValue({
+        action: 'plan',
+        steps: [
+          { agent: 'sql_server', task: 'lấy doanh thu', stage: 0 },
+          { agent: 'jira', task: 'xóa ticket SP-123', stage: 0 },
+        ],
+      });
+
+      const pendingTool = {
+        tool: 'jira_delete_issue',
+        args: { issueId: 'SP-123' },
+        reason: 'Hành động nguy hiểm',
+      };
+
+      mockReactLoop.run.mockImplementation(async (opts) => {
+        if (opts.provider === 'sql_server') {
+          return { answer: 'Doanh thu: $1000', toolCalls: [] };
+        }
+        throw new ApprovalRequiredError(pendingTool, [{
+          tool: 'jira_delete_issue',
+          params: { issueId: 'SP-123' },
+          status: 'success',
+        }]);
+      });
+
+      mockCheckpointPause.pauseForApproval.mockResolvedValue({
+        content: 'Yêu cầu duyệt xóa issue SP-123',
+        toolCalls: [],
+      });
+
+      const result = await resolve();
+
+      expect(mockCheckpointPause.pauseForApproval).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.arrayContaining([
+          expect.objectContaining({ agent: 'sql_server', result: 'Doanh thu: $1000' }),
+        ]),
+        expect.anything(),
+        expect.anything(),
+        expect.objectContaining({
+          approvalRequired: pendingTool,
+          task: 'xóa ticket SP-123',
+        }),
+        [],
+      );
+      expect(result.content).toBe('Yêu cầu duyệt xóa issue SP-123');
     });
   });
 });

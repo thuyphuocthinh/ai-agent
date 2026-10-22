@@ -32,6 +32,7 @@ import {
   buildAnswer,
 } from '../orchestrator/orchestration-answer.types';
 import { capToolResultSize } from '@agent/tools';
+import { formatActionSummary } from '../../common/action-summary';
 
 @Injectable()
 export class CheckpointPauseService {
@@ -70,11 +71,17 @@ export class CheckpointPauseService {
       userId,
       workspaceId,
     );
+    const friendlySummary = formatActionSummary({
+      provider: pendingTool.provider,
+      toolName: pendingTool.name,
+      args: pendingTool.args,
+    });
     const approvalContent = {
       type: 'approval_request',
       tool: pendingTool,
       status: 'pending',
       preview,
+      friendlySummary,
       triggerUserId: userId,
     };
     const approvalMessage = await this.messageClient.createMessage({

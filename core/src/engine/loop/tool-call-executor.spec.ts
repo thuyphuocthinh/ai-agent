@@ -228,6 +228,25 @@ describe('ToolCallExecutor', () => {
     expect(blocked.resultPreview).toContain('đã được gọi với ĐÚNG tham số này');
   });
 
+  it('lần gọi bị chặn vẫn emit tool_call (kèm input) TRƯỚC tool_result, cùng toolCallId', async () => {
+    mockMcpClient.callTool.mockResolvedValue({
+      content: [{ type: 'text', text: 'no such column' }],
+      isError: true,
+    });
+    const { executor } = createExecutor();
+    const args = { query: 'SELECT total_amount FROM orders' };
+
+    await executor.run([{ name: 'read_query', args }]);
+    mockAgentStream.emitStep.mockClear();
+    await executor.run([{ name: 'read_query', args }]);
+
+    const steps = mockAgentStream.emitStep.mock.calls.map((call) => call[1]);
+    expect(steps.map((s) => s.type)).toEqual(['tool_call', 'tool_result']);
+    expect(steps[0].argsPreview).toContain('total_amount');
+    expect(steps[0].toolCallId).toBe(steps[1].toolCallId);
+    expect(steps[1].resultPreview).toContain('đã được gọi với ĐÚNG tham số này');
+  });
+
   it('tự thử lại NGẦM lỗi tạm thời (retryable), thành công ở lần 2 mà không lộ lần lỗi đầu ra ngoài', async () => {
     jest.useFakeTimers();
     mockMcpClient.callTool
@@ -303,6 +322,11 @@ describe('ToolCallExecutor', () => {
         EStepExecutionStatus.ERROR,
       );
       expect(riskGate.isAutoApprovableInsert).not.toHaveBeenCalled();
+
+      const steps = mockAgentStream.emitStep.mock.calls.map((call) => call[1]);
+      expect(steps.map((s) => s.type)).toEqual(['tool_call', 'tool_result']);
+      expect(steps[0].argsPreview).toContain('INSERT INTO Products');
+      expect(steps[0].toolCallId).toBe(steps[1].toolCallId);
     });
 
     it('khi isAutoApprovableInsert() trả true: tự chạy tool thật rồi clearAccumulatorFor() câu lệnh đã dùng', async () => {
@@ -335,6 +359,28 @@ describe('ToolCallExecutor', () => {
         ]),
       ).rejects.toThrow(ApprovalRequiredError);
       expect(mockMcpClient.callTool).not.toHaveBeenCalled();
+    });
+
+    it('emits friendlySummary and scrubs PII in argsPreview and resultPreview (AC-9)', async () => {
+      mockMcpClient.callTool.mockResolvedValue({
+        content: [{ type: 'text', text: 'secret credit_card: 4111-2222-3333-4444' }],
+        isError: false,
+      });
+      const { executor } = createExecutor();
+      const args = {
+        query: 'SELECT id, price FROM products WHERE category = "electronics"',
+        password: 'my-super-secret-password',
+      };
+
+      await executor.run([{ name: 'execute_read_query', args }]);
+
+      const steps = mockAgentStream.emitStep.mock.calls.map((call) => call[1]);
+      expect(steps).toHaveLength(2);
+      expect(steps[0].type).toBe('tool_call');
+      expect(steps[0].friendlySummary).toBe('Tra cứu dữ liệu từ bảng "products"');
+      expect(steps[0].argsPreview).not.toContain('my-super-secret-password');
+      expect(steps[1].type).toBe('tool_result');
+      expect(steps[1].friendlySummary).toBe('Tra cứu dữ liệu từ bảng "products"');
     });
   });
 });

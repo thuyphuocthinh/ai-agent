@@ -90,6 +90,7 @@ describe('CheckpointPauseService', () => {
           preview: expect.stringContaining(
             'Sẽ gọi "sql_server.execute_write_query" với tham số:',
           ),
+          friendlySummary: expect.stringContaining('Cập nhật dữ liệu bảng "Orders"'),
           triggerUserId: data.userId,
         },
       });

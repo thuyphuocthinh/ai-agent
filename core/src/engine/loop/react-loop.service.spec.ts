@@ -731,6 +731,7 @@ describe('ReactLoopService', () => {
           tool: 'sql_server.get_database_schema',
           argsPreview: '{}',
           toolCallId: expect.any(String),
+          friendlySummary: expect.any(String),
         },
       );
       expect(mockAgentStream.emitStep).toHaveBeenNthCalledWith(
@@ -747,6 +748,7 @@ describe('ReactLoopService', () => {
           status: 'success',
           resultPreview: 'result data',
           toolCallId: expect.any(String),
+          friendlySummary: expect.any(String),
         },
       );
       // "done" KHÔNG phải việc của ReactLoopService nữa
@@ -995,6 +997,7 @@ describe('ReactLoopService', () => {
           status: 'error',
           resultPreview: 'ECONNREFUSED',
           toolCallId: expect.any(String),
+          friendlySummary: expect.any(String),
         },
       );
       // Lỗi được feed NGƯỢC LẠI cho LLM (không throw ra ngoài run()) — turn
@@ -1188,6 +1191,7 @@ describe('ReactLoopService', () => {
         status: 'success',
         resultPreview: 'result data',
         toolCallId: expect.any(String),
+        friendlySummary: expect.any(String),
       });
       expect(result.toolCalls[0]).toEqual({
         tool: 'sql_server.get_database_schema',

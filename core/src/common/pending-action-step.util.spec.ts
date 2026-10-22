@@ -39,6 +39,18 @@ describe('hasPendingActionStep', () => {
     expect(hasPendingActionStep([step('update the record')])).toBe(true);
   });
 
+  // ─── send/post keywords: bước gửi/đăng đứng 1 mình không được bị bỏ qua ──────
+
+  it.each([
+    ['gửi', 'gửi email cho nhà cung cấp'],
+    ['đăng', 'đăng tin lên kênh #sales thông báo giá mới'],
+    ['send', 'send the reminder to the customer'],
+    ['post', 'post a message to the channel'],
+    ['publish', 'publish the release notes'],
+  ])('treats a step with "%s" as a pending action even when mustExecute=false', (_keyword, task) => {
+    expect(hasPendingActionStep([step(task, false)])).toBe(true);
+  });
+
   // ─── verification keywords ─────────────────────────────────────────────────
 
   it('detects verification keywords: kiểm tra', () => {

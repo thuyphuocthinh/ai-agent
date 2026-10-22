@@ -87,6 +87,15 @@ describe('CliWebServer (AC-7)', () => {
       expect(html).not.toMatch(/https?:\/\//i);
     });
 
+    it('includes status indicator and technical details elements in playground script (AC-8, AC-10)', async () => {
+      const html = await (await get('/')).text();
+
+      expect(html).toContain('status-indicator');
+      expect(html).toContain('technical-details');
+      expect(html).toContain('data-status');
+      expect(html).toContain('clearStatus');
+    });
+
     it('answers 404 for unknown paths and for non-GET on /', async () => {
       expect((await get('/nothing')).status).toBe(404);
       expect((await fetch(`http://127.0.0.1:${webPort}/`, { method: 'POST' })).status).toBe(404);

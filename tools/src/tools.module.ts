@@ -18,7 +18,7 @@ import { AGENT_REGISTRY } from './registry/agents.registry';
 import {
   MockMcpAuthClientService,
   MockMcpClientService,
-  MOCK_PROVIDER_ID,
+  MOCK_PROVIDER_IDS,
 } from './mock';
 
 // MOCK_TOOLS=true: thay McpClientService/McpAuthClientService bằng provider giả
@@ -28,7 +28,9 @@ const MOCK_TOOLS = process.env.MOCK_TOOLS === 'true';
 if (MOCK_TOOLS) {
   // Supervisor chỉ liệt kê agent tĩnh có endpoint; mock không gọi mạng nên chỉ
   // cần 1 giá trị khác rỗng.
-  AGENT_REGISTRY[MOCK_PROVIDER_ID].endpoint ??= 'mock://sql_server';
+  for (const id of MOCK_PROVIDER_IDS) {
+    AGENT_REGISTRY[id].endpoint ??= `mock://${id}`;
+  }
 }
 
 @Module({

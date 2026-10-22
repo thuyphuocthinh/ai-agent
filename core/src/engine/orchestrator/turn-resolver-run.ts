@@ -191,17 +191,23 @@ export class TurnResolverRun {
         return this.finalizeAnswer();
       }
 
-      const step = steps.shift()!;
-
-      if (this.guardAgainstMisroute(step)) {
+      const firstStage = steps[0]?.stage;
+      let batch: DelegationDto[];
+      if (firstStage === undefined) {
+        batch = [steps.shift()!];
+      } else {
+        const splitIdx = steps.findIndex((s) => s.stage !== firstStage);
+        batch = splitIdx === -1 ? steps.splice(0) : steps.splice(0, splitIdx);
+      }
+      if (batch.some((s) => this.guardAgainstMisroute(s))) {
         needsPlan = true;
         steps = [];
         continue;
       }
 
-      const stepOutcome = await this.runDelegationStep(step, steps);
-      if (stepOutcome.done) return stepOutcome.answer;
-      if (stepOutcome.replan) {
+      const batchOutcome = await this.executeStageBatch(batch, steps);
+      if (batchOutcome.done) return batchOutcome.answer;
+      if (batchOutcome.replan) {
         needsPlan = true;
         steps = [];
       }
@@ -248,6 +254,18 @@ export class TurnResolverRun {
   private async runPlanningStep(
     agentRankingCache: AgentRankingCache,
   ): Promise<PlanOutcome> {
+    const { userId, channelId, channelType } = this.data;
+    await this.agentStream
+      .emitStep(
+        { userId, channelId, messageId: this.replyMessageId, channelType },
+        {
+          type: 'step_start',
+          label: '🧠 Đang phân tích yêu cầu và lập kế hoạch...',
+          kind: 'planning',
+        },
+      )
+      .catch(() => {});
+
     const plan = await this.supervisor.plan(
       this.prompt,
       this.agents,
@@ -350,22 +368,52 @@ export class TurnResolverRun {
     return true;
   }
 
-  private async runDelegationStep(
-    step: DelegationDto,
+  private async executeStageBatch(
+    batch: DelegationDto[],
     remainingSteps: DelegationDto[],
   ): Promise<
     { done: true; answer: AnswerResult } | { done: false; replan: boolean }
   > {
-    const result = await this.delegateRound(step, this.realStepsRun);
-    this.realStepsRun++;
+    const startRealSteps = this.realStepsRun;
+    const results = await Promise.all(
+      batch.map((step, idx) =>
+        this.delegateRound(step, startRealSteps + idx, [
+          ...batch.filter((_, i) => i !== idx),
+          ...remainingSteps,
+        ]),
+      ),
+    );
 
-    if (result && 'approvalRequired' in result) {
-      this.toolCalls.push(...result.toolCalls);
-      const preApprovalRound = this.buildPreApprovalRound(
-        step,
-        result.toolCalls,
+    const approvalIdx = results.findIndex(
+      (r) => r && 'approvalRequired' in r,
+    );
+    if (approvalIdx !== -1) {
+      for (let i = 0; i < approvalIdx; i++) {
+        const s = batch[i];
+        const res = results[i] as DelegateRoundResult | null;
+        this.rounds.push(
+          res?.round ?? {
+            agent: s.agent,
+            task: s.task,
+            result:
+              'Agent này chưa khả dụng (chưa kết nối hoặc chưa có hạ tầng) — bỏ qua, không thực hiện được phần việc này.',
+          },
+        );
+        if (res) this.toolCalls.push(...res.toolCalls);
+      }
+
+      const approvalResult = results[approvalIdx] as ApprovalRequiredDelegateResult;
+      const pendingStep = batch[approvalIdx];
+      const unexecutedSteps = [...batch.slice(approvalIdx + 1), ...remainingSteps];
+
+      this.realStepsRun = startRealSteps + approvalIdx + 1;
+      this.toolCalls.push(...approvalResult.toolCalls);
+      const preApproval = this.buildPreApprovalRound(
+        pendingStep,
+        approvalResult.toolCalls,
       );
-      if (preApprovalRound) this.rounds.push(preApprovalRound);
+      if (preApproval) this.rounds.push(preApproval);
+
       this.metrics.incrementBehaviorSignal('approval_required');
       return {
         done: true,
@@ -375,27 +423,33 @@ export class TurnResolverRun {
           this.rounds,
           this.toolCalls,
           this.history,
-          result,
-          remainingSteps,
+          approvalResult,
+          unexecutedSteps,
         ),
       };
     }
 
-    const completedRound: SupervisorRoundDto = result
-      ? result.round
-      : {
-          agent: step.agent,
-          task: step.task,
-          result:
-            'Agent này chưa khả dụng (chưa kết nối hoặc chưa có hạ tầng) — bỏ qua, không thực hiện được phần việc này.',
-        };
-    this.rounds.push(completedRound);
-    if (result) this.toolCalls.push(...result.toolCalls);
+    this.realStepsRun = startRealSteps + batch.length;
 
-    const outcome = await this.runEvaluateAndDecide(
-      completedRound,
-      remainingSteps,
-    );
+    for (let i = 0; i < batch.length; i++) {
+      const step = batch[i];
+      const result = results[i] as DelegateRoundResult | null;
+      const completedRound: SupervisorRoundDto = result
+        ? result.round
+        : {
+            agent: step.agent,
+            task: step.task,
+            result:
+              'Agent này chưa khả dụng (chưa kết nối hoặc chưa có hạ tầng) — bỏ qua, không thực hiện được phần việc này.',
+          };
+
+      this.rounds.push(completedRound);
+      if (result) this.toolCalls.push(...result.toolCalls);
+    }
+
+    const lastRound = this.rounds[this.rounds.length - 1];
+    const outcome = await this.runEvaluateAndDecide(lastRound, remainingSteps);
+
     if (outcome === 'finalize') {
       return { done: true, answer: await this.finalizeAnswer() };
     }
@@ -403,12 +457,13 @@ export class TurnResolverRun {
       this.nonProgressRounds++;
       this.metrics.incrementBehaviorSignal('replan');
       this.rounds.push({
-        agent: completedRound.agent,
-        task: completedRound.task,
+        agent: lastRound.agent,
+        task: lastRound.task,
         result: `${REPLAN_MARKER} evaluate() cho rằng bước vừa xong không đạt kỳ vọng, đã lập lại kế hoạch.`,
       });
       return { done: false, replan: true };
     }
+
     return { done: false, replan: false };
   }
 
@@ -636,6 +691,7 @@ export class TurnResolverRun {
   private async delegateRound(
     delegation: DelegationDto,
     round: number,
+    remainingSteps: DelegationDto[],
   ): Promise<DelegateRoundResult | ApprovalRequiredDelegateResult | null> {
     const { userId, channelId } = this.data;
     const workspaceId = this.data.tenantId ?? this.data.workspaceId ?? 'default';
@@ -658,8 +714,15 @@ export class TurnResolverRun {
     const realRoundsSoFar = this.rounds.filter((r) => !isNonProgressRound(r));
     const contextBlocks: string[] = [task];
     if (task !== this.prompt) {
+      // Chỉ khi kế hoạch còn bước khác (đã chạy hoặc sắp chạy) mới giới hạn phạm vi:
+      // không có dòng này, worker thấy cả yêu cầu gốc và làm luôn phần của các bước kia
+      // (bước 1 gọi đủ SQL cho cả 4 bước), khiến các bước sau chỉ chép lại nhau.
+      const scopeNote =
+        remainingSteps.length > 0 || realRoundsSoFar.length > 0
+          ? ' CHỈ thực hiện phần việc trong task ở trên; các phần khác của yêu cầu gốc là việc của CÁC BƯỚC KHÁC trong kế hoạch — KHÔNG làm thay, KHÔNG gọi tool cho phần đó.'
+          : '';
       contextBlocks.push(
-        `Yêu cầu gốc đầy đủ của user cho turn này (dùng để lấy đúng dữ liệu/số liệu cụ thể nếu task ở trên chỉ tóm tắt lại, TUYỆT ĐỐI không tự bịa dữ liệu khi task tóm tắt bị thiếu):\n${this.prompt}`,
+        `Yêu cầu gốc đầy đủ của user cho turn này (dùng để lấy đúng dữ liệu/số liệu cụ thể nếu task ở trên chỉ tóm tắt lại, TUYỆT ĐỐI không tự bịa dữ liệu khi task tóm tắt bị thiếu).${scopeNote}\n${this.prompt}`,
       );
     }
     if (realRoundsSoFar.length > 0) {
