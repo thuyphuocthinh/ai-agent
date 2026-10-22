@@ -1,4 +1,5 @@
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
+import { EAgentStreamStepType } from '@agent/core/constants';
 import {
   AgentStreamContext,
   AgentStreamStep,
@@ -37,7 +38,7 @@ export class AgentStreamService implements IStreamSink, OnModuleDestroy {
   ): Promise<void> {
     const key = this.batchKey(context);
 
-    if (step.type === 'token') {
+    if (step.type === EAgentStreamStepType.TOKEN) {
       this.bufferToken(key, context, step.text ?? '');
       return;
     }
@@ -53,7 +54,7 @@ export class AgentStreamService implements IStreamSink, OnModuleDestroy {
   }
 
   async emitToken(context: AgentStreamContext, token: string): Promise<void> {
-    await this.emitStep(context, { type: 'token', text: token });
+    await this.emitStep(context, { type: EAgentStreamStepType.TOKEN, text: token });
   }
 
   async flush(): Promise<void> {

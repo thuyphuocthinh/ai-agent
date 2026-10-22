@@ -1,7 +1,12 @@
-import { EStepExecutionStatus } from '@agent/core/constants';
+import {
+  EStepExecutionStatus,
+  EAgentStreamStepType,
+  EAgentStreamStepKind,
+  STREAM_KEYS,
+} from '@agent/core/constants';
 import { PersonaDto } from './dtos/supervisor.dto';
 
-export const DEFAULT_STREAM_KEY = 'main';
+export const DEFAULT_STREAM_KEY = STREAM_KEYS.DEFAULT;
 export const STREAM_SINK = Symbol('STREAM_SINK');
 
 export interface AgentStreamContext {
@@ -15,20 +20,14 @@ export interface AgentStreamContext {
 }
 
 export interface AgentStreamStep {
-  type:
-    | 'tool_call'
-    | 'tool_result'
-    | 'done'
-    | 'token'
-    | 'resync'
-    | 'step_start';
+  type: EAgentStreamStepType | `${EAgentStreamStepType}`;
   tool?: string;
   status?: EStepExecutionStatus;
   resultPreview?: string;
   argsPreview?: string;
   text?: string;
   label?: string;
-  kind?: 'synthesize' | 'planning';
+  kind?: EAgentStreamStepKind | `${EAgentStreamStepKind}`;
   // Định danh duy nhất của 1 lần gọi tool, dùng chung cho cặp tool_call /
   // tool_result — để client ghép đúng kết quả với lệnh gọi khi cùng 1 tool bị
   // gọi nhiều lần trong 1 turn. Sink cũ bỏ qua field này.

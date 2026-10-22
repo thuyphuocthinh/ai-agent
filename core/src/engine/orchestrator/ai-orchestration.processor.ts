@@ -9,7 +9,11 @@ import {
   IProcessAiTriggerJobData,
   IProcessApprovalJobData,
 } from '@agent/core/infrastructure/queue';
-import { ORCHESTRATION_CONSTANTS, ORCHESTRATION_ERROR } from '@agent/core/constants';
+import {
+  ORCHESTRATION_CONSTANTS,
+  ORCHESTRATION_ERROR,
+  EAgentStreamStepType,
+} from '@agent/core/constants';
 import { MessageClientService } from '../../contracts/message-client.service';
 import { AgentStreamService } from '../../contracts/agent-stream.service';
 import { describeExternalServiceError } from '../loop/external-service-error.util';
@@ -194,7 +198,7 @@ export class AiOrchestrationProcessor extends BaseProcessor<
       await this.agentStream
         .emitStep(
           { userId, channelId, messageId: reply.id, channelType },
-          { type: 'done' },
+          { type: EAgentStreamStepType.DONE },
         )
         .catch((error) =>
           this.logger.warn(

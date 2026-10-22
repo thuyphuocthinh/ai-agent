@@ -3,6 +3,12 @@ import { Logger } from '@nestjs/common';
 // vào core, chỉ mượn hợp đồng UIMessageChunk của v7.
 import type { UIMessageChunk } from 'ai';
 import {
+  EAgentStreamStepType,
+  EAgentStreamStepKind,
+  EVercelStreamChunkType,
+  STREAM_KEYS,
+} from '@agent/core/constants';
+import {
   AgentStreamContext,
   AgentStreamStep,
   DEFAULT_STREAM_KEY,
@@ -66,7 +72,7 @@ export class VercelUiStreamAdapter {
   private broken = false;
   private started = false;
   private stepOpen = false;
-  private currentStepKind?: 'planning' | 'synthesize' | 'execution';
+  private currentStepKind?: EAgentStreamStepKind | `${EAgentStreamStepKind}`;
   private finishedFlag = false;
   private partCounter = 0;
   private fallbackCallCounter = 0;
@@ -135,25 +141,25 @@ export class VercelUiStreamAdapter {
     if (this.finishedFlag || this.broken) return;
     if (this.messageId === undefined || context.messageId !== this.messageId) return;
 
-    const streamKey = context.streamKey ?? DEFAULT_STREAM_KEY;
+    const streamKey = context.streamKey ?? STREAM_KEYS.DEFAULT;
     switch (step.type) {
-      case 'step_start':
+      case EAgentStreamStepType.STEP_START:
         return this.onStepStart(streamKey, step);
-      case 'token':
+      case EAgentStreamStepType.TOKEN:
         return this.onToken(streamKey, step.text ?? '');
-      case 'resync':
+      case EAgentStreamStepType.RESYNC:
         return this.onResync(streamKey, step.text ?? '');
-      case 'tool_call':
+      case EAgentStreamStepType.TOOL_CALL:
         return this.onToolCall(streamKey, step);
-      case 'tool_result':
+      case EAgentStreamStepType.TOOL_RESULT:
         return this.onToolResult(streamKey, step);
-      case 'done':
+      case EAgentStreamStepType.DONE:
         return this.onDone();
     }
   }
 
   private onStepStart(streamKey: string, step: AgentStreamStep): void {
-    const nextKind = step.kind ?? 'execution';
+    const nextKind = step.kind ?? EAgentStreamStepKind.EXECUTION;
 
     if (this.openTextParts.has(streamKey)) {
       this.closeText(streamKey);
@@ -167,11 +173,11 @@ export class VercelUiStreamAdapter {
     this.openStep();
 
     if (step.persona) {
-      this.emit({ type: 'data-persona', id: streamKey, data: step.persona });
+      this.emit({ type: EVercelStreamChunkType.DATA_PERSONA, id: streamKey, data: step.persona });
     }
     if (step.label) {
       this.emit({
-        type: 'data-status' as any,
+        type: EVercelStreamChunkType.DATA_STATUS,
         id: streamKey,
         data: { label: step.label, kind: step.kind },
       });
@@ -189,13 +195,13 @@ export class VercelUiStreamAdapter {
     let id = this.openTextParts.get(streamKey);
     if (!id) {
       id =
-        streamKey !== DEFAULT_STREAM_KEY
+        streamKey !== STREAM_KEYS.DEFAULT
           ? `${streamKey}__text-${++this.partCounter}`
           : `text-${++this.partCounter}`;
       this.openTextParts.set(streamKey, id);
-      this.emit({ type: 'text-start', id });
+      this.emit({ type: EVercelStreamChunkType.TEXT_START, id });
     }
-    this.emit({ type: 'text-delta', id, delta: text });
+    this.emit({ type: EVercelStreamChunkType.TEXT_DELTA, id, delta: text });
   }
 
   // Stream chỉ nối thêm (append-only), không thu hồi được text đã gửi. Khi
@@ -206,7 +212,7 @@ export class VercelUiStreamAdapter {
     this.closeText(streamKey);
     if (text && text !== streamed) {
       this.openStep();
-      this.emit({ type: 'data-resync', id: streamKey, data: { text } });
+      this.emit({ type: EVercelStreamChunkType.DATA_RESYNC, id: streamKey, data: { text } });
     }
     this.confirmedText.set(streamKey, text);
   }
@@ -246,7 +252,7 @@ export class VercelUiStreamAdapter {
 
     if (step.status === 'error') {
       this.emit({
-        type: 'tool-output-error',
+        type: EVercelStreamChunkType.TOOL_OUTPUT_ERROR,
         toolCallId,
         errorText: step.resultPreview || 'Tool execution failed',
         dynamic: true,
@@ -254,7 +260,7 @@ export class VercelUiStreamAdapter {
       return;
     }
     this.emit({
-      type: 'tool-output-available',
+      type: EVercelStreamChunkType.TOOL_OUTPUT_AVAILABLE,
       toolCallId,
       output: step.resultPreview ?? '',
       dynamic: true,
@@ -264,7 +270,7 @@ export class VercelUiStreamAdapter {
   private onDone(): void {
     this.closeStep();
     this.ensureStarted();
-    this.emit({ type: 'finish', finishReason: 'stop' });
+    this.emit({ type: EVercelStreamChunkType.FINISH, finishReason: 'stop' });
     this.finishedFlag = true;
     this.detachListener?.();
   }
@@ -278,7 +284,7 @@ export class VercelUiStreamAdapter {
   ): void {
     this.announcedToolCalls.add(toolCallId);
     this.emit({
-      type: 'tool-input-available',
+      type: EVercelStreamChunkType.TOOL_INPUT_AVAILABLE,
       toolCallId,
       toolName,
       input,
@@ -288,12 +294,12 @@ export class VercelUiStreamAdapter {
             title: friendlySummary,
             toolMetadata: {
               friendlySummary,
-              ...(streamKey && streamKey !== DEFAULT_STREAM_KEY
+              ...(streamKey && streamKey !== STREAM_KEYS.DEFAULT
                 ? { streamKey }
                 : {}),
             },
           }
-        : streamKey && streamKey !== DEFAULT_STREAM_KEY
+        : streamKey && streamKey !== STREAM_KEYS.DEFAULT
           ? { toolMetadata: { streamKey } }
           : {}),
     });
@@ -314,21 +320,21 @@ export class VercelUiStreamAdapter {
   private ensureStarted(): void {
     if (this.started) return;
     this.started = true;
-    this.emit({ type: 'start', messageId: this.messageId });
+    this.emit({ type: EVercelStreamChunkType.START, messageId: this.messageId });
   }
 
   private openStep(): void {
     this.ensureStarted();
     if (this.stepOpen) return;
     this.stepOpen = true;
-    this.emit({ type: 'start-step' });
+    this.emit({ type: EVercelStreamChunkType.START_STEP });
   }
 
   private closeText(streamKey: string): void {
     const id = this.openTextParts.get(streamKey);
     if (!id) return;
     this.openTextParts.delete(streamKey);
-    this.emit({ type: 'text-end', id });
+    this.emit({ type: EVercelStreamChunkType.TEXT_END, id });
   }
 
   private closeStep(): void {
@@ -338,7 +344,7 @@ export class VercelUiStreamAdapter {
     if (!this.stepOpen) return;
     this.stepOpen = false;
     this.currentStepKind = undefined;
-    this.emit({ type: 'finish-step' });
+    this.emit({ type: EVercelStreamChunkType.FINISH_STEP });
   }
 
   // Ghi tuần tự qua 1 hàng đợi (writer có thể async). Lỗi ghi (VD client đã

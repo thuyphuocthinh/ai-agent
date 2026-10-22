@@ -1,3 +1,4 @@
+import { EAgentStreamStepType } from '@agent/core/constants';
 import { AgentStreamService } from '../../contracts/agent-stream.service';
 
 // Dùng chung cho mọi lệnh gọi LLM cần stream ra đúng messageId của bot reply
@@ -20,7 +21,7 @@ export function buildOnToken(
     agentStream
       .emitStep(
         { userId, channelId, messageId, channelType },
-        { type: 'token', text: chunk },
+        { type: EAgentStreamStepType.TOKEN, text: chunk },
       )
       .catch(() => {});
   };

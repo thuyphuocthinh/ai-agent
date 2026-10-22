@@ -612,6 +612,27 @@ export const PLAYGROUND_HTML = /* html */ `<!doctype html>
 
 <script>
 (function () {
+  var CHUNK_TYPES = {
+    DATA_STATUS: 'data-status',
+    DATA_PERSONA: 'data-persona',
+    DATA_RESYNC: 'data-resync',
+    DATA_APPROVAL: 'data-approval',
+    DATA_REPLY: 'data-reply',
+    START_STEP: 'start-step',
+    FINISH_STEP: 'finish-step',
+    TEXT_START: 'text-start',
+    TEXT_DELTA: 'text-delta',
+    TOOL_INPUT: 'tool-input-available',
+    TOOL_OUTPUT: 'tool-output-available',
+    TOOL_ERROR: 'tool-output-error',
+    ERROR: 'error',
+    FINISH: 'finish',
+  };
+  var STEP_KINDS = {
+    PLANNING: 'planning',
+    SYNTHESIZE: 'synthesize',
+  };
+
   var log = document.getElementById('log');
   var promptBox = document.getElementById('prompt');
   var sendBtn = document.getElementById('send');
@@ -1079,14 +1100,14 @@ export const PLAYGROUND_HTML = /* html */ `<!doctype html>
 
   function render(bubble, chunk) {
     switch (chunk.type) {
-      case 'data-status':
+      case CHUNK_TYPES.DATA_STATUS:
         if (chunk.data && chunk.data.label) {
-          if (chunk.data.kind === 'planning' || chunk.id === 'planning') {
+          if (chunk.data.kind === STEP_KINDS.PLANNING || chunk.id === STEP_KINDS.PLANNING) {
             if (bubble.supervisor && !bubble.supervisor.done) {
               bubble.supervisor.goal.textContent = chunk.data.label;
             }
             setProgress(bubble, 15, chunk.data.label, 'Lập kế hoạch');
-          } else if (chunk.data.kind === 'synthesize' || chunk.id === 'synthesize') {
+          } else if (chunk.data.kind === STEP_KINDS.SYNTHESIZE || chunk.id === STEP_KINDS.SYNTHESIZE) {
             if (bubble.supervisor) {
               bubble.supervisor.status.textContent = 'Đang tổng hợp';
               bubble.supervisor.status.classList.remove('done');
@@ -1102,7 +1123,7 @@ export const PLAYGROUND_HTML = /* html */ `<!doctype html>
         }
         break;
 
-      case 'start-step':
+      case CHUNK_TYPES.START_STEP:
         clearStatus(bubble);
         bubble.gridEl = null;
         bubble.step = null;
@@ -1111,7 +1132,7 @@ export const PLAYGROUND_HTML = /* html */ `<!doctype html>
         bubble.stepText = null;
         break;
 
-      case 'finish-step':
+      case CHUNK_TYPES.FINISH_STEP:
         Object.keys(bubble.agents).forEach(function (k) {
           var a = bubble.agents[k];
           if (a && a.statusTag) {
@@ -1136,12 +1157,12 @@ export const PLAYGROUND_HTML = /* html */ `<!doctype html>
         recalcProgress(bubble, 'Tất cả Agent đã xong, đang tổng hợp câu trả lời cuối...');
         break;
 
-      case 'text-start':
+      case CHUNK_TYPES.TEXT_START:
         clearStatus(bubble);
         bubble.texts[chunk.id] = '';
         break;
 
-      case 'text-delta':
+      case CHUNK_TYPES.TEXT_DELTA:
         if (chunk.delta) {
           if (bubble.texts[chunk.id] === undefined) bubble.texts[chunk.id] = '';
           bubble.texts[chunk.id] += chunk.delta;
@@ -1174,7 +1195,7 @@ export const PLAYGROUND_HTML = /* html */ `<!doctype html>
         }
         break;
 
-      case 'data-persona': {
+      case CHUNK_TYPES.DATA_PERSONA: {
         clearStatus(bubble);
         if (bubble.supervisor && !bubble.supervisor.done) {
           bubble.supervisor.done = true;
@@ -1188,7 +1209,7 @@ export const PLAYGROUND_HTML = /* html */ `<!doctype html>
         break;
       }
 
-      case 'tool-input-available': {
+      case CHUNK_TYPES.TOOL_INPUT: {
         clearStatus(bubble);
         var d = el('details', 'tool');
         var summaryText = chunk.title || (chunk.toolMetadata && chunk.toolMetadata.friendlySummary) || chunk.toolName;
@@ -1216,7 +1237,7 @@ export const PLAYGROUND_HTML = /* html */ `<!doctype html>
         break;
       }
 
-      case 'tool-output-available': {
+      case CHUNK_TYPES.TOOL_OUTPUT: {
         var t = bubble.tools[chunk.toolCallId];
         if (t) {
           t.pre.textContent = pretty(chunk.output && chunk.output.preview !== undefined ? chunk.output.preview : chunk.output);
@@ -1225,7 +1246,7 @@ export const PLAYGROUND_HTML = /* html */ `<!doctype html>
         break;
       }
 
-      case 'tool-output-error': {
+      case CHUNK_TYPES.TOOL_ERROR: {
         var te = bubble.tools[chunk.toolCallId];
         if (te) {
           te.pre.textContent = chunk.errorText;
@@ -1235,7 +1256,7 @@ export const PLAYGROUND_HTML = /* html */ `<!doctype html>
         break;
       }
 
-      case 'data-reply': {
+      case CHUNK_TYPES.DATA_REPLY: {
         clearStatus(bubble);
         var replyText = chunk.data && chunk.data.text;
         if (replyText && (replyText.indexOf('⏸️') === 0 || replyText.indexOf('Cần bạn duyệt') !== -1)) {
@@ -1247,18 +1268,18 @@ export const PLAYGROUND_HTML = /* html */ `<!doctype html>
         break;
       }
 
-      case 'data-approval':
+      case CHUNK_TYPES.DATA_APPROVAL:
         clearStatus(bubble);
         bubble.hasApproval = true;
         renderApproval(bubble, chunk.data || {});
         break;
 
-      case 'error':
+      case CHUNK_TYPES.ERROR:
         clearStatus(bubble);
         bubble.box.appendChild(el('div', 'error-msg', 'Error: ' + chunk.errorText));
         break;
 
-      case 'finish':
+      case CHUNK_TYPES.FINISH:
         showReply(bubble);
         break;
     }

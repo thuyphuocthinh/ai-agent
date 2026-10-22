@@ -1,6 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { IProcessApprovalJobData } from '@agent/core/infrastructure/queue';
-import { ORCHESTRATION_CONSTANTS } from '@agent/core/constants';
+import {
+  ORCHESTRATION_CONSTANTS,
+  EAgentStreamStepType,
+} from '@agent/core/constants';
 import { extractTextFromMcpResult } from '@agent/core/common';
 import { MessageClientService } from '../../contracts/message-client.service';
 import { SupervisorService } from '../supervisor/supervisor.service';
@@ -80,7 +83,7 @@ export class ApprovalExecutionService {
     channelType: string;
   }): Promise<void> {
     await this.agentStream
-      .emitStep(context, { type: 'done' })
+      .emitStep(context, { type: EAgentStreamStepType.DONE })
       .catch((error) =>
         this.logger.warn(
           `emitStep('done') failed: ${(error as Error).message}`,

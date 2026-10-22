@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import {
   ORCHESTRATION_CONSTANTS,
   ORCHESTRATION_SYSTEM_PROMPT,
+  EAgentStreamStepType,
 } from '@agent/core/constants';
 import { McpClientService } from '@agent/tools';
 import {
@@ -43,7 +44,7 @@ export class ReactLoopService {
     repeatGuard?: ToolRepeatGuard,
   ): Promise<RunReactLoopResponseDto> {
     let confirmedText = '';
-    const emitToken = (step: { type: 'token' | 'resync'; text: string }) => {
+    const emitToken = (step: { type: EAgentStreamStepType.TOKEN | EAgentStreamStepType.RESYNC; text: string }) => {
       this.agentStream
         .emitStep(
           {
@@ -59,11 +60,11 @@ export class ReactLoopService {
     };
     const onToken = (chunk: string) => {
       confirmedText += chunk;
-      emitToken({ type: 'token', text: chunk });
+      emitToken({ type: EAgentStreamStepType.TOKEN, text: chunk });
     };
     const resync = (text: string) => {
       confirmedText = text;
-      emitToken({ type: 'resync', text });
+      emitToken({ type: EAgentStreamStepType.RESYNC, text });
     };
 
     return runCancellable(

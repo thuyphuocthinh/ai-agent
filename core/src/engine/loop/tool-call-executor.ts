@@ -4,6 +4,7 @@ import { traceable } from 'langsmith/traceable';
 import {
   ORCHESTRATION_CONSTANTS,
   EStepExecutionStatus,
+  EAgentStreamStepType,
 } from '@agent/core/constants';
 import { extractTextFromMcpResult } from '@agent/core/common';
 import { McpClientService } from '@agent/tools';
@@ -555,7 +556,7 @@ export class ToolCallExecutor {
     friendlySummary?: string,
   ): Promise<void> {
     return this.emitStep({
-      type: 'tool_call',
+      type: EAgentStreamStepType.TOOL_CALL,
       tool: displayName,
       argsPreview,
       toolCallId,
@@ -572,7 +573,7 @@ export class ToolCallExecutor {
     friendlySummary?: string,
   ): Promise<void> {
     await this.emitStep({
-      type: 'tool_result',
+      type: EAgentStreamStepType.TOOL_RESULT,
       tool,
       status,
       resultPreview,
@@ -583,7 +584,7 @@ export class ToolCallExecutor {
   }
 
   private emitStep(step: {
-    type: 'tool_call' | 'tool_result';
+    type: EAgentStreamStepType.TOOL_CALL | EAgentStreamStepType.TOOL_RESULT;
     tool: string;
     status?: EStepExecutionStatus;
     resultPreview?: string;

@@ -1,7 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { RpcException } from '@nestjs/microservices';
 import { EJobName, EQueueName, QueueService } from '@agent/core/infrastructure/queue';
-import { ORCHESTRATION_ERROR } from '@agent/core/constants';
+import {
+  ORCHESTRATION_ERROR,
+  EAgentStreamStepType,
+} from '@agent/core/constants';
 import { MessageClientService } from '../../contracts/message-client.service';
 import { AgentStreamService } from '../../contracts/agent-stream.service';
 import { CheckpointService } from './checkpoint.service';
@@ -151,7 +154,7 @@ export class ApprovalRequestService {
     await this.agentStream
       .emitStep(
         { userId, channelId, messageId: replyMessageId, channelType },
-        { type: 'done' },
+        { type: EAgentStreamStepType.DONE },
       )
       .catch((error) =>
         this.logger.warn(

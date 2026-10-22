@@ -1,6 +1,11 @@
 import { Logger } from '@nestjs/common';
 import { IProcessAiTriggerJobData } from '@agent/core/infrastructure/queue';
-import { ORCHESTRATION_CONSTANTS, ESupervisorVerdict } from '@agent/core/constants';
+import {
+  ORCHESTRATION_CONSTANTS,
+  ESupervisorVerdict,
+  EAgentStreamStepType,
+  EAgentStreamStepKind,
+} from '@agent/core/constants';
 import { ReactLoopService } from '../loop/react-loop.service';
 import { ToolRepeatGuard } from '../loop/tool-repeat-guard';
 import {
@@ -259,9 +264,9 @@ export class TurnResolverRun {
       .emitStep(
         { userId, channelId, messageId: this.replyMessageId, channelType },
         {
-          type: 'step_start',
+          type: EAgentStreamStepType.STEP_START,
           label: '🧠 Đang phân tích yêu cầu và lập kế hoạch...',
-          kind: 'planning',
+          kind: EAgentStreamStepKind.PLANNING,
         },
       )
       .catch(() => {});
@@ -478,9 +483,9 @@ export class TurnResolverRun {
       .emitStep(
         { userId, channelId, messageId: this.replyMessageId, channelType },
         {
-          type: 'step_start',
+          type: EAgentStreamStepType.STEP_START,
           label: 'Tổng hợp câu trả lời',
-          kind: 'synthesize',
+          kind: EAgentStreamStepKind.SYNTHESIZE,
         },
       )
       .catch(() => {});
@@ -529,9 +534,9 @@ export class TurnResolverRun {
         .emitStep(
           { userId, channelId, messageId: this.replyMessageId, channelType },
           {
-            type: 'step_start',
+            type: EAgentStreamStepType.STEP_START,
             label: 'Tổng hợp câu trả lời',
-            kind: 'synthesize',
+            kind: EAgentStreamStepKind.SYNTHESIZE,
           },
         )
         .catch(() => {});
@@ -752,7 +757,7 @@ export class TurnResolverRun {
           streamKey,
         },
         {
-          type: 'step_start',
+          type: EAgentStreamStepType.STEP_START,
           label: `${targetAgent.label}: ${task}`,
           ...(persona ? { persona } : {}),
         },

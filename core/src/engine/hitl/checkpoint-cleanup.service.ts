@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
+import { EAgentStreamStepType } from '@agent/core/constants';
 import { CheckpointService } from './checkpoint.service';
 import { MessageClientService } from '../../contracts/message-client.service';
 import { AgentStreamService } from '../../contracts/agent-stream.service';
@@ -101,7 +102,7 @@ export class CheckpointCleanupService {
         messageId: checkpoint.replyMessageId,
         channelType: checkpoint.channelType,
       },
-      { type: 'done' },
+      { type: EAgentStreamStepType.DONE },
     );
   }
 
@@ -155,7 +156,7 @@ export class CheckpointCleanupService {
         messageId: checkpoint.replyMessageId,
         channelType: checkpoint.channelType,
       },
-      { type: 'done' },
+      { type: EAgentStreamStepType.DONE },
     );
   }
 }
