@@ -4,12 +4,13 @@ import { config as loadEnv } from 'dotenv';
 // DatabaseModule đọc process.env ngay lúc được import.
 loadEnv({ path: ['.env', '../.env'] });
 
-import { NestFactory } from '@nestjs/core';
+import { NestFactory, Reflector } from '@nestjs/core';
 import { WinstonModule } from 'nest-winston';
 import { getLoggerConfig } from '@agent/core/common';
 import { OrchestrationModule } from './orchestration.module';
 import { ValidationPipe } from '@nestjs/common';
 import * as dns from 'dns';
+import { AllExceptionsFilter, TransformResponseInterceptor } from './api';
 
 dns.setDefaultResultOrder('ipv4first');
 
@@ -26,6 +27,9 @@ async function bootstrap() {
       forbidNonWhitelisted: false,
     }),
   );
+
+  app.useGlobalFilters(new AllExceptionsFilter());
+  app.useGlobalInterceptors(new TransformResponseInterceptor(app.get(Reflector)));
 
   const port = Number(process.env.PORT) || 3000;
   await app.listen(port);

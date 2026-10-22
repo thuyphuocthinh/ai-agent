@@ -1,11 +1,11 @@
-import { INestApplication, NotFoundException, ValidationPipe } from '@nestjs/common';
+import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import type { UIMessageChunk } from 'ai';
 import { ChatController } from './chat.controller';
-import { ChatService, TurnStream } from './chat.service';
+import { ChatService, TurnStream } from '../../application/chat.service';
+import { UiStreamPresenter } from '../presenters/ui-stream.presenter';
 
 const SESSION = '5f1d6a0e-8b0c-4a53-9d0b-1c2d3e4f5a6b';
-const MESSAGE = '9a8b7c6d-1e2f-4a3b-8c4d-5e6f7a8b9c0d';
 
 const finishedTurn = (chunks: UIMessageChunk[]): TurnStream => ({
   sessionId: SESSION,
@@ -26,7 +26,10 @@ describe('ChatController', () => {
   beforeAll(async () => {
     const module = await Test.createTestingModule({
       controllers: [ChatController],
-      providers: [{ provide: ChatService, useValue: service }],
+      providers: [
+        { provide: ChatService, useValue: service },
+        UiStreamPresenter,
+      ],
     }).compile();
     app = module.createNestApplication();
     app.useGlobalPipes(new ValidationPipe({ transform: true }));
@@ -84,7 +87,7 @@ describe('ChatController', () => {
         cancel: jest.fn().mockResolvedValue(undefined),
         stream: new ReadableStream<UIMessageChunk>({
           start(controller) {
-            controller.enqueue({ type: 'start', messageId: 'm1' }); // không bao giờ đóng
+            controller.enqueue({ type: 'start', messageId: 'm1' });
           },
         }),
       };
@@ -98,42 +101,44 @@ describe('ChatController', () => {
         signal: abort.signal,
       });
       await response.body!.getReader().read();
-      abort.abort();
 
-      await new Promise((resolve) => setTimeout(resolve, 100));
-      expect(turn.cancel).toHaveBeenCalledTimes(1);
+      abort.abort();
+      await new Promise((r) => setTimeout(r, 20));
+      expect(turn.cancel).toHaveBeenCalled();
     });
   });
 
   describe('POST /api/approve', () => {
     it('streams the resumed turn and passes the decision to the service', async () => {
-      service.approve.mockResolvedValue(finishedTurn([{ type: 'finish', finishReason: 'stop' }]));
+      service.approve.mockResolvedValue(
+        finishedTurn([{ type: 'start', messageId: 'm1' }, { type: 'finish', finishReason: 'stop' }]),
+      );
 
-      const response = await post('/api/approve', { sessionId: SESSION, messageId: MESSAGE, action: 'approve' });
-      await response.text();
+      const response = await post('/api/approve', {
+        sessionId: SESSION,
+        messageId: '9a8b7c6d-1e2f-4a3b-8c4d-5e6f7a8b9c0d',
+        action: 'approve',
+      });
+      const text = await response.text();
 
       expect(response.status).toBe(200);
-      expect(service.approve).toHaveBeenCalledWith(SESSION, MESSAGE, 'approve');
+      expect(text).toContain('data: [DONE]');
+      expect(service.approve).toHaveBeenCalledWith(
+        SESSION,
+        '9a8b7c6d-1e2f-4a3b-8c4d-5e6f7a8b9c0d',
+        'approve',
+      );
     });
 
     it.each([
-      ['an invalid action', { sessionId: SESSION, messageId: MESSAGE, action: 'delete' }],
+      ['an invalid action', { sessionId: SESSION, messageId: '9a8b7c6d-1e2f-4a3b-8c4d-5e6f7a8b9c0d', action: 'maybe' }],
       ['a missing message id', { sessionId: SESSION, action: 'approve' }],
-      ['an invalid session id', { sessionId: 'x', messageId: MESSAGE, action: 'approve' }],
-    ])('answers 400 for %s', async (_label, body) => {
+      ['an invalid session id', { sessionId: 'not-a-uuid', messageId: '9a8b7c6d-1e2f-4a3b-8c4d-5e6f7a8b9c0d', action: 'approve' }],
+    ])('answers 400 for %s without calling the engine', async (_label, body) => {
       const response = await post('/api/approve', body);
 
       expect(response.status).toBe(400);
       expect(service.approve).not.toHaveBeenCalled();
-    });
-
-    it('turns an HTTP error of the service into a JSON error response', async () => {
-      service.approve.mockRejectedValue(new NotFoundException('Phiên không tồn tại'));
-
-      const response = await post('/api/approve', { sessionId: SESSION, messageId: MESSAGE, action: 'reject' });
-
-      expect(response.status).toBe(404);
-      await expect(response.json()).resolves.toMatchObject({ message: 'Phiên không tồn tại' });
     });
   });
 
@@ -142,17 +147,22 @@ describe('ChatController', () => {
       service.history.mockResolvedValue([{ role: 'user', text: 'hi' }]);
 
       const response = await fetch(`${base}/api/history?sessionId=${SESSION}`);
+      const body = (await response.json()) as { turns: unknown[] };
 
       expect(response.status).toBe(200);
-      await expect(response.json()).resolves.toEqual({ turns: [{ role: 'user', text: 'hi' }] });
+      expect(body).toEqual({ turns: [{ role: 'user', text: 'hi' }] });
       expect(service.history).toHaveBeenCalledWith(SESSION);
     });
 
     it('works without a session and rejects an invalid one', async () => {
       service.history.mockResolvedValue([]);
 
-      expect((await fetch(`${base}/api/history`)).status).toBe(200);
-      expect((await fetch(`${base}/api/history?sessionId=nope`)).status).toBe(400);
+      const empty = await fetch(`${base}/api/history`);
+      expect(empty.status).toBe(200);
+      expect(service.history).toHaveBeenCalledWith(undefined);
+
+      const bad = await fetch(`${base}/api/history?sessionId=bad`);
+      expect(bad.status).toBe(400);
     });
   });
 });

@@ -7,9 +7,11 @@ import {
 import { readUIMessageStream } from 'ai';
 import type { UIMessage, UIMessageChunk } from 'ai';
 import { EMessageRole, ORCHESTRATION_ERROR } from '@agent/core/constants';
-import { AgentStreamService } from '../contracts/agent-stream.service';
-import { MessageClientService } from '../contracts/message-client.service';
-import { ChatService, TURN_TIMEOUT_MS, TurnStream } from './chat.service';
+import { AgentStreamService } from '../../contracts/agent-stream.service';
+import { MessageClientService } from '../../contracts/message-client.service';
+import { ChatService, TurnStream } from './chat.service';
+import { ChatSessionManager } from './chat-session.manager';
+import { TurnStreamFactory, TURN_TIMEOUT_MS } from './turn-stream.factory';
 
 // Dùng MessageClientService, AgentStreamService và `ai@7` THẬT; chỉ giả processor/duyệt/huỷ.
 describe('ChatService', () => {
@@ -25,12 +27,14 @@ describe('ChatService', () => {
     cancellation.requestCancel.mockResolvedValue(undefined);
     messages = new MessageClientService();
     agentStream = new AgentStreamService();
+    const sessionManager = new ChatSessionManager();
+    const streamFactory = new TurnStreamFactory(agentStream, messages, cancellation as never);
     service = new ChatService(
+      sessionManager,
+      streamFactory,
       processor as never,
       messages,
-      agentStream,
       approvals as never,
-      cancellation as never,
     );
   });
 

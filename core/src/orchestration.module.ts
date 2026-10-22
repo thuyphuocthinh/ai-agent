@@ -43,8 +43,13 @@ import { ApprovalSkillRecorderService } from './engine/hitl/approval-skill-recor
 import { MessageClientService, AgentStreamService } from './contracts';
 import { MetricsRegistryService } from './common/metrics-registry.service';
 import { HealthCheckService } from './common/health-check.service';
-import { ChatController } from './api/chat.controller';
-import { ChatService } from './api/chat.service';
+import {
+  ChatController,
+  ChatService,
+  ChatSessionManager,
+  TurnStreamFactory,
+  UiStreamPresenter,
+} from './api';
 
 @Module({
   imports: [
@@ -69,7 +74,10 @@ import { ChatService } from './api/chat.service';
   ],
   controllers: [ChatController],
   providers: [
+    ChatSessionManager,
+    TurnStreamFactory,
     ChatService,
+    UiStreamPresenter,
     AiOrchestrationProcessor,
     DynamicProviderProcessor,
     ReactLoopService,
