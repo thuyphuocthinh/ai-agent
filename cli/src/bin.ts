@@ -1,40 +1,38 @@
 #!/usr/bin/env node
-import { CliService } from './cli.service';
+import * as path from 'path';
 import { CliWebServer, DEFAULT_CORE_URL } from './web/cli-web.server';
+import { TerminalRepl } from './terminal/terminal-repl';
+import { CoreProcessManager } from './terminal/core-process-manager';
 
 async function runCli() {
-  const cli = new CliService();
+  const coreUrl = process.env.CORE_URL ?? DEFAULT_CORE_URL;
+  const manager = new CoreProcessManager();
+  let cleanupCore: (() => void) | undefined;
 
-  console.log('====================================================');
-  console.log('🤖 Agents CLI — Interactive AI Orchestration Console');
-  console.log('====================================================');
-  console.log('Type your instructions below. Type "exit" or "quit" to quit.\n');
-
-  while (true) {
-    const input = await cli.promptUser('You > ');
-    if (!input) continue;
-
-    if (input.toLowerCase() === 'exit' || input.toLowerCase() === 'quit') {
-      console.log('Goodbye! 👋');
-      process.exit(0);
+  const onExit = () => {
+    if (cleanupCore) {
+      cleanupCore();
+      cleanupCore = undefined;
     }
+  };
 
-    await cli.emitStep(
-      { conversationId: 'cli', userId: 'local-user', messageId: 'turn', sessionType: 'cli' },
-      { type: 'step_start', label: 'Processing query...' },
-    );
+  process.once('SIGINT', () => {
+    onExit();
+    process.exit(0);
+  });
+  process.once('SIGTERM', () => {
+    onExit();
+    process.exit(0);
+  });
 
-    // Simulated response for standalone CLI testing
-    await cli.emitToken(
-      { conversationId: 'cli', userId: 'local-user', messageId: 'turn', sessionType: 'cli' },
-      `Received instruction: "${input}"\n`,
-    );
-    await cli.flush();
+  try {
+    const rootDir = path.resolve(__dirname, '../..');
+    cleanupCore = await manager.ensureRunning(coreUrl, rootDir);
 
-    await cli.emitStep(
-      { conversationId: 'cli', userId: 'local-user', messageId: 'turn', sessionType: 'cli' },
-      { type: 'done' },
-    );
+    const repl = new TerminalRepl();
+    await repl.start();
+  } finally {
+    onExit();
   }
 }
 
