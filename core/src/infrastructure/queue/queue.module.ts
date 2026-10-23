@@ -3,11 +3,39 @@ import { DynamicModule, Global, Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { EQueueName } from '../../constants';
 import { QueueService } from './queue.service';
+import {
+  IQueueDispatcher,
+  QUEUE_DISPATCHER,
+} from './queue-dispatcher.interface';
+import { BullMqQueueDispatcher } from './bullmq-queue-dispatcher';
+import { InMemoryQueueDispatcher } from './in-memory-queue-dispatcher';
+
+const QUEUE_PROVIDERS = [
+  QueueService,
+  BullMqQueueDispatcher,
+  InMemoryQueueDispatcher,
+  {
+    provide: QUEUE_DISPATCHER,
+    inject: [ConfigService, BullMqQueueDispatcher, InMemoryQueueDispatcher],
+    useFactory: (
+      config: ConfigService,
+      bullMq: BullMqQueueDispatcher,
+      inMemory: InMemoryQueueDispatcher,
+    ): IQueueDispatcher => {
+      const driver = config.get<string>('QUEUE_DRIVER');
+      const redisHost = config.get<string>('REDIS_HOST');
+      if (driver === 'memory' || redisHost === 'memory' || !redisHost) {
+        return inMemory;
+      }
+      return bullMq;
+    },
+  },
+];
 
 @Global()
 @Module({
-  providers: [QueueService],
-  exports: [QueueService],
+  providers: QUEUE_PROVIDERS,
+  exports: [QUEUE_DISPATCHER, QueueService, BullMqQueueDispatcher, InMemoryQueueDispatcher],
 })
 export class QueueModule {
   static forRoot(): DynamicModule {
@@ -34,7 +62,7 @@ export class QueueModule {
           }),
         }),
       ],
-      exports: [BullModule],
+      exports: [BullModule, QUEUE_DISPATCHER, QueueService, BullMqQueueDispatcher, InMemoryQueueDispatcher],
     };
   }
 

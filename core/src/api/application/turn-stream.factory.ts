@@ -1,6 +1,6 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import type { UIMessageChunk } from 'ai';
-import { EMessageRole } from '@agent/core/constants';
+import { EMessageRole, CACHE } from '@agent/core/constants';
 import { AgentStreamService } from '../../contracts/agent-stream.service';
 import {
   MessageClientService,
@@ -8,6 +8,7 @@ import {
 } from '../../contracts/message-client.service';
 import { AgentCancellationService } from '../../engine/cancellation/agent-cancellation.service';
 import { VercelUiStreamAdapter } from '../../contracts/vercel-ui-stream.adapter';
+import { RedisPubSubStreamService } from '../../infrastructure/redis/redis-pubsub-stream.service';
 import { ChatSession } from './chat-session.manager';
 
 export const TURN_TIMEOUT_MS = 5 * 60 * 1000;
@@ -25,12 +26,15 @@ export class TurnStreamFactory {
     private readonly agentStream: AgentStreamService,
     private readonly messages: MessageClientService,
     private readonly cancellation: AgentCancellationService,
+    @Optional()
+    private readonly pubSub?: RedisPubSubStreamService,
   ) {}
 
   createTurn(session: ChatSession, boundMessageId?: string): ActiveTurn {
     let controller!: ReadableStreamDefaultController<UIMessageChunk>;
     let closed = false;
     const cleanups: Array<() => void> = [];
+    const subscribedChannels = new Set<string>();
 
     const release = () => {
       closed = true;
@@ -56,6 +60,25 @@ export class TurnStreamFactory {
       },
     });
 
+    const subscribeToMessageChannel = (msgId: string) => {
+      if (!this.pubSub || subscribedChannels.has(msgId)) return;
+      subscribedChannels.add(msgId);
+      const channel = CACHE.ORCHESTRATION.KEYS.STREAM_CHANNEL(msgId);
+      this.pubSub
+        .subscribe(channel, (payload: any) => {
+          if (closed) return;
+          if (payload?.step && payload?.context) {
+            adapter.handle(payload.context, payload.step);
+          }
+        })
+        .then((unsub) => {
+          cleanups.push(() => {
+            void unsub();
+          });
+        })
+        .catch(() => {});
+    };
+
     const stream = new ReadableStream<UIMessageChunk>({
       start: (c) => {
         controller = c;
@@ -65,8 +88,14 @@ export class TurnStreamFactory {
 
     cleanups.push(adapter.attach(this.agentStream));
     cleanups.push(
-      this.messages.onMessage((event) => this.handleMessage(event, session, adapter)),
+      this.messages.onMessage((event) =>
+        this.handleMessage(event, session, adapter, subscribeToMessageChannel),
+      ),
     );
+
+    if (boundMessageId) {
+      subscribeToMessageChannel(boundMessageId);
+    }
 
     const fail = async (error: unknown) => {
       if (closed) return;
@@ -106,6 +135,7 @@ export class TurnStreamFactory {
     event: MessageEvent,
     session: ChatSession,
     adapter: VercelUiStreamAdapter,
+    subscribeChannel?: (msgId: string) => void,
   ): void {
     if (
       event.conversationId !== session.conversationId ||
@@ -115,7 +145,10 @@ export class TurnStreamFactory {
     }
 
     if (event.type === 'created') {
-      if (typeof event.content === 'object' && event.content.type === 'approval_request') {
+      if (
+        typeof event.content === 'object' &&
+        event.content.type === 'approval_request'
+      ) {
         session.approvalMessageIds.add(event.id);
         adapter.send({
           type: 'data-approval',
@@ -123,18 +156,25 @@ export class TurnStreamFactory {
             messageId: event.id,
             tool: event.content.tool,
             preview: event.content.preview,
-            friendlySummary: (event.content as Record<string, unknown>).friendlySummary,
+            friendlySummary: (event.content as Record<string, unknown>)
+              .friendlySummary,
           },
         });
         return;
       }
       // Message đầu tiên engine tạo cho turn là reply: từ đây mới biết id để lọc event.
       adapter.bind(event.id);
+      if (subscribeChannel) {
+        subscribeChannel(event.id);
+      }
       return;
     }
 
     // Câu trả lời cuối và lỗi của engine chỉ đi qua updateMessage, không đi qua stream.
-    if (event.id === adapter.boundMessageId && typeof event.content === 'string') {
+    if (
+      event.id === adapter.boundMessageId &&
+      typeof event.content === 'string'
+    ) {
       adapter.send({
         type: 'data-reply',
         data: { messageId: event.id, text: event.content },

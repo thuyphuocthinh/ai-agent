@@ -1,11 +1,12 @@
-import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
-import { EAgentStreamStepType } from '@agent/core/constants';
+import { Injectable, Logger, OnModuleDestroy, Optional } from '@nestjs/common';
+import { EAgentStreamStepType, CACHE } from '@agent/core/constants';
 import {
   AgentStreamContext,
   AgentStreamStep,
   DEFAULT_STREAM_KEY,
   IStreamSink,
 } from './stream-sink.interface';
+import { RedisPubSubStreamService } from '../infrastructure/redis/redis-pubsub-stream.service';
 
 export type { AgentStreamContext, AgentStreamStep, IStreamSink };
 export { DEFAULT_STREAM_KEY };
@@ -22,9 +23,19 @@ interface PendingTokenBatch {
 export class AgentStreamService implements IStreamSink, OnModuleDestroy {
   private readonly logger = new Logger(AgentStreamService.name);
   private readonly pendingTokenBatches = new Map<string, PendingTokenBatch>();
-  private readonly listeners: ((context: AgentStreamContext, step: AgentStreamStep) => void)[] = [];
+  private readonly listeners: ((
+    context: AgentStreamContext,
+    step: AgentStreamStep,
+  ) => void)[] = [];
 
-  onStep(listener: (context: AgentStreamContext, step: AgentStreamStep) => void): () => void {
+  constructor(
+    @Optional()
+    private readonly pubSub?: RedisPubSubStreamService,
+  ) {}
+
+  onStep(
+    listener: (context: AgentStreamContext, step: AgentStreamStep) => void,
+  ): () => void {
     this.listeners.push(listener);
     return () => {
       const idx = this.listeners.indexOf(listener);
@@ -51,10 +62,18 @@ export class AgentStreamService implements IStreamSink, OnModuleDestroy {
         this.logger.warn(`Listener error: ${err?.message}`);
       }
     }
+
+    if (this.pubSub && context.messageId) {
+      const channel = CACHE.ORCHESTRATION.KEYS.STREAM_CHANNEL(context.messageId);
+      void this.pubSub.publish(channel, { context, step });
+    }
   }
 
   async emitToken(context: AgentStreamContext, token: string): Promise<void> {
-    await this.emitStep(context, { type: EAgentStreamStepType.TOKEN, text: token });
+    await this.emitStep(context, {
+      type: EAgentStreamStepType.TOKEN,
+      text: token,
+    });
   }
 
   async flush(): Promise<void> {
@@ -99,6 +118,13 @@ export class AgentStreamService implements IStreamSink, OnModuleDestroy {
       } catch (err: any) {
         this.logger.warn(`Listener error: ${err?.message}`);
       }
+    }
+
+    if (this.pubSub && batch.context.messageId) {
+      const channel = CACHE.ORCHESTRATION.KEYS.STREAM_CHANNEL(
+        batch.context.messageId,
+      );
+      void this.pubSub.publish(channel, { context: batch.context, step });
     }
   }
 }

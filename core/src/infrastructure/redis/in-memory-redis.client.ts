@@ -5,9 +5,13 @@ interface CacheEntry {
   expiresAt?: number;
 }
 
+type MessageCallback = (channel: string, message: string) => void;
+
 export class InMemoryRedisClient {
   private readonly logger = new Logger(InMemoryRedisClient.name);
   private readonly store = new Map<string, CacheEntry>();
+  private static readonly globalListeners = new Map<string, Set<(message: string) => void>>();
+  private readonly messageHandlers = new Set<MessageCallback>();
   public status = 'ready';
 
   constructor() {
@@ -100,6 +104,44 @@ export class InMemoryRedisClient {
     return 1;
   }
 
+  async publish(channel: string, message: string): Promise<number> {
+    const listeners = InMemoryRedisClient.globalListeners.get(channel);
+    if (!listeners || listeners.size === 0) return 0;
+    for (const listener of listeners) {
+      try {
+        listener(message);
+      } catch (err: any) {
+        this.logger.warn(`InMemory pub/sub error on ${channel}: ${err?.message}`);
+      }
+    }
+    return listeners.size;
+  }
+
+  async subscribe(channel: string, ..._args: any[]): Promise<'OK'> {
+    let listeners = InMemoryRedisClient.globalListeners.get(channel);
+    if (!listeners) {
+      listeners = new Set();
+      InMemoryRedisClient.globalListeners.set(channel, listeners);
+    }
+    const handler = (msg: string) => {
+      for (const cb of this.messageHandlers) {
+        cb(channel, msg);
+      }
+    };
+    listeners.add(handler);
+    return 'OK';
+  }
+
+  async unsubscribe(channel: string, ..._args: any[]): Promise<'OK'> {
+    InMemoryRedisClient.globalListeners.delete(channel);
+    return 'OK';
+  }
+
+  duplicate(): this {
+    const copy = new InMemoryRedisClient();
+    return copy as this;
+  }
+
   async eval(script: string, numkeys: number, ...args: (string | number)[]): Promise<any> {
     const keys = args.slice(0, numkeys).map(String);
     const argv = args.slice(numkeys).map(String);
@@ -136,16 +178,19 @@ export class InMemoryRedisClient {
   on(event: string, callback: (...args: any[]) => void): this {
     if (event === 'connect' || event === 'ready') {
       setTimeout(() => callback(), 0);
+    } else if (event === 'message') {
+      this.messageHandlers.add(callback as MessageCallback);
     }
     return this;
   }
 
   disconnect(): void {
     this.store.clear();
+    this.messageHandlers.clear();
   }
 
   quit(): Promise<'OK'> {
-    this.store.clear();
+    this.disconnect();
     return Promise.resolve('OK');
   }
 }

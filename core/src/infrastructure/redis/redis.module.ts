@@ -3,9 +3,14 @@ import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
 import { CachedService } from './cached.service';
 import { RateLimitService } from './rate-limit.service';
+import { RedisPubSubStreamService } from './redis-pubsub-stream.service';
 import { InMemoryRedisClient } from './in-memory-redis.client';
 
-const PROVIDERS = [CachedService, RateLimitService];
+const PROVIDERS = [
+  CachedService,
+  RateLimitService,
+  RedisPubSubStreamService,
+];
 
 @Global()
 @Module({

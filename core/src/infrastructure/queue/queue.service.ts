@@ -88,15 +88,19 @@ export class QueueService {
   }
 
   async getJobCounts(queueName: EQueueName): Promise<Record<string, number>> {
-    const queue = this.moduleRef.get<Queue>(getQueueToken(queueName), {
-      strict: false,
-    });
+    try {
+      const queue = this.moduleRef.get<Queue>(getQueueToken(queueName), {
+        strict: false,
+      });
 
-    if (!queue) {
-      throw new Error(`Queue ${queueName} not found or not registered`);
+      if (!queue) {
+        return { waiting: 0, active: 0 };
+      }
+
+      return await queue.getJobCounts('waiting', 'active');
+    } catch {
+      return { waiting: 0, active: 0 };
     }
-
-    return queue.getJobCounts('waiting', 'active');
   }
 
   async isOverloaded(

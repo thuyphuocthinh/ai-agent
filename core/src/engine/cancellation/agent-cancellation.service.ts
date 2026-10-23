@@ -34,7 +34,7 @@ export class AgentCancellationService {
     return this.redis.get(CACHE.ORCHESTRATION.KEYS.TURN_OWNER(messageId));
   }
 
-  /** Đánh dấu turn cần dừng — vòng lặp đang chạy tự phát hiện qua isCancelled(). */
+  /** Đánh dấu turn cần dừng — vòng lặp đang chạy tự phát hiện qua isCancelled() hoặc Pub/Sub. */
   async requestCancel(messageId: string): Promise<void> {
     await this.redis.set(
       CACHE.ORCHESTRATION.KEYS.TURN_CANCEL(messageId),
@@ -42,6 +42,16 @@ export class AgentCancellationService {
       'EX',
       CACHE.ORCHESTRATION.SETTINGS.TURN_TTL,
     );
+    try {
+      if (typeof this.redis.publish === 'function') {
+        await this.redis.publish(
+          CACHE.ORCHESTRATION.KEYS.CANCEL_CHANNEL(messageId),
+          '1',
+        );
+      }
+    } catch {
+      // Redis lỗi tạm thời không làm hỏng requestCancel
+    }
   }
 
   async isCancelled(messageId: string): Promise<boolean> {

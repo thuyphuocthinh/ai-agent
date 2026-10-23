@@ -7,17 +7,21 @@ import {
 import { readUIMessageStream } from 'ai';
 import type { UIMessage, UIMessageChunk } from 'ai';
 import { EMessageRole, ORCHESTRATION_ERROR } from '@agent/core/constants';
+import { EJobName, EQueueName, IQueueDispatcher } from '@agent/core/infrastructure/queue';
 import { AgentStreamService } from '../../contracts/agent-stream.service';
 import { MessageClientService } from '../../contracts/message-client.service';
 import { ChatService, TurnStream } from './chat.service';
 import { ChatSessionManager } from './chat-session.manager';
 import { TurnStreamFactory, TURN_TIMEOUT_MS } from './turn-stream.factory';
 
-// Dùng MessageClientService, AgentStreamService và `ai@7` THẬT; chỉ giả processor/duyệt/huỷ.
+// Dùng MessageClientService, AgentStreamService và `ai@7` THẬT; giả lập queueDispatcher/duyệt/huỷ.
 describe('ChatService', () => {
   let messages: MessageClientService;
   let agentStream: AgentStreamService;
-  const processor = { process: jest.fn() };
+  const queueDispatcher: jest.Mocked<IQueueDispatcher> = {
+    dispatch: jest.fn(),
+    getJobCounts: jest.fn(),
+  };
   const approvals = { resolveApproval: jest.fn() };
   const cancellation = { requestCancel: jest.fn() };
   let service: ChatService;
@@ -32,7 +36,7 @@ describe('ChatService', () => {
     service = new ChatService(
       sessionManager,
       streamFactory,
-      processor as never,
+      queueDispatcher,
       messages,
       approvals as never,
     );
@@ -66,17 +70,18 @@ describe('ChatService', () => {
   };
   const types = (chunks: UIMessageChunk[]) => chunks.map((c) => c.type as string);
 
-  // Mô phỏng AiOrchestrationProcessor: tạo reply, phát step, cập nhật câu trả lời, phát done.
+  // Mô phỏng QueueDispatcher: trigger callback tạo reply, phát step, cập nhật câu trả lời, phát done.
   const engineTurn = (
     run: (ctx: { conversationId: string; userId: string; replyId: string }) => Promise<void>,
   ) =>
-    processor.process.mockImplementation(async ({ data }) => {
+    queueDispatcher.dispatch.mockImplementation(async (_q, _job, data: any) => {
       const reply = await messages.createMessage({ channelId: data.channelId, content: '🤖 Đang xử lý...' });
       await run({ conversationId: data.channelId, userId: data.userId, replyId: reply.id });
       await agentStream.emitStep(
         { userId: data.userId, channelId: data.channelId, messageId: reply.id },
         { type: 'done' },
       );
+      return { id: 'mock-job-id' };
     });
   const ctxOf = (c: { userId: string; conversationId: string; replyId: string }, streamKey = 'r0-sql_server') => ({
     userId: c.userId,
@@ -121,8 +126,8 @@ describe('ChatService', () => {
       expect(chunks[1]).toMatchObject({ data: { text: '⚠️ Lỗi hệ thống: thiếu API key' } });
     });
 
-    it('turns a processor failure into an error chunk and finishes', async () => {
-      processor.process.mockRejectedValue(new Error('Redis down'));
+    it('turns a dispatcher failure into an error chunk and finishes', async () => {
+      queueDispatcher.dispatch.mockRejectedValue(new Error('Redis down'));
 
       const chunks = await readAll(await service.chat('xin chào'));
 
@@ -132,20 +137,21 @@ describe('ChatService', () => {
       ]);
     });
 
-    it('passes UUID ids, the prompt message and the web channel to the engine', async () => {
+    it('passes UUID ids, the prompt message and the web channel to the dispatcher', async () => {
       engineTurn(async () => undefined);
 
       const turn = await service.chat('hỏi gì đó');
       await readAll(turn);
 
-      const job = processor.process.mock.calls[0][0];
+      const [queueName, jobName, jobData] = queueDispatcher.dispatch.mock.calls[0];
       const uuid = /^[0-9a-f-]{36}$/;
-      expect(job.name).toBe('process_ai_trigger');
+      expect(queueName).toBe(EQueueName.AI_ORCHESTRATION_QUEUE);
+      expect(jobName).toBe(EJobName.PROCESS_AI_TRIGGER);
       for (const key of ['userId', 'conversationId', 'tenantId', 'botUserId', 'messageId']) {
-        expect(job.data[key]).toMatch(uuid);
+        expect(jobData[key]).toMatch(uuid);
       }
-      expect(job.data.channelType).toBe('web');
-      await expect(messages.getMessageText({ id: job.data.messageId, userId: job.data.userId })).resolves.toBe('hỏi gì đó');
+      expect(jobData.channelType).toBe('web');
+      await expect(messages.getMessageText({ id: jobData.messageId, userId: jobData.userId })).resolves.toBe('hỏi gì đó');
       expect(turn.sessionId).toMatch(uuid);
     });
 
@@ -157,7 +163,7 @@ describe('ChatService', () => {
       await readAll(await service.chat('câu 2', first.sessionId));
       await readAll(await service.chat('phiên khác'));
 
-      const [a, b, c] = processor.process.mock.calls.map(([job]) => job.data.conversationId);
+      const [a, b, c] = queueDispatcher.dispatch.mock.calls.map(([,, jobData]) => jobData.conversationId);
       expect(a).toBe(b);
       expect(c).not.toBe(a);
     });
@@ -237,7 +243,7 @@ describe('ChatService', () => {
     it('resolves the checkpoint for the session user and streams the resumed turn', async () => {
       const { turn, approvalId } = await pausedTurn();
       let userId = '';
-      processor.process.mock.calls.forEach(([job]) => (userId = job.data.userId));
+      queueDispatcher.dispatch.mock.calls.forEach(([,, jobData]) => (userId = jobData.userId));
       approvals.resolveApproval.mockImplementation(async () => {
         await messages.updateMessage({ id: approvalId, content: '{"affectedRows":1}' });
         await agentStream.emitStep({ userId, channelId: 'c', messageId: approvalId }, { type: 'done' });
@@ -293,9 +299,10 @@ describe('ChatService', () => {
   describe('cancel and cleanup', () => {
     const hangingTurn = async () => {
       let replyId = '';
-      processor.process.mockImplementation(async ({ data }) => {
+      queueDispatcher.dispatch.mockImplementation(async (_q, _j, data: any) => {
         replyId = (await messages.createMessage({ channelId: data.channelId, content: '...' })).id;
         await new Promise(() => undefined);
+        return { id: 'mock-job-id' };
       });
       const turn = await service.chat('chậm');
       await new Promise((r) => setImmediate(r));
@@ -338,3 +345,4 @@ describe('ChatService', () => {
     });
   });
 });
+

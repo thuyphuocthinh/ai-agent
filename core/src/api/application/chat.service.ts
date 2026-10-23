@@ -11,9 +11,11 @@ import type { UIMessageChunk } from 'ai';
 import { EApprovalAction } from '@agent/core/constants';
 import {
   EJobName,
+  EQueueName,
   IProcessAiTriggerJobData,
+  IQueueDispatcher,
+  QUEUE_DISPATCHER,
 } from '@agent/core/infrastructure/queue';
-import { AiOrchestrationProcessor } from '../../engine/orchestrator/ai-orchestration.processor';
 import { ApprovalRequestService } from '../../engine/hitl/approval-request.service';
 import { IMessageSink, MESSAGE_SINK } from '../../contracts';
 import { ChatHistoryTurnDto } from '../../contracts/dtos/message-client.dto';
@@ -21,7 +23,6 @@ import { ChatSessionManager } from './chat-session.manager';
 import { TurnStreamFactory } from './turn-stream.factory';
 import { OrchestrationRpcExceptionFilter } from '../presentation/filters/orchestration-exception.filter';
 
-type ProcessJob = Parameters<AiOrchestrationProcessor['process']>[0];
 const HISTORY_LIMIT = 200;
 
 export interface TurnStream {
@@ -38,7 +39,8 @@ export class ChatService {
   constructor(
     private readonly sessionManager: ChatSessionManager,
     private readonly streamFactory: TurnStreamFactory,
-    private readonly processor: AiOrchestrationProcessor,
+    @Inject(QUEUE_DISPATCHER)
+    private readonly queueDispatcher: IQueueDispatcher,
     @Inject(MESSAGE_SINK)
     private readonly messages: IMessageSink,
     private readonly approvals: ApprovalRequestService,
@@ -64,10 +66,14 @@ export class ChatService {
       channelType: 'web',
     };
 
-    void this.processor
-      .process({ name: EJobName.PROCESS_AI_TRIGGER, data } as unknown as ProcessJob)
+    void this.queueDispatcher
+      .dispatch(
+        EQueueName.AI_ORCHESTRATION_QUEUE,
+        EJobName.PROCESS_AI_TRIGGER,
+        data,
+      )
       .catch((error) => {
-        this.logger.error(`Turn failed: ${error?.message}`);
+        this.logger.error(`Turn dispatch failed: ${error?.message}`);
         return turn.fail(error);
       });
 
