@@ -1,10 +1,14 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { IProcessAiTriggerJobData } from '@agent/core/infrastructure/queue';
 import { ORCHESTRATION_CONSTANTS } from '@agent/core/constants';
-import { MessageClientService } from '../../contracts/message-client.service';
+import {
+  IMessageSink,
+  MESSAGE_SINK,
+  IStreamSink,
+  STREAM_SINK,
+} from '../../contracts';
 import { ReactLoopService } from '../loop/react-loop.service';
 import { SupervisorService } from '../supervisor/supervisor.service';
-import { AgentStreamService } from '../../contracts/agent-stream.service';
 import {
   AvailableAgentDto,
   DelegationDto,
@@ -31,15 +35,25 @@ export class TurnResolverService {
   private readonly logger = new Logger(TurnResolverService.name);
 
   constructor(
-    private readonly messageClient: MessageClientService,
+    @Inject(MESSAGE_SINK)
+    private readonly messageSink: IMessageSink,
     private readonly reactLoop: ReactLoopService,
     private readonly supervisor: SupervisorService,
-    private readonly agentStream: AgentStreamService,
+    @Inject(STREAM_SINK)
+    private readonly streamSink: IStreamSink,
     private readonly cancellation: AgentCancellationService,
     private readonly checkpointPause: CheckpointPauseService,
     private readonly metrics: MetricsRegistryService,
     private readonly memoryManager: MemoryManagerService,
   ) {}
+
+  private get messageClient(): IMessageSink {
+    return this.messageSink;
+  }
+
+  private get agentStream(): IStreamSink {
+    return this.streamSink;
+  }
 
   async resolveAnswer(
     data: IProcessAiTriggerJobData,
@@ -47,9 +61,9 @@ export class TurnResolverService {
   ): Promise<AnswerResult> {
     const { userId, channelId, messageId, workspaceId } = data;
     const [prompt, agents, history] = await Promise.all([
-      this.messageClient.getMessageText({ id: messageId, userId }),
+      this.messageSink.getMessageText({ id: messageId, userId }),
       this.supervisor.getAvailableAgents(userId, workspaceId),
-      this.messageClient.getRecentHistory({
+      this.messageSink.getRecentHistory({
         channelId,
         userId,
         beforeMessageId: messageId,
@@ -99,7 +113,8 @@ export class TurnResolverService {
         {
           reactLoop: this.reactLoop,
           supervisor: this.supervisor,
-          agentStream: this.agentStream,
+          streamSink: this.streamSink,
+          agentStream: this.streamSink,
           cancellation: this.cancellation,
           checkpointPause: this.checkpointPause,
           metrics: this.metrics,

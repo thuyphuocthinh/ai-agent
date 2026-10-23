@@ -3,6 +3,7 @@ import { IProcessAiTriggerJobData } from '@agent/core/infrastructure/queue';
 import { ORCHESTRATION_CONSTANTS } from '@agent/core/constants';
 import { TurnResolverService } from './turn-resolver.service';
 import { MessageClientService } from '../../contracts/message-client.service';
+import { MESSAGE_SINK, STREAM_SINK } from '../../contracts';
 import { ReactLoopService } from '../loop/react-loop.service';
 import { SupervisorService } from '../supervisor/supervisor.service';
 import { AgentStreamService } from '../../contracts/agent-stream.service';
@@ -78,9 +79,11 @@ describe('TurnResolverService (Plan-and-Execute, xem accuracy.md)', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TurnResolverService,
+        { provide: MESSAGE_SINK, useValue: mockMessageClient },
         { provide: MessageClientService, useValue: mockMessageClient },
         { provide: ReactLoopService, useValue: mockReactLoop },
         { provide: SupervisorService, useValue: mockSupervisor },
+        { provide: STREAM_SINK, useValue: mockAgentStream },
         { provide: AgentStreamService, useValue: mockAgentStream },
         { provide: AgentCancellationService, useValue: mockCancellation },
         { provide: CheckpointPauseService, useValue: mockCheckpointPause },

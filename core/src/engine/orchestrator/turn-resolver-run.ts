@@ -12,7 +12,7 @@ import {
   AgentRankingCache,
   SupervisorService,
 } from '../supervisor/supervisor.service';
-import { AgentStreamService } from '../../contracts/agent-stream.service';
+import { IStreamSink } from '../../contracts';
 import {
   AvailableAgentDto,
   DelegationDto,
@@ -88,7 +88,8 @@ export interface TurnResolverRunOptions {
 export interface TurnResolverRunDeps {
   reactLoop: ReactLoopService;
   supervisor: SupervisorService;
-  agentStream: AgentStreamService;
+  streamSink?: IStreamSink;
+  agentStream?: IStreamSink;
   cancellation: AgentCancellationService;
   checkpointPause: CheckpointPauseService;
   metrics: MetricsRegistryService;
@@ -128,7 +129,10 @@ export class TurnResolverRun {
 
   private readonly reactLoop: ReactLoopService;
   private readonly supervisor: SupervisorService;
-  private readonly agentStream: AgentStreamService;
+  private readonly streamSink: IStreamSink;
+  private get agentStream(): IStreamSink {
+    return this.streamSink;
+  }
   private readonly cancellation: AgentCancellationService;
   private readonly checkpointPause: CheckpointPauseService;
   private readonly metrics: MetricsRegistryService;
@@ -151,7 +155,7 @@ export class TurnResolverRun {
 
     this.reactLoop = deps.reactLoop;
     this.supervisor = deps.supervisor;
-    this.agentStream = deps.agentStream;
+    this.streamSink = (deps.streamSink ?? deps.agentStream)!;
     this.cancellation = deps.cancellation;
     this.checkpointPause = deps.checkpointPause;
     this.metrics = deps.metrics;
@@ -259,10 +263,19 @@ export class TurnResolverRun {
   private async runPlanningStep(
     agentRankingCache: AgentRankingCache,
   ): Promise<PlanOutcome> {
-    const { userId, channelId, channelType } = this.data;
+    const { userId } = this.data;
+    const conversationId = this.data.conversationId ?? this.data.channelId;
+    const sessionType = this.data.sessionType ?? this.data.channelType ?? 'direct';
     await this.agentStream
       .emitStep(
-        { userId, channelId, messageId: this.replyMessageId, channelType },
+        {
+          userId,
+          conversationId,
+          channelId: conversationId,
+          messageId: this.replyMessageId,
+          sessionType,
+          channelType: sessionType,
+        },
         {
           type: EAgentStreamStepType.STEP_START,
           label: '🧠 Đang phân tích yêu cầu và lập kế hoạch...',
@@ -278,7 +291,7 @@ export class TurnResolverRun {
       this.history,
       agentRankingCache,
       this.signal,
-      this.data.channelId,
+      conversationId,
       this.data.workspaceId,
     );
 
@@ -286,7 +299,7 @@ export class TurnResolverRun {
       if (plan.rememberFact) {
         this.memoryManager
           .recordUserDeclaredFact(
-            this.data.channelId,
+            conversationId,
             this.replyMessageId,
             plan.rememberFact,
           )
@@ -473,15 +486,23 @@ export class TurnResolverRun {
   }
 
   private async runNonConvergenceFallback(): Promise<AnswerResult> {
-    const { userId, channelId } = this.data;
-    const channelType = this.data.sessionType ?? this.data.channelType ?? 'direct';
+    const { userId } = this.data;
+    const conversationId = this.data.conversationId ?? this.data.channelId;
+    const sessionType = this.data.sessionType ?? this.data.channelType ?? 'direct';
     this.logger.warn(
       `Supervisor chưa hội tụ (realSteps=${this.realStepsRun}/${ORCHESTRATION_CONSTANTS.MAX_REAL_STEPS_PER_TURN}, nonProgress=${this.nonProgressRounds}/${ORCHESTRATION_CONSTANTS.MAX_SUPERVISOR_ROUNDS}) cho user ${userId}, tổng hợp lại kết quả đã có`,
     );
     this.metrics.incrementBehaviorSignal('non_convergence');
     await this.agentStream
       .emitStep(
-        { userId, channelId, messageId: this.replyMessageId, channelType },
+        {
+          userId,
+          conversationId,
+          channelId: conversationId,
+          messageId: this.replyMessageId,
+          sessionType,
+          channelType: sessionType,
+        },
         {
           type: EAgentStreamStepType.STEP_START,
           label: 'Tổng hợp câu trả lời',
@@ -500,9 +521,9 @@ export class TurnResolverRun {
           buildOnToken(
             this.agentStream,
             userId,
-            channelId,
+            conversationId,
             this.replyMessageId,
-            channelType,
+            sessionType,
             fallbackAccumulator,
           ),
           sig,
@@ -520,8 +541,9 @@ export class TurnResolverRun {
   }
 
   private async finalizeAnswer(answerHint?: string): Promise<AnswerResult> {
-    const { userId, channelId } = this.data;
-    const channelType = this.data.sessionType ?? this.data.channelType ?? 'direct';
+    const { userId } = this.data;
+    const conversationId = this.data.conversationId ?? this.data.channelId;
+    const sessionType = this.data.sessionType ?? this.data.channelType ?? 'direct';
 
     if (this.rounds.length === 1) {
       return buildAnswer(
@@ -532,7 +554,14 @@ export class TurnResolverRun {
     if (this.rounds.length > 1) {
       await this.agentStream
         .emitStep(
-          { userId, channelId, messageId: this.replyMessageId, channelType },
+          {
+            userId,
+            conversationId,
+            channelId: conversationId,
+            messageId: this.replyMessageId,
+            sessionType,
+            channelType: sessionType,
+          },
           {
             type: EAgentStreamStepType.STEP_START,
             label: 'Tổng hợp câu trả lời',
@@ -551,9 +580,9 @@ export class TurnResolverRun {
             buildOnToken(
               this.agentStream,
               userId,
-              channelId,
+              conversationId,
               this.replyMessageId,
-              channelType,
+              sessionType,
               accumulator,
             ),
             sig,
@@ -712,9 +741,10 @@ export class TurnResolverRun {
     round: number,
     remainingSteps: DelegationDto[],
   ): Promise<DelegateRoundResult | ApprovalRequiredDelegateResult | null> {
-    const { userId, channelId } = this.data;
+    const { userId } = this.data;
+    const conversationId = this.data.conversationId ?? this.data.channelId;
     const workspaceId = this.data.tenantId ?? this.data.workspaceId ?? 'default';
-    const channelType = this.data.sessionType ?? this.data.channelType ?? 'direct';
+    const sessionType = this.data.sessionType ?? this.data.channelType ?? 'direct';
     const targetAgent = this.agents.find(
       (a) => a.provider === delegation.agent,
     );
@@ -765,9 +795,11 @@ export class TurnResolverRun {
       .emitStep(
         {
           userId,
-          channelId,
+          conversationId,
+          channelId: conversationId,
           messageId: this.replyMessageId,
-          channelType,
+          sessionType,
+          channelType: sessionType,
           streamKey,
         },
         {
@@ -783,10 +815,12 @@ export class TurnResolverRun {
           prompt: promptWithContext,
           provider: targetAgent.provider,
           userId,
-          channelId,
+          conversationId,
+          channelId: conversationId,
           workspaceId,
           messageId: this.replyMessageId,
-          channelType,
+          sessionType,
+          channelType: sessionType,
           history: this.history,
           streamKey,
           persona: delegation.persona,

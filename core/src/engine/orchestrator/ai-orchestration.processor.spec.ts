@@ -8,6 +8,7 @@ import {
 import { AiOrchestrationProcessor } from './ai-orchestration.processor';
 import { MessageClientService } from '../../contracts/message-client.service';
 import { AgentStreamService } from '../../contracts/agent-stream.service';
+import { MESSAGE_SINK, STREAM_SINK } from '../../contracts';
 import { TriggerClaimService } from '../hitl/trigger-claim.service';
 import { AgentCancellationService } from '../cancellation/agent-cancellation.service';
 import { TurnCancelledError } from '../loop/turn-cancelled.error';
@@ -78,7 +79,9 @@ describe('AiOrchestrationProcessor', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AiOrchestrationProcessor,
+        { provide: MESSAGE_SINK, useValue: mockMessageClient },
         { provide: MessageClientService, useValue: mockMessageClient },
+        { provide: STREAM_SINK, useValue: mockAgentStream },
         { provide: AgentStreamService, useValue: mockAgentStream },
         { provide: TriggerClaimService, useValue: mockTriggerClaim },
         { provide: AgentCancellationService, useValue: mockCancellation },

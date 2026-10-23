@@ -4,7 +4,7 @@ import {
   ORCHESTRATION_CONSTANTS,
   ORCHESTRATION_SELF_CHECK_PROMPT,
 } from '@agent/core/constants';
-import { McpClientService } from '@agent/tools';
+import { IStreamSink, IToolProvider } from '../../contracts';
 import {
   RunReactLoopRequestDto,
   RunReactLoopResponseDto,
@@ -16,7 +16,7 @@ import {
   LlmToolResult,
   LlmTurnResult,
 } from '../strategy/llm-strategy.interface';
-import { AgentStreamService } from '../../contracts/agent-stream.service';
+
 import { withLlmRetry } from './with-llm-retry.util';
 import { CircuitBreakerService } from '../../common/circuit-breaker.service';
 import { McpToolDto } from '../../contracts/dtos/mcp.dto';
@@ -43,8 +43,10 @@ export interface ReactLoopRunOptions {
 }
 
 export interface ReactLoopRunDeps {
-  mcpClient: McpClientService;
-  agentStream: AgentStreamService;
+  toolProvider?: IToolProvider;
+  mcpClient?: IToolProvider;
+  streamSink?: IStreamSink;
+  agentStream?: IStreamSink;
   circuitBreaker: CircuitBreakerService;
   memoryManager: MemoryManagerService;
   logger: Logger;
@@ -99,8 +101,10 @@ export class ReactLoopRun {
         signal: options.signal,
       },
       {
-        mcpClient: deps.mcpClient,
-        agentStream: deps.agentStream,
+        toolProvider: deps.toolProvider ?? deps.mcpClient,
+        mcpClient: deps.toolProvider ?? deps.mcpClient,
+        streamSink: deps.streamSink ?? deps.agentStream,
+        agentStream: deps.streamSink ?? deps.agentStream,
         memoryManager: deps.memoryManager,
         logger: deps.logger,
         repeatGuard: options.repeatGuard ?? new ToolRepeatGuard(),

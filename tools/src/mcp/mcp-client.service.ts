@@ -12,6 +12,7 @@ import {
   McpResourceDto,
   McpPromptDto,
 } from '@agent/core/dto/mcp.dto';
+import { IToolProvider } from '@agent/core/contracts';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { withTimeout } from '@agent/core/loop/with-timeout.util';
 import { abortableSleep } from '@agent/core/common';
@@ -34,7 +35,7 @@ interface ClientCacheEntry {
 
 // Ghi chú thiết kế đầy đủ (WHY): docs/orchestration/code-notes/mcp-client.service.md
 @Injectable()
-export class McpClientService {
+export class McpClientService implements IToolProvider {
   private readonly logger = new Logger(McpClientService.name);
   private readonly clients = new Map<string, ClientCacheEntry>();
   private readonly toolsCache = new Map<string, CacheEntry<McpToolDto>>();

@@ -1,16 +1,20 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
   ORCHESTRATION_CONSTANTS,
   ORCHESTRATION_SYSTEM_PROMPT,
   EAgentStreamStepType,
 } from '@agent/core/constants';
-import { McpClientService } from '@agent/tools';
 import {
   RunReactLoopRequestDto,
   RunReactLoopResponseDto,
 } from '../../contracts/dtos/react-loop.dto';
 import { LlmStrategyFactory } from '../strategy/llm-strategy.factory';
-import { AgentStreamService } from '../../contracts/agent-stream.service';
+import {
+  IToolProvider,
+  TOOL_PROVIDER,
+  IStreamSink,
+  STREAM_SINK,
+} from '../../contracts';
 import { CircuitBreakerService } from '../../common/circuit-breaker.service';
 import { AgentCancellationService } from '../cancellation/agent-cancellation.service';
 import { runCancellable } from '../../common/cancellable-run.util';
@@ -30,9 +34,11 @@ export class ReactLoopService {
   private readonly logger = new Logger(ReactLoopService.name);
 
   constructor(
-    private readonly mcpClient: McpClientService,
+    @Inject(TOOL_PROVIDER)
+    private readonly toolProvider: IToolProvider,
     private readonly llmFactory: LlmStrategyFactory,
-    private readonly agentStream: AgentStreamService,
+    @Inject(STREAM_SINK)
+    private readonly streamSink: IStreamSink,
     private readonly circuitBreaker: CircuitBreakerService,
     private readonly cancellation: AgentCancellationService,
     private readonly memoryManager: MemoryManagerService,
@@ -45,7 +51,7 @@ export class ReactLoopService {
   ): Promise<RunReactLoopResponseDto> {
     let confirmedText = '';
     const emitToken = (step: { type: EAgentStreamStepType.TOKEN | EAgentStreamStepType.RESYNC; text: string }) => {
-      this.agentStream
+      this.streamSink
         .emitStep(
           {
             userId: dto.userId,
@@ -77,7 +83,7 @@ export class ReactLoopService {
           ORCHESTRATION_CONSTANTS.DEFAULT_REACT_MODEL;
 
         const [mcpTools, systemInstruction] = await Promise.all([
-          this.mcpClient.getTools(
+          this.toolProvider.getTools(
             dto.provider,
             dto.prompt,
             signal,
@@ -126,8 +132,10 @@ export class ReactLoopService {
             repeatGuard,
           },
           {
-            mcpClient: this.mcpClient,
-            agentStream: this.agentStream,
+            toolProvider: this.toolProvider,
+            streamSink: this.streamSink,
+            mcpClient: this.toolProvider,
+            agentStream: this.streamSink,
             circuitBreaker: this.circuitBreaker,
             memoryManager: this.memoryManager,
             logger: this.logger,
@@ -149,21 +157,21 @@ export class ReactLoopService {
     workspaceId?: string,
     persona?: PersonaDto,
   ): Promise<string> {
-    const mcpResources = await this.mcpClient.getResources(
+    const mcpResources = (await this.toolProvider.getResources?.(
       provider,
       signal,
       workspaceId,
-    );
+    )) ?? [];
     const resourceContents = await Promise.all(
       mcpResources.map(async (r) => {
         try {
-          const content = await this.mcpClient.readResource(
+          const content = (await this.toolProvider.readResource?.(
             provider,
             r.uri,
             userId,
             signal,
             workspaceId,
-          );
+          )) ?? '';
           return `\n--- Resource: ${r.name} ---\n${capToolResultSize(content, this.memoryManager.buildBudget(modelId).toolResultCharBudget)}`;
         } catch (error) {
           this.logger.warn(

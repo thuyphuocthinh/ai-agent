@@ -40,7 +40,12 @@ import { ApprovalRequestService } from './engine/hitl/approval-request.service';
 import { ApprovalExecutionService } from './engine/hitl/approval-execution.service';
 import { ApprovalContinuationPlannerService } from './engine/hitl/approval-continuation-planner.service';
 import { ApprovalSkillRecorderService } from './engine/hitl/approval-skill-recorder.service';
-import { MessageClientService, AgentStreamService } from './contracts';
+import {
+  MessageClientService,
+  AgentStreamService,
+  MESSAGE_SINK,
+  STREAM_SINK,
+} from './contracts';
 import { MetricsRegistryService } from './common/metrics-registry.service';
 import { HealthCheckService } from './common/health-check.service';
 import {
@@ -108,6 +113,14 @@ import {
     ApprovalSkillRecorderService,
     MessageClientService,
     AgentStreamService,
+    {
+      provide: MESSAGE_SINK,
+      useExisting: MessageClientService,
+    },
+    {
+      provide: STREAM_SINK,
+      useExisting: AgentStreamService,
+    },
     MetricsRegistryService,
     HealthCheckService,
   ],
@@ -118,6 +131,8 @@ import {
     LlmStrategyFactory,
     MessageClientService,
     AgentStreamService,
+    MESSAGE_SINK,
+    STREAM_SINK,
     ToolsModule,
   ],
 })

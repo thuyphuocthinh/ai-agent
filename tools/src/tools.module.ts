@@ -14,6 +14,7 @@ import {
   MetricsRegistryService,
   ProviderConcurrencyLimiterService,
 } from '@agent/core/common';
+import { TOOL_PROVIDER } from '@agent/core/contracts/tool-provider.interface';
 import { AGENT_REGISTRY } from './registry/agents.registry';
 import {
   MockMcpAuthClientService,
@@ -47,6 +48,10 @@ if (MOCK_TOOLS) {
     MOCK_TOOLS
       ? { provide: McpClientService, useClass: MockMcpClientService }
       : McpClientService,
+    {
+      provide: TOOL_PROVIDER,
+      useExisting: McpClientService,
+    },
     MOCK_TOOLS
       ? { provide: McpAuthClientService, useClass: MockMcpAuthClientService }
       : McpAuthClientService,
@@ -58,6 +63,7 @@ if (MOCK_TOOLS) {
     DynamicToolExecutorService,
   ],
   exports: [
+    TOOL_PROVIDER,
     CircuitBreakerService,
     ProviderConcurrencyLimiterService,
     McpClientService,

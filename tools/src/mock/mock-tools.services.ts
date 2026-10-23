@@ -5,6 +5,7 @@ import {
   McpResourceDto,
   McpToolDto,
 } from '@agent/core/dto/mcp.dto';
+import { IToolProvider } from '@agent/core/contracts';
 import { MockProvider, errorResult } from './mock-provider';
 import { MOCK_PROVIDER_ID, createMockSqlProvider } from './mock-sql.provider';
 import { MOCK_SHEETS_PROVIDER_ID, createMockSheetsProvider } from './mock-sheets.provider';
@@ -39,7 +40,7 @@ export const MOCK_PROVIDER_IDS: string[] = [
  * khi khởi động lại.
  */
 @Injectable()
-export class MockMcpClientService {
+export class MockMcpClientService implements IToolProvider {
   private readonly providers = new Map<string, MockProvider>(
     createMockProviders().map((p) => [p.id, p]),
   );

@@ -59,6 +59,21 @@ export class CliService implements IMessageSink, IStreamSink {
     return { id };
   }
 
+  async addUserMessage(dto: {
+    conversationId: string;
+    text: string;
+  }): Promise<CreateOrchestrationMessageResponseDto> {
+    const id = `cli-msg-${++this.messageCounter}`;
+    this.messages.set(id, dto.text);
+
+    this.history.push({
+      role: EMessageRole.USER,
+      text: dto.text,
+    });
+
+    return { id };
+  }
+
   async updateMessage(dto: UpdateOrchestrationMessageRequestDto): Promise<void> {
     const text = typeof dto.content === 'string' ? dto.content : JSON.stringify(dto.content);
     this.messages.set(dto.id, text);

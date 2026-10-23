@@ -7,13 +7,13 @@ import {
   EAgentStreamStepType,
 } from '@agent/core/constants';
 import { extractTextFromMcpResult } from '@agent/core/common';
-import { McpClientService } from '@agent/tools';
+import { IStreamSink, IToolProvider } from '../../contracts';
 import {
   RunReactLoopRequestDto,
   ToolCallTraceDto,
 } from '../../contracts/dtos/react-loop.dto';
 import { LlmToolCall, LlmToolResult } from '../strategy/llm-strategy.interface';
-import { AgentStreamService } from '../../contracts/agent-stream.service';
+
 import { ApprovalRequiredError } from './approval-required.error';
 import { CallToolResponseDto, McpToolDto } from '../../contracts/dtos/mcp.dto';
 import { abortableSleep } from '../../common/abortable-sleep.util';
@@ -66,8 +66,10 @@ export interface ToolCallExecutorOptions {
 }
 
 export interface ToolCallExecutorDeps {
-  mcpClient: McpClientService;
-  agentStream: AgentStreamService;
+  toolProvider?: IToolProvider;
+  mcpClient?: IToolProvider;
+  streamSink?: IStreamSink;
+  agentStream?: IStreamSink;
   memoryManager: MemoryManagerService;
   logger: Logger;
   repeatGuard: ToolRepeatGuard;
@@ -88,8 +90,8 @@ export class ToolCallExecutor {
   private readonly reactModelId: string;
   private readonly signal: AbortSignal;
 
-  private readonly mcpClient: McpClientService;
-  private readonly agentStream: AgentStreamService;
+  private readonly toolProvider: IToolProvider;
+  private readonly streamSink: IStreamSink;
   private readonly memoryManager: MemoryManagerService;
   private readonly logger: Logger;
   private readonly repeatGuard: ToolRepeatGuard;
@@ -111,8 +113,8 @@ export class ToolCallExecutor {
     this.reactModelId = options.reactModelId;
     this.signal = options.signal;
 
-    this.mcpClient = deps.mcpClient;
-    this.agentStream = deps.agentStream;
+    this.toolProvider = (deps.toolProvider ?? deps.mcpClient)!;
+    this.streamSink = (deps.streamSink ?? deps.agentStream)!;
     this.memoryManager = deps.memoryManager;
     this.logger = deps.logger;
     this.repeatGuard = deps.repeatGuard;
@@ -466,7 +468,7 @@ export class ToolCallExecutor {
     while (true) {
       transientAttempt++;
       try {
-        result = await this.mcpClient.callTool(
+        result = await this.toolProvider.callTool(
           {
             provider: this.dto.provider,
             name,
@@ -592,7 +594,7 @@ export class ToolCallExecutor {
     toolCallId?: string;
     friendlySummary?: string;
   }): Promise<void> {
-    return this.agentStream.emitStep(
+    return this.streamSink.emitStep(
       {
         userId: this.dto.userId,
         channelId: this.dto.channelId,

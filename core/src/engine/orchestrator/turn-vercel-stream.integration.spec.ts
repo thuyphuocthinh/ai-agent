@@ -11,6 +11,7 @@ import {
   AgentStreamService,
   AgentStreamStep,
 } from '../../contracts/agent-stream.service';
+import { MESSAGE_SINK, STREAM_SINK, TOOL_PROVIDER } from '../../contracts';
 import { VercelUiStreamAdapter } from '../../contracts/vercel-ui-stream.adapter';
 import { LlmStrategyFactory } from '../strategy/llm-strategy.factory';
 import { CircuitBreakerService } from '../../common/circuit-breaker.service';
@@ -113,8 +114,16 @@ describe('1 turn thật → AgentStreamService → VercelUiStreamAdapter → ai@
         TurnResolverService,
         ReactLoopService,
         AgentStreamService,
+        { provide: STREAM_SINK, useExisting: AgentStreamService },
+        { provide: TOOL_PROVIDER, useValue: mockMcp },
         {
           provide: MessageClientService,
+          useExisting: MESSAGE_SINK,
+
+        },
+        {
+          provide: MESSAGE_SINK,
+
           useValue: {
             getMessageText: jest.fn().mockResolvedValue('tổng doanh thu là bao nhiêu?'),
             getRecentHistory: jest.fn().mockResolvedValue([]),

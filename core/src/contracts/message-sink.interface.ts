@@ -17,4 +17,8 @@ export interface IMessageSink {
   ): Promise<CreateOrchestrationMessageResponseDto>;
   updateMessage(dto: UpdateOrchestrationMessageRequestDto): Promise<void>;
   tryUpdateMessage(dto: UpdateOrchestrationMessageRequestDto): Promise<void>;
+  addUserMessage(dto: {
+    conversationId: string;
+    text: string;
+  }): Promise<CreateOrchestrationMessageResponseDto>;
 }

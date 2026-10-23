@@ -8,6 +8,7 @@ import { McpClientService } from '@agent/tools';
 import { LlmStrategyFactory } from '../strategy/llm-strategy.factory';
 import { AgentStreamService } from '../../contracts/agent-stream.service';
 import { RunReactLoopRequestDto } from '../../contracts/dtos/react-loop.dto';
+import { TOOL_PROVIDER, STREAM_SINK } from '../../contracts';
 import { ApprovalRequiredError } from './approval-required.error';
 import { CircuitBreakerService } from '../../common/circuit-breaker.service';
 import { AgentCancellationService } from '../cancellation/agent-cancellation.service';
@@ -111,8 +112,10 @@ describe('ReactLoopService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ReactLoopService,
+        { provide: TOOL_PROVIDER, useValue: mockMcpClient },
         { provide: McpClientService, useValue: mockMcpClient },
         { provide: LlmStrategyFactory, useValue: mockLlmFactory },
+        { provide: STREAM_SINK, useValue: mockAgentStream },
         { provide: AgentStreamService, useValue: mockAgentStream },
         { provide: CircuitBreakerService, useValue: mockCircuitBreaker },
         { provide: AgentCancellationService, useValue: mockCancellation },

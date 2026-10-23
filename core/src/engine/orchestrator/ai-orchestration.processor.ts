@@ -1,3 +1,4 @@
+import { Inject } from '@nestjs/common';
 import { Processor } from '@nestjs/bullmq';
 import { Job } from 'bullmq';
 import { RpcException } from '@nestjs/microservices';
@@ -14,8 +15,12 @@ import {
   ORCHESTRATION_ERROR,
   EAgentStreamStepType,
 } from '@agent/core/constants';
-import { MessageClientService } from '../../contracts/message-client.service';
-import { AgentStreamService } from '../../contracts/agent-stream.service';
+import {
+  IMessageSink,
+  MESSAGE_SINK,
+  IStreamSink,
+  STREAM_SINK,
+} from '../../contracts';
 import { describeExternalServiceError } from '../loop/external-service-error.util';
 import { CancelTurnRequestDto } from '../../contracts/dtos/orchestration.dto';
 import { TriggerClaimService } from '../hitl/trigger-claim.service';
@@ -42,14 +47,24 @@ export class AiOrchestrationProcessor extends BaseProcessor<
   EJobName
 > {
   constructor(
-    private readonly messageClient: MessageClientService,
-    private readonly agentStream: AgentStreamService,
+    @Inject(MESSAGE_SINK)
+    private readonly messageSink: IMessageSink,
+    @Inject(STREAM_SINK)
+    private readonly streamSink: IStreamSink,
     private readonly triggerClaim: TriggerClaimService,
     private readonly cancellation: AgentCancellationService,
     private readonly turnResolver: TurnResolverService,
     private readonly approvalExecution: ApprovalExecutionService,
   ) {
     super();
+  }
+
+  private get messageClient(): IMessageSink {
+    return this.messageSink;
+  }
+
+  private get agentStream(): IStreamSink {
+    return this.streamSink;
   }
 
   async process(

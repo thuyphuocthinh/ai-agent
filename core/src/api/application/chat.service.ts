@@ -1,5 +1,6 @@
 import {
   HttpException,
+  Inject,
   Injectable,
   InternalServerErrorException,
   Logger,
@@ -14,7 +15,7 @@ import {
 } from '@agent/core/infrastructure/queue';
 import { AiOrchestrationProcessor } from '../../engine/orchestrator/ai-orchestration.processor';
 import { ApprovalRequestService } from '../../engine/hitl/approval-request.service';
-import { MessageClientService } from '../../contracts/message-client.service';
+import { IMessageSink, MESSAGE_SINK } from '../../contracts';
 import { ChatHistoryTurnDto } from '../../contracts/dtos/message-client.dto';
 import { ChatSessionManager } from './chat-session.manager';
 import { TurnStreamFactory } from './turn-stream.factory';
@@ -38,7 +39,8 @@ export class ChatService {
     private readonly sessionManager: ChatSessionManager,
     private readonly streamFactory: TurnStreamFactory,
     private readonly processor: AiOrchestrationProcessor,
-    private readonly messages: MessageClientService,
+    @Inject(MESSAGE_SINK)
+    private readonly messages: IMessageSink,
     private readonly approvals: ApprovalRequestService,
   ) {}
 
