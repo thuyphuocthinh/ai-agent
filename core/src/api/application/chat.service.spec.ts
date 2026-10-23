@@ -8,9 +8,10 @@ import { readUIMessageStream } from 'ai';
 import type { UIMessage, UIMessageChunk } from 'ai';
 import { EMessageRole, ORCHESTRATION_ERROR } from '@agent/core/constants';
 import { EJobName, EQueueName, IQueueDispatcher } from '@agent/core/infrastructure/queue';
+import { TurnStream } from '../../contracts';
 import { AgentStreamService } from '../../contracts/agent-stream.service';
 import { MessageClientService } from '../../contracts/message-client.service';
-import { ChatService, TurnStream } from './chat.service';
+import { ChatService } from './chat.service';
 import { ChatSessionManager } from './chat-session.manager';
 import { TurnStreamFactory, TURN_TIMEOUT_MS } from './turn-stream.factory';
 

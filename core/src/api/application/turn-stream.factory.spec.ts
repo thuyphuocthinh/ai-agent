@@ -1,10 +1,10 @@
 import type { UIMessageChunk } from 'ai';
 import { CACHE, EMessageRole } from '@agent/core/constants';
+import { IChatSession } from '../../contracts';
 import { AgentStreamService } from '../../contracts/agent-stream.service';
 import { MessageClientService } from '../../contracts/message-client.service';
 import { AgentCancellationService } from '../../engine/cancellation/agent-cancellation.service';
 import { RedisPubSubStreamService } from '../../infrastructure/redis/redis-pubsub-stream.service';
-import { ChatSession } from './chat-session.manager';
 import { TurnStreamFactory } from './turn-stream.factory';
 
 describe('TurnStreamFactory', () => {
@@ -12,7 +12,7 @@ describe('TurnStreamFactory', () => {
   let messages: MessageClientService;
   let cancellation: jest.Mocked<AgentCancellationService>;
   let pubSub: jest.Mocked<RedisPubSubStreamService>;
-  let session: ChatSession;
+  let session: IChatSession;
 
   beforeEach(() => {
     agentStream = new AgentStreamService();

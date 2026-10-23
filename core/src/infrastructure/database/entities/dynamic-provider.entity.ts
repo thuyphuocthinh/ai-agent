@@ -6,38 +6,13 @@ import {
   UpdateDateColumn,
   Index,
 } from 'typeorm';
-import { ERefreshFormat } from '@agent/core/constants';
+import {
+  DynamicProviderAuthConfig,
+  EDynamicProviderAuthType,
+} from '../../../contracts/dtos';
 
-export interface DynamicProviderAuthConfig {
-  clientId?: string;
-  clientSecret?: string;
-  tokenUrl?: string;
-  authorizationUrl?: string;
-  scope?: string;
-  /** Most OAuth2 token endpoints accept form-urlencoded (the default); some (e.g. Atlassian's
-   *  auth.atlassian.com, used by Jira/Confluence) require JSON instead. Resolved once at
-   *  registration time (auto-detected from tokenUrl, or explicitly overridden) and reused as-is
-   *  by the reactive renew on a 401 — never re-inferred later. */
-  refreshRequestFormat?: ERefreshFormat;
-  /** Escape hatch for refresh_token response shapes the built-in auto-detection (snake_case,
-   *  camelCase, 1-level "data"/"result" envelope) can't cover — dot-path into the response
-   *  (e.g. "payload.token.accessToken"). Only needed for fully custom internal auth endpoints. */
-  responseAccessTokenPath?: string;
-  responseRefreshTokenPath?: string;
-  responseExpiresInPath?: string;
-  /** Used only when no expiry field is found anywhere in the refresh response. Defaults to 3600
-   *  (1 hour) — many hand-rolled internal auth endpoints don't return a TTL at all. */
-  defaultExpiresInSecs?: number;
-  [key: string]: unknown;
-}
-
-export enum EDynamicProviderAuthType {
-  NONE = 'NONE',
-  API_KEY = 'API_KEY',
-  BEARER = 'BEARER',
-  BASIC = 'BASIC',
-  OAUTH2 = 'OAUTH2',
-}
+export type { DynamicProviderAuthConfig };
+export { EDynamicProviderAuthType };
 
 @Entity('orchestration_dynamic_providers')
 export class DynamicProviderEntity {

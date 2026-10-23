@@ -35,7 +35,10 @@ export class InMemoryRedisClient {
 
   async get(key: string): Promise<string | null> {
     const entry = this.cleanIfExpired(key);
-    return entry ? entry.value : null;
+    if (!entry) {
+      return null;
+    }
+    return entry.value;
   }
 
   async set(key: string, value: string, ...args: any[]): Promise<'OK' | null> {
@@ -59,9 +62,14 @@ export class InMemoryRedisClient {
       return null;
     }
 
+    let expiresAt: number | undefined;
+    if (ttlMs) {
+      expiresAt = Date.now() + ttlMs;
+    }
+
     this.store.set(key, {
       value: String(value),
-      expiresAt: ttlMs ? Date.now() + ttlMs : undefined,
+      expiresAt,
     });
     return 'OK';
   }
@@ -88,7 +96,10 @@ export class InMemoryRedisClient {
 
   async incr(key: string): Promise<number> {
     const entry = this.cleanIfExpired(key);
-    const current = entry ? parseInt(entry.value, 10) || 0 : 0;
+    let current = 0;
+    if (entry) {
+      current = parseInt(entry.value, 10) || 0;
+    }
     const next = current + 1;
     this.store.set(key, {
       value: String(next),

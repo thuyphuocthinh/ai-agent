@@ -26,6 +26,10 @@ import { ToolRepeatGuard } from './tool-repeat-guard';
 import { InsertAccumulator } from './insert-accumulator';
 import { ToolRiskGate } from './tool-risk-gate';
 import { parseInsertValues } from '@agent/tools';
+import {
+  ToolCallExecutorDeps,
+  ToolCallExecutorOptions,
+} from './tool-executor.interface';
 
 interface PreparedToolCall {
   call: LlmToolCall;
@@ -56,25 +60,6 @@ function formatArgsPreview(args: Record<string, unknown>): string {
     return values[0];
   }
   return JSON.stringify(args, null, 2);
-}
-
-export interface ToolCallExecutorOptions {
-  dto: RunReactLoopRequestDto;
-  mcpTools: McpToolDto[];
-  reactModelId: string;
-  signal: AbortSignal;
-}
-
-export interface ToolCallExecutorDeps {
-  toolProvider?: IToolProvider;
-  mcpClient?: IToolProvider;
-  streamSink?: IStreamSink;
-  agentStream?: IStreamSink;
-  memoryManager: MemoryManagerService;
-  logger: Logger;
-  repeatGuard: ToolRepeatGuard;
-  insertAccumulator: InsertAccumulator;
-  riskGate: ToolRiskGate;
 }
 
 /**
@@ -149,11 +134,14 @@ export class ToolCallExecutor {
         tableKey ? lastRunByTable.get(tableKey) : undefined,
       ].filter((p): p is Promise<unknown> => !!p);
 
-      const run = waitFor.length
-        ? Promise.allSettled(waitFor).then(() =>
+      let run: Promise<string>;
+      if (waitFor.length > 0) {
+        run = Promise.allSettled(waitFor).then(() =>
           this.tracedHandleToolCall(call.name, call.args),
-        )
-        : this.tracedHandleToolCall(call.name, call.args);
+        );
+      } else {
+        run = this.tracedHandleToolCall(call.name, call.args);
+      }
 
       lastRunBySignature.set(signature, run);
       if (tableKey) lastRunByTable.set(tableKey, run);
@@ -200,11 +188,13 @@ export class ToolCallExecutor {
     const batchIndexByTable = new Map<string, number>();
 
     toolCalls.forEach((call, sourceIndex) => {
-      const query =
+      let query: string | undefined;
+      if (
         call.name === 'execute_write_query' &&
-          typeof call.args.query === 'string'
-          ? call.args.query
-          : undefined;
+        typeof call.args.query === 'string'
+      ) {
+        query = call.args.query;
+      }
       const parsed = query ? parseInsertValues(query) : null;
 
       if (!parsed) {

@@ -1,8 +1,8 @@
 import { ServerResponse } from 'http';
-import { UiStreamPresenter } from './ui-stream.presenter';
-import { TurnStream } from '../../application/chat.service';
-import type { UIMessageChunk } from 'ai';
 import { EventEmitter } from 'events';
+import type { UIMessageChunk } from 'ai';
+import { TurnStream } from '../../../contracts';
+import { UiStreamPresenter } from './ui-stream.presenter';
 
 jest.mock('ai', () => ({
   pipeUIMessageStreamToResponse: jest.fn().mockResolvedValue(undefined),

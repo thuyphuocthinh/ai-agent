@@ -1,8 +1,9 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import type { UIMessageChunk } from 'ai';
+import { TurnStream } from '../../../contracts';
 import { ChatController } from './chat.controller';
-import { ChatService, TurnStream } from '../../application/chat.service';
+import { ChatService } from '../../application/chat.service';
 import { UiStreamPresenter } from '../presenters/ui-stream.presenter';
 
 const SESSION = '5f1d6a0e-8b0c-4a53-9d0b-1c2d3e4f5a6b';

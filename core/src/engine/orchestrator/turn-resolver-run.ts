@@ -8,10 +8,8 @@ import {
 } from '@agent/core/constants';
 import { ReactLoopService } from '../loop/react-loop.service';
 import { ToolRepeatGuard } from '../loop/tool-repeat-guard';
-import {
-  AgentRankingCache,
-  SupervisorService,
-} from '../supervisor/supervisor.service';
+import { SupervisorService } from '../supervisor/supervisor.service';
+import { AgentRankingCache } from '../supervisor/supervisor.interface';
 import { IStreamSink } from '../../contracts';
 import {
   AvailableAgentDto,
@@ -42,6 +40,10 @@ import {
   DelegateRoundResult,
   buildAnswer,
 } from './orchestration-answer.types';
+import {
+  TurnResolverRunDeps,
+  TurnResolverRunOptions,
+} from './turn-resolver.interface';
 
 const MIN_AGENT_LABEL_LENGTH_FOR_MISMATCH_CHECK = 3;
 
@@ -72,29 +74,6 @@ function buildCancelledPartialText(
     ...doneParts,
     `(đang xử lý dở khi bị dừng) ${inProgressPartialText}`,
   ].join('\n\n');
-}
-
-export interface TurnResolverRunOptions {
-  data: IProcessAiTriggerJobData;
-  replyMessageId: string;
-  prompt: string;
-  agents: AvailableAgentDto[];
-  history: ChatHistoryTurnDto[];
-  rounds: SupervisorRoundDto[];
-  toolCalls: ToolCallTraceDto[];
-  signal?: AbortSignal;
-}
-
-export interface TurnResolverRunDeps {
-  reactLoop: ReactLoopService;
-  supervisor: SupervisorService;
-  streamSink?: IStreamSink;
-  agentStream?: IStreamSink;
-  cancellation: AgentCancellationService;
-  checkpointPause: CheckpointPauseService;
-  metrics: MetricsRegistryService;
-  memoryManager: MemoryManagerService;
-  logger: Logger;
 }
 
 type PlanOutcome =
@@ -206,7 +185,11 @@ export class TurnResolverRun {
         batch = [steps.shift()!];
       } else {
         const splitIdx = steps.findIndex((s) => s.stage !== firstStage);
-        batch = splitIdx === -1 ? steps.splice(0) : steps.splice(0, splitIdx);
+        if (splitIdx === -1) {
+          batch = steps.splice(0);
+        } else {
+          batch = steps.splice(0, splitIdx);
+        }
       }
       if (batch.some((s) => this.guardAgainstMisroute(s))) {
         needsPlan = true;
@@ -452,14 +435,17 @@ export class TurnResolverRun {
     for (let i = 0; i < batch.length; i++) {
       const step = batch[i];
       const result = results[i] as DelegateRoundResult | null;
-      const completedRound: SupervisorRoundDto = result
-        ? result.round
-        : {
-            agent: step.agent,
-            task: step.task,
-            result:
-              'Agent này chưa khả dụng (chưa kết nối hoặc chưa có hạ tầng) — bỏ qua, không thực hiện được phần việc này.',
-          };
+      let completedRound: SupervisorRoundDto;
+      if (result) {
+        completedRound = result.round;
+      } else {
+        completedRound = {
+          agent: step.agent,
+          task: step.task,
+          result:
+            'Agent này chưa khả dụng (chưa kết nối hoặc chưa có hạ tầng) — bỏ qua, không thực hiện được phần việc này.',
+        };
+      }
 
       this.rounds.push(completedRound);
       if (result) this.toolCalls.push(...result.toolCalls);

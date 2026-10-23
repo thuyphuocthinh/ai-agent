@@ -1,5 +1,5 @@
 import { McpToolDto, McpResourceDto, McpPromptDto } from './mcp.dto';
-import { EDynamicProviderAuthType } from '../../infrastructure/database/entities/dynamic-provider.entity';
+import { EDynamicProviderAuthType } from './dynamic-provider.dto';
 import { EApprovalAction, ERefreshFormat } from '@agent/core/constants';
 
 export class GetProvidersRequestDto {

@@ -60,7 +60,10 @@ function countTopLevelTuples(valuesText: string): number | null {
       }
     }
   }
-  return depth === 0 && count > 0 ? count : null;
+  if (depth === 0 && count > 0) {
+    return count;
+  }
+  return null;
 }
 
 export function extractWriteQueryPreviewTarget(
@@ -151,7 +154,10 @@ export function parseSingleCountResult(mcpResultText: string): number | null {
     const rows = JSON.parse(repair.repair(mcpResultText));
     if (!Array.isArray(rows) || rows.length === 0) return null;
     const value = Object.values(rows[0] as Record<string, unknown>)[0];
-    return typeof value === 'number' ? value : null;
+    if (typeof value === 'number') {
+      return value;
+    }
+    return null;
   } catch {
     return null;
   }

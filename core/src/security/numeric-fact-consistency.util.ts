@@ -132,9 +132,10 @@ export function parseNumberCandidates(raw: string): ParsedNumber[] {
   const sep = dots > 0 ? '.' : ',';
   const parts = raw.split(sep);
   if (parts.length > 2) {
-    return isValidGrouping(parts)
-      ? [{ value: Number(parts.join('')), decimals: 0 }]
-      : splitIntoIntegers(raw);
+    if (isValidGrouping(parts)) {
+      return [{ value: Number(parts.join('')), decimals: 0 }];
+    }
+    return splitIntoIntegers(raw);
   }
 
   const [intPart, frac] = parts;
@@ -144,13 +145,15 @@ export function parseNumberCandidates(raw: string): ParsedNumber[] {
   };
   const couldBeThousands =
     frac.length === 3 && intPart.length <= 3 && !intPart.startsWith('0');
-  return couldBeThousands
-    ? [{ value: Number(`${intPart}${frac}`), decimals: 0 }, decimalReading]
-    : [decimalReading];
+  if (couldBeThousands) {
+    return [{ value: Number(`${intPart}${frac}`), decimals: 0 }, decimalReading];
+  }
+  return [decimalReading];
 }
 
 function multiplierOf(unit: string | undefined): number {
-  return unit ? (UNIT_MULTIPLIER[unit.toLowerCase()] ?? 1) : 1;
+  if (!unit) return 1;
+  return UNIT_MULTIPLIER[unit.toLowerCase()] ?? 1;
 }
 
 function toCandidate(
@@ -289,7 +292,11 @@ export function verifyNumericFactConsistency(
   const ungrounded = new Set<string>();
   for (const fact of extractNumericFacts(answer)) {
     if (shouldIgnore(fact, resolved)) continue;
-    (isGrounded(fact, sourceValues) ? grounded : ungrounded).add(fact.raw);
+    if (isGrounded(fact, sourceValues)) {
+      grounded.add(fact.raw);
+    } else {
+      ungrounded.add(fact.raw);
+    }
   }
 
   return {

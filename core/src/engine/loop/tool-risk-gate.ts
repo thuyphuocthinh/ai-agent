@@ -7,17 +7,7 @@ import { extractRequiredCount } from './quantity-check.util';
 import { isLikelyCreateToolCall } from '../../memory/create-tool-heuristic.util';
 import { extractWriteQueryPreviewTarget } from './write-query-preview.util';
 import { InsertAccumulator } from './insert-accumulator';
-
-export interface ToolRiskGateOptions {
-  dto: RunReactLoopRequestDto;
-  mcpTools: McpToolDto[];
-  strategy: LlmStrategy;
-  model: string;
-  circuitBreaker: CircuitBreakerService;
-  logger: Logger;
-  signal: AbortSignal;
-  insertAccumulator: InsertAccumulator;
-}
+import { ToolRiskGateOptions } from './tool-executor.interface';
 
 /**
  * Quyết định risk-gate (destructive? auto-approve INSERT? thiếu dòng so với

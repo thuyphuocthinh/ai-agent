@@ -13,25 +13,11 @@ import {
   AgentStreamStep,
   DEFAULT_STREAM_KEY,
 } from './stream-sink.interface';
-
-/** Phần của AgentStreamService mà adapter cần (đã có sẵn hook `onStep`). */
-export interface AgentStepSource {
-  onStep(
-    listener: (context: AgentStreamContext, step: AgentStreamStep) => void,
-  ): () => void;
-}
-
-export type UiChunkWriter = (chunk: UIMessageChunk) => void | Promise<void>;
-
-export interface VercelUiStreamOptions {
-  /**
-   * messageId của tin nhắn bot (reply) — chỉ event của message này được chuyển
-   * tiếp. Bỏ trống khi id do engine tạo bên trong (VD AiOrchestrationProcessor
-   * tự tạo reply): khi đó gọi `bind(id)` ngay khi biết; trước đó mọi event bị bỏ qua.
-   */
-  messageId?: string;
-  write: UiChunkWriter;
-}
+import {
+  AgentStepSource,
+  UiChunkWriter,
+  VercelUiStreamOptions,
+} from './vercel-stream.interface';
 
 const EMPTY_TOOL_INPUT = {};
 
@@ -283,25 +269,31 @@ export class VercelUiStreamAdapter {
     streamKey?: string,
   ): void {
     this.announcedToolCalls.add(toolCallId);
+
+    const hasCustomStream = Boolean(
+      streamKey && streamKey !== STREAM_KEYS.DEFAULT,
+    );
+    let title: string | undefined;
+    let toolMetadata: Record<string, string> | undefined;
+
+    if (friendlySummary) {
+      title = friendlySummary;
+      toolMetadata = { friendlySummary };
+      if (hasCustomStream && streamKey) {
+        toolMetadata.streamKey = streamKey;
+      }
+    } else if (hasCustomStream && streamKey) {
+      toolMetadata = { streamKey };
+    }
+
     this.emit({
       type: EVercelStreamChunkType.TOOL_INPUT_AVAILABLE,
       toolCallId,
       toolName,
       input,
       dynamic: true,
-      ...(friendlySummary
-        ? {
-            title: friendlySummary,
-            toolMetadata: {
-              friendlySummary,
-              ...(streamKey && streamKey !== STREAM_KEYS.DEFAULT
-                ? { streamKey }
-                : {}),
-            },
-          }
-        : streamKey && streamKey !== STREAM_KEYS.DEFAULT
-          ? { toolMetadata: { streamKey } }
-          : {}),
+      ...(title ? { title } : {}),
+      ...(toolMetadata ? { toolMetadata } : {}),
     });
   }
 

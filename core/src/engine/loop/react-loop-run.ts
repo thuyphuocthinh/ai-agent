@@ -4,10 +4,10 @@ import {
   ORCHESTRATION_CONSTANTS,
   ORCHESTRATION_SELF_CHECK_PROMPT,
 } from '@agent/core/constants';
-import { IStreamSink, IToolProvider } from '../../contracts';
 import {
   RunReactLoopRequestDto,
   RunReactLoopResponseDto,
+  ToolCallTraceDto,
 } from '../../contracts/dtos/react-loop.dto';
 import { checkQuantity as checkQuantityUtil } from './quantity-check.util';
 import {
@@ -19,38 +19,17 @@ import {
 
 import { withLlmRetry } from './with-llm-retry.util';
 import { CircuitBreakerService } from '../../common/circuit-breaker.service';
-import { McpToolDto } from '../../contracts/dtos/mcp.dto';
-import { MemoryManagerService } from '../../memory/memory-manager.service';
 import { ToolRepeatGuard } from './tool-repeat-guard';
 import { InsertAccumulator } from './insert-accumulator';
 import { ToolRiskGate } from './tool-risk-gate';
 import { ToolCallExecutor } from './tool-call-executor';
-import { ToolCallTraceDto } from '../../contracts/dtos/react-loop.dto';
+import {
+  ReactLoopRunDeps,
+  ReactLoopRunOptions,
+} from './react-loop.interface';
 
 const METADATA_TOOL_REGEX =
   /schema|list_tables|describe|columns|metadata|list_channels|list_spreadsheets|list_repositories/i;
-
-export interface ReactLoopRunOptions {
-  dto: RunReactLoopRequestDto;
-  mcpTools: McpToolDto[];
-  strategy: LlmStrategy;
-  model: string;
-  reactModelId: string;
-  session: LlmChatSession;
-  signal: AbortSignal;
-  // Không truyền (VD test cũ) → tự tạo guard riêng cho đúng behavior cũ.
-  repeatGuard?: ToolRepeatGuard;
-}
-
-export interface ReactLoopRunDeps {
-  toolProvider?: IToolProvider;
-  mcpClient?: IToolProvider;
-  streamSink?: IStreamSink;
-  agentStream?: IStreamSink;
-  circuitBreaker: CircuitBreakerService;
-  memoryManager: MemoryManagerService;
-  logger: Logger;
-}
 
 /**
  * Điều khiển vòng lặp ReAct (1 agent, 1 lượt): gọi LLM, chuyển tool call cho
@@ -259,12 +238,13 @@ export class ReactLoopRun {
     onTok?: (chunk: string) => void,
   ): Promise<LlmTurnResult> {
     let streamedAnything = false;
-    const trackedOnTok = onTok
-      ? (chunk: string) => {
-          streamedAnything = true;
-          onTok(chunk);
-        }
-      : undefined;
+    let trackedOnTok: ((chunk: string) => void) | undefined;
+    if (onTok) {
+      trackedOnTok = (chunk: string) => {
+        streamedAnything = true;
+        onTok(chunk);
+      };
+    }
     return this.circuitBreaker.run(
       `llm:${this.strategy.id}`,
       () =>

@@ -39,10 +39,7 @@ import { SkillRetrievalService } from '../../memory/skill-retrieval.service';
 import { AgentRankingService } from './agent-ranking.service';
 import { SupervisorPromptBuilder } from './supervisor-prompt.builder';
 import { detectFrustration } from '../loop/detect-frustration.util';
-
-export interface AgentRankingCache {
-  current?: { shown: AvailableAgentDto[]; omittedCount: number };
-}
+import { AgentRankingCache } from './supervisor.interface';
 
 // Ghi chú thiết kế đầy đủ (WHY): docs/orchestration/code-notes/supervisor.service.md
 @Injectable()
@@ -128,15 +125,19 @@ export class SupervisorService {
     if (rankingCache && !rankingCache.current) {
       rankingCache.current = { shown, omittedCount };
     }
-    const agentListText =
-      shown.length > 0
-        ? shown
-            .map((a) => `- ${a.provider} (${a.label}): ${a.description}`)
-            .join('\n') +
-          (omittedCount > 0
-            ? `\n(Còn ${omittedCount} hệ thống khác đã kết nối nhưng không liên quan tới câu hỏi này, đã ẩn bớt khỏi danh sách trên.)`
-            : '')
-        : '(Người dùng chưa kết nối agent nào — nếu câu hỏi cần dữ liệu, trả lời "respond" và nhắc user vào Settings để kết nối.)';
+    let agentListText: string;
+    if (shown.length > 0) {
+      let text = shown
+        .map((a) => `- ${a.provider} (${a.label}): ${a.description}`)
+        .join('\n');
+      if (omittedCount > 0) {
+        text += `\n(Còn ${omittedCount} hệ thống khác đã kết nối nhưng không liên quan tới câu hỏi này, đã ẩn bớt khỏi danh sách trên.)`;
+      }
+      agentListText = text;
+    } else {
+      agentListText =
+        '(Người dùng chưa kết nối agent nào — nếu câu hỏi cần dữ liệu, trả lời "respond" và nhắc user vào Settings để kết nối.)';
+    }
 
     const planSchema =
       rounds.length > 0
@@ -311,12 +312,12 @@ export class SupervisorService {
     );
     const remainingText = remainingSteps
       .map((s, i) => {
-        const marker =
-          s.mustExecute === true
-            ? ' [BẮT BUỘC — không được bỏ qua]'
-            : s.mustExecute === false
-              ? ' [không bắt buộc — có thể bỏ qua nếu đã đủ dữ liệu]'
-              : '';
+        let marker = '';
+        if (s.mustExecute === true) {
+          marker = ' [BẮT BUỘC — không được bỏ qua]';
+        } else if (s.mustExecute === false) {
+          marker = ' [không bắt buộc — có thể bỏ qua nếu đã đủ dữ liệu]';
+        }
         return `${i + 1}. Agent "${s.agent}": ${s.task}${marker}`;
       })
       .join('\n');
@@ -430,12 +431,13 @@ export class SupervisorService {
       // streamedAnything reset lại MỖI lần thử (đầu fn()) — chỉ cho retry khi
       // lần vừa lỗi CHƯA stream ra token nào (xem ORCHESTRATION_CONSTANTS.MAX_LLM_CALL_RETRY_ATTEMPTS).
       let streamedAnything = false;
-      const trackedOnToken = onToken
-        ? (chunk: string) => {
-            streamedAnything = true;
-            onToken(chunk);
-          }
-        : undefined;
+      let trackedOnToken: ((chunk: string) => void) | undefined;
+      if (onToken) {
+        trackedOnToken = (chunk: string) => {
+          streamedAnything = true;
+          onToken(chunk);
+        };
+      }
       const result = await this.circuitBreaker.run(
         `llm:${strategy.id}`,
         () =>

@@ -1,7 +1,7 @@
 import { ServerResponse } from 'http';
 import { Injectable } from '@nestjs/common';
 import { pipeUIMessageStreamToResponse } from 'ai';
-import { TurnStream } from '../../application/chat.service';
+import { TurnStream } from '../../../contracts';
 
 /**
  * Presenter phụ trách chuyển tiếp dòng sự kiện Vercel AI UI Message Stream

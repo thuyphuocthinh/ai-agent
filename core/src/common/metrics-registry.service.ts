@@ -8,6 +8,12 @@ import { Counter, Gauge, Registry } from 'prom-client';
 // đây (KHÔNG dùng `register` mặc định của prom-client) rồi trả text qua TCP
 // (`ORCHESTRATION_MESSAGE_PATTERNS.GET_METRICS`) — api-gateway ghép thẳng vào
 // response `/metrics` của chính nó (xem `ApiGatewayController.getMetrics()`).
+const CIRCUIT_BREAKER_GAUGE_VALUES: Record<ECircuitBreaker, number> = {
+  [ECircuitBreaker.CLOSED]: 0,
+  [ECircuitBreaker.HALF_OPEN]: 1,
+  [ECircuitBreaker.OPEN]: 2,
+};
+
 @Injectable()
 export class MetricsRegistryService {
   private readonly registry = new Registry();
@@ -39,7 +45,7 @@ export class MetricsRegistryService {
   });
 
   setBreakerState(key: string, state: ECircuitBreaker): void {
-    const value = state === ECircuitBreaker.OPEN ? 2 : state === ECircuitBreaker.HALF_OPEN ? 1 : 0;
+    const value = CIRCUIT_BREAKER_GAUGE_VALUES[state] ?? 0;
     this.breakerStateGauge.set({ key }, value);
   }
 

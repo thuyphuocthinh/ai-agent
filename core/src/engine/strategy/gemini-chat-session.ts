@@ -44,15 +44,17 @@ export class GeminiChatSession implements LlmChatSession {
     onToken?: (chunk: string) => void,
     signal?: AbortSignal,
   ): Promise<LlmTurnResult> {
-    const message: string | Part[] =
-      typeof input === 'string'
-        ? input
-        : input.map((r) => ({
-            functionResponse: {
-              name: r.name,
-              response: { content: r.content },
-            },
-          }));
+    let message: string | Part[];
+    if (typeof input === 'string') {
+      message = input;
+    } else {
+      message = input.map((r) => ({
+        functionResponse: {
+          name: r.name,
+          response: { content: r.content },
+        },
+      }));
+    }
 
     const result = await withGeminiRetry(
       () => this.chat.sendMessageStream(message, { signal }),

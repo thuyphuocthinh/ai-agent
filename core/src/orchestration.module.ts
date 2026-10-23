@@ -45,6 +45,7 @@ import {
   AgentStreamService,
   MESSAGE_SINK,
   STREAM_SINK,
+  CHAT_SESSION_MANAGER,
 } from './contracts';
 import { MetricsRegistryService } from './common/metrics-registry.service';
 import { HealthCheckService } from './common/health-check.service';
@@ -52,6 +53,7 @@ import {
   ChatController,
   ChatService,
   ChatSessionManager,
+  InMemoryChatSessionManager,
   TurnStreamFactory,
   UiStreamPresenter,
 } from './api';
@@ -79,7 +81,14 @@ import {
   ],
   controllers: [ChatController],
   providers: [
-    ChatSessionManager,
+    {
+      provide: CHAT_SESSION_MANAGER,
+      useClass: InMemoryChatSessionManager,
+    },
+    {
+      provide: ChatSessionManager,
+      useExisting: CHAT_SESSION_MANAGER,
+    },
     TurnStreamFactory,
     ChatService,
     UiStreamPresenter,

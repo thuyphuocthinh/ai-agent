@@ -1,24 +1,18 @@
 import { Injectable, Optional } from '@nestjs/common';
 import type { UIMessageChunk } from 'ai';
 import { EMessageRole, CACHE } from '@agent/core/constants';
-import { AgentStreamService } from '../../contracts/agent-stream.service';
 import {
+  ActiveTurn,
+  AgentStreamService,
+  IChatSession,
   MessageClientService,
   MessageEvent,
-} from '../../contracts/message-client.service';
+  VercelUiStreamAdapter,
+} from '../../contracts';
 import { AgentCancellationService } from '../../engine/cancellation/agent-cancellation.service';
-import { VercelUiStreamAdapter } from '../../contracts/vercel-ui-stream.adapter';
 import { RedisPubSubStreamService } from '../../infrastructure/redis/redis-pubsub-stream.service';
-import { ChatSession } from './chat-session.manager';
 
 export const TURN_TIMEOUT_MS = 5 * 60 * 1000;
-
-export interface ActiveTurn {
-  stream: ReadableStream<UIMessageChunk>;
-  close: () => void;
-  fail: (error: unknown) => Promise<void>;
-  cancel: () => Promise<void>;
-}
 
 @Injectable()
 export class TurnStreamFactory {
@@ -30,7 +24,7 @@ export class TurnStreamFactory {
     private readonly pubSub?: RedisPubSubStreamService,
   ) {}
 
-  createTurn(session: ChatSession, boundMessageId?: string): ActiveTurn {
+  createTurn(session: IChatSession, boundMessageId?: string): ActiveTurn {
     let controller!: ReadableStreamDefaultController<UIMessageChunk>;
     let closed = false;
     const cleanups: Array<() => void> = [];
@@ -133,7 +127,7 @@ export class TurnStreamFactory {
 
   private handleMessage(
     event: MessageEvent,
-    session: ChatSession,
+    session: IChatSession,
     adapter: VercelUiStreamAdapter,
     subscribeChannel?: (msgId: string) => void,
   ): void {

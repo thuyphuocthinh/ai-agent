@@ -1,3 +1,4 @@
+import { EMessageRole } from '@agent/core/constants';
 import {
   ChatHistoryTurnDto,
   CreateOrchestrationMessageRequestDto,
@@ -8,6 +9,14 @@ import {
 } from './dtos/message-client.dto';
 
 export const MESSAGE_SINK = Symbol('MESSAGE_SINK');
+
+export interface MessageEvent {
+  type: 'created' | 'updated';
+  id: string;
+  conversationId: string;
+  role: EMessageRole;
+  content: string | Record<string, unknown>;
+}
 
 export interface IMessageSink {
   getMessageText(dto: GetMessageTextRequestDto): Promise<string>;

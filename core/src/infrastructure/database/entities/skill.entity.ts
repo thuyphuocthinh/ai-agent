@@ -6,12 +6,7 @@ import {
   PrimaryGeneratedColumn,
 } from 'typeorm';
 import { ECheckpointRiskLevel } from '@agent/core/constants';
-
-export interface SkillStep {
-  provider: string;
-  tool: string;
-  argsTemplate: Record<string, unknown>;
-}
+import { SkillStep } from '../../../memory/memory.interface';
 
 // Đúc ra lúc runtime từ các checkpoint ĐÃ được duyệt và chạy thành công nhiều
 // lần cho cùng 1 việc (xem SkillService.recordSuccessfulRun) — không phải do

@@ -1,17 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { ECheckpointRiskLevel } from '@agent/core/constants';
-import { SkillEntity, SkillStep } from '../infrastructure/database/entities/skill.entity';
-
-export interface CreateSkillInput {
-  workspaceId: string;
-  taskDescription: string;
-  summaryMarkdown: string;
-  steps: SkillStep[];
-  sourceCheckpointId: string;
-  riskLevel: ECheckpointRiskLevel | null;
-}
+import { SkillEntity } from '../infrastructure/database/entities/skill.entity';
+import { CreateSkillInput, SkillStep } from './memory.interface';
 
 @Injectable()
 export class SkillService {

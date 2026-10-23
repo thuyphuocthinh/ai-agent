@@ -22,22 +22,8 @@ import {
 } from 'agentic-openapi-parser';
 import { inferOAuth2RefreshFormat } from '@agent/core/common';
 
-export interface CreateDynamicProviderParams {
-  userId: string;
-  name: string;
-  specUrl: string;
-  description?: string;
-  accessToken?: string;
-  authType?: EDynamicProviderAuthType;
-  // OAUTH2 reactive renew (DynamicToolExecutorService.tryRenewOAuth2Token, triggered on a 401)
-  // needs refreshToken + authConfig.tokenUrl/clientId/clientSecret — missing refreshToken or
-  // tokenUrl makes it a permanent no-op.
-  refreshToken?: string;
-  /** Informational only — not required for the reactive renew (which triggers off an actual 401,
-   *  not this timestamp). Set once by the controller's eager-refresh-at-connect step. */
-  tokenExpiresAt?: Date;
-  authConfig?: DynamicProviderAuthConfig;
-}
+import { CreateDynamicProviderParams } from './dynamic-provider.interface';
+
 
 interface OAuth2InputFields {
   accessToken?: string;
@@ -265,17 +251,21 @@ export class DynamicProviderDbService {
     existing?: DynamicProviderEntity,
   ): OAuth2InputFields {
     const tokenUrl = dto.tokenUrl || existing?.authConfig?.tokenUrl;
+    let refreshRequestFormat: ERefreshFormat | undefined;
+    if (tokenUrl) {
+      refreshRequestFormat =
+        dto.refreshRequestFormat ??
+        existing?.authConfig?.refreshRequestFormat ??
+        inferOAuth2RefreshFormat(tokenUrl);
+    }
+
     return {
       accessToken: dto.accessToken || existing?.accessToken,
       refreshToken: dto.refreshToken || existing?.refreshToken,
       tokenUrl,
       clientId: dto.clientId || existing?.authConfig?.clientId,
       clientSecret: dto.clientSecret || existing?.authConfig?.clientSecret,
-      refreshRequestFormat: tokenUrl
-        ? (dto.refreshRequestFormat ??
-          existing?.authConfig?.refreshRequestFormat ??
-          inferOAuth2RefreshFormat(tokenUrl))
-        : undefined,
+      refreshRequestFormat,
       responseAccessTokenPath:
         dto.responseAccessTokenPath ??
         existing?.authConfig?.responseAccessTokenPath,

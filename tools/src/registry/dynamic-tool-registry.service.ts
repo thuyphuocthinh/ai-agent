@@ -23,21 +23,7 @@ interface IndexableMcpTool extends McpToolDto {
  *  small enough that a static-filter-only setup (0-100 tools) never even reaches this path. */
 const SEMANTIC_SEARCH_TOP_K = 20;
 
-export interface DynamicProviderSpec {
-  providerId: string;
-  specUrl: string;
-  document: OpenAPI.Document;
-  tools: McpToolDto[];
-
-  /**
-   * Lưu trữ API Key, Basic Auth credentials, hoặc OAuth2 Access Token tuỳ thuộc vào authType.
-   */
-  accessToken?: string;
-  authType?: EDynamicProviderAuthType;
-  refreshToken?: string;
-  tokenExpiresAt?: Date;
-  authConfig?: any;
-}
+import { DynamicProviderSpec } from './dynamic-tool.interface';
 
 interface CacheEntry {
   data: DynamicProviderSpec;

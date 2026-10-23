@@ -1,11 +1,23 @@
-import {
-  AmbiguousAgentCandidate,
-  OrchestrationCheckpointStatus,
-  PendingToolCall,
-} from '../../infrastructure/database/entities/orchestration-checkpoint.entity';
 import { DelegationDto, SupervisorRoundDto } from './supervisor.dto';
 import { ChatHistoryTurnDto } from './message-client.dto';
 import { ECheckpointKind, ECheckpointRiskLevel } from '@agent/core/constants';
+
+export enum OrchestrationCheckpointStatus {
+  PENDING = 'pending',
+  APPROVED = 'approved',
+  REJECTED = 'rejected',
+}
+
+export interface PendingToolCall {
+  provider: string;
+  name: string;
+  args: Record<string, unknown>;
+}
+
+export interface AmbiguousAgentCandidate {
+  provider: string;
+  label: string;
+}
 
 export class CreateCheckpointRequestDto {
   replyMessageId: string;

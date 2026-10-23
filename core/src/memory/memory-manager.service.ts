@@ -6,12 +6,7 @@ import {
 } from '@agent/tools';
 import { ConversationMemoryEntity } from '../infrastructure/database/entities/conversation-memory.entity';
 import { ConversationMemoryService } from './conversation-memory.service';
-
-export interface ContextBudget {
-  toolResultCharBudget: number;
-  memoryCharBudget: number;
-  historyCharBudget: number;
-}
+import { ContextBudget } from './memory.interface';
 
 // Single entry point for the 3 char budgets a model call splits its context
 // window into, so callers can't end up combining a budget computed for one

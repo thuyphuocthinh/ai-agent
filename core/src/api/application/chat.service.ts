@@ -17,19 +17,18 @@ import {
   QUEUE_DISPATCHER,
 } from '@agent/core/infrastructure/queue';
 import { ApprovalRequestService } from '../../engine/hitl/approval-request.service';
-import { IMessageSink, MESSAGE_SINK } from '../../contracts';
+import {
+  CHAT_SESSION_MANAGER,
+  IChatSessionManager,
+  IMessageSink,
+  MESSAGE_SINK,
+  TurnStream,
+} from '../../contracts';
 import { ChatHistoryTurnDto } from '../../contracts/dtos/message-client.dto';
-import { ChatSessionManager } from './chat-session.manager';
 import { TurnStreamFactory } from './turn-stream.factory';
 import { OrchestrationRpcExceptionFilter } from '../presentation/filters/orchestration-exception.filter';
 
 const HISTORY_LIMIT = 200;
-
-export interface TurnStream {
-  sessionId: string;
-  stream: ReadableStream<UIMessageChunk>;
-  cancel: () => Promise<void>;
-}
 
 @Injectable()
 export class ChatService {
@@ -37,7 +36,8 @@ export class ChatService {
   private readonly exceptionFilter = new OrchestrationRpcExceptionFilter();
 
   constructor(
-    private readonly sessionManager: ChatSessionManager,
+    @Inject(CHAT_SESSION_MANAGER)
+    private readonly sessionManager: IChatSessionManager,
     private readonly streamFactory: TurnStreamFactory,
     @Inject(QUEUE_DISPATCHER)
     private readonly queueDispatcher: IQueueDispatcher,
@@ -47,7 +47,7 @@ export class ChatService {
   ) {}
 
   async chat(prompt: string, sessionId?: string): Promise<TurnStream> {
-    const session = this.sessionManager.getOrCreate(sessionId);
+    const session = await this.sessionManager.getOrCreate(sessionId);
     const turn = this.streamFactory.createTurn(session);
     const userMessage = await this.messages.addUserMessage({
       conversationId: session.conversationId,
@@ -85,7 +85,7 @@ export class ChatService {
     messageId: string,
     action: 'approve' | 'reject',
   ): Promise<TurnStream> {
-    const session = this.sessionManager.get(sessionId);
+    const session = await this.sessionManager.get(sessionId);
     if (!session) throw new NotFoundException('Phiên không tồn tại');
     if (!session.approvalMessageIds.has(messageId)) {
       throw new NotFoundException('Không có yêu cầu duyệt này trong phiên');
@@ -106,7 +106,7 @@ export class ChatService {
   }
 
   async history(sessionId?: string): Promise<ChatHistoryTurnDto[]> {
-    const session = sessionId ? this.sessionManager.get(sessionId) : undefined;
+    const session = sessionId ? await this.sessionManager.get(sessionId) : undefined;
     if (!session) return [];
     return this.messages.getRecentHistory({
       conversationId: session.conversationId,

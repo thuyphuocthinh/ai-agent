@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto';
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import {
   IMessageSink,
+  MessageEvent,
 } from './message-sink.interface';
 import {
   ChatHistoryTurnDto,
@@ -15,14 +16,6 @@ import { EMessageRole } from '@agent/core/constants';
 import { ConversationMemoryService } from '../memory/conversation-memory.service';
 
 const DEFAULT_CONVERSATION = 'default';
-
-export interface MessageEvent {
-  type: 'created' | 'updated';
-  id: string;
-  conversationId: string;
-  role: EMessageRole;
-  content: string | Record<string, unknown>;
-}
 
 interface StoredMessage {
   id: string;

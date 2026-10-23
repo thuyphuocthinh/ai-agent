@@ -1,8 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
-import {
-  DynamicToolRegistryService,
-  DynamicProviderSpec,
-} from '../registry/dynamic-tool-registry.service';
+import { DynamicToolRegistryService } from '../registry/dynamic-tool-registry.service';
+import { DynamicProviderSpec } from '../registry/dynamic-tool.interface';
 import { CallToolResponseDto } from '@agent/core/dto/mcp.dto';
 import { EDynamicProviderAuthType } from '@agent/core/entity/dynamic-provider.entity';
 import { QueueService, EQueueName, EJobName } from '@agent/core/infrastructure/queue';

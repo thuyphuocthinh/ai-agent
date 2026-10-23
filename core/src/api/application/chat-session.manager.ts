@@ -1,38 +1,37 @@
 import { randomUUID } from 'crypto';
 import { Injectable } from '@nestjs/common';
-
-export interface ChatSession {
-  id: string;
-  userId: string;
-  conversationId: string;
-  tenantId: string;
-  botUserId: string;
-  approvalMessageIds: Set<string>;
-}
+import {
+  IChatSession,
+  IChatSessionManager,
+} from '../../contracts';
 
 /**
- * Quản lý vòng đời và lưu trữ phiên hội thoại (In-Memory Session Storage).
+ * Quản lý phiên hội thoại trong bộ nhớ RAM (In-Memory Session Storage).
+ * Phục vụ chạy cục bộ / Web Playground / Unit Tests (Zero-config).
+ * Cài đặt IChatSessionManager, sẵn sàng để thay thế bằng DbChatSessionManager.
  */
 @Injectable()
-export class ChatSessionManager {
-  private readonly sessions = new Map<string, ChatSession>();
+export class InMemoryChatSessionManager implements IChatSessionManager {
+  private readonly sessions = new Map<string, IChatSession>();
 
-  get(sessionId: string): ChatSession | undefined {
+  get(sessionId: string): IChatSession | undefined {
     return this.sessions.get(sessionId);
   }
 
-  getOrCreate(sessionId?: string): ChatSession {
+  getOrCreate(sessionId?: string): IChatSession {
     if (sessionId) {
       const existing = this.sessions.get(sessionId);
       if (existing) return existing;
     }
-    const session: ChatSession = {
+    const session: IChatSession = {
       id: sessionId || randomUUID(),
       userId: randomUUID(),
       conversationId: randomUUID(),
       tenantId: randomUUID(),
       botUserId: randomUUID(),
       approvalMessageIds: new Set<string>(),
+      createdAt: new Date(),
+      lastSeenAt: new Date(),
     };
     this.sessions.set(session.id, session);
     return session;
@@ -42,6 +41,7 @@ export class ChatSessionManager {
     const session = this.sessions.get(sessionId);
     if (session) {
       session.approvalMessageIds.add(messageId);
+      session.lastSeenAt = new Date();
     }
   }
 
@@ -50,3 +50,9 @@ export class ChatSessionManager {
     return !!session?.approvalMessageIds.has(messageId);
   }
 }
+
+/**
+ * Alias tương thích ngược cho các module và bài test hiện hữu.
+ */
+@Injectable()
+export class ChatSessionManager extends InMemoryChatSessionManager {}

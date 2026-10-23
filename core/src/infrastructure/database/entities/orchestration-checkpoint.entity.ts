@@ -6,26 +6,18 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
-import { DelegationDto, SupervisorRoundDto } from '../../../contracts/dtos/supervisor.dto';
-import { ChatHistoryTurnDto } from '../../../contracts/dtos/message-client.dto';
+import {
+  AmbiguousAgentCandidate,
+  ChatHistoryTurnDto,
+  DelegationDto,
+  OrchestrationCheckpointStatus,
+  PendingToolCall,
+  SupervisorRoundDto,
+} from '../../../contracts';
+
+export type { AmbiguousAgentCandidate, PendingToolCall };
+export { OrchestrationCheckpointStatus };
 import { ECheckpointKind, ECheckpointRiskLevel } from '@agent/core/constants';
-
-export enum OrchestrationCheckpointStatus {
-  PENDING = 'pending',
-  APPROVED = 'approved',
-  REJECTED = 'rejected',
-}
-
-export interface PendingToolCall {
-  provider: string;
-  name: string;
-  args: Record<string, unknown>;
-}
-
-export interface AmbiguousAgentCandidate {
-  provider: string;
-  label: string;
-}
 
 /**
  * Giai đoạn 3 (HITL) — state của 1 turn đang DỪNG chờ user duyệt 1 tool rủi ro

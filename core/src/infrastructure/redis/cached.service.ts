@@ -41,7 +41,10 @@ export class CachedService {
   }
 
   private serialize(value: any): string {
-    return typeof value === 'string' ? value : JSON.stringify(value);
+    if (typeof value === 'string') {
+      return value;
+    }
+    return JSON.stringify(value);
   }
 
   private deserialize<T>(data: string | null): T | null {
@@ -76,7 +79,10 @@ export class CachedService {
     try {
       const serialized = this.serialize(value);
       if (ttlSeconds) {
-        const finalTtl = applyJitter ? this.withJitter(ttlSeconds) : ttlSeconds;
+        let finalTtl = ttlSeconds;
+        if (applyJitter) {
+          finalTtl = this.withJitter(ttlSeconds);
+        }
         await this.redis.set(key, serialized, 'EX', finalTtl);
       } else {
         await this.redis.set(key, serialized);
@@ -107,7 +113,10 @@ export class CachedService {
   async getVersion(trackerKey: string): Promise<number> {
     try {
       const version = await this.redis.get(trackerKey);
-      return version ? Number(version) : 0;
+      if (version) {
+        return Number(version);
+      }
+      return 0;
     } catch (error) {
       this.logger.error(
         `Redis getVersion error for key ${trackerKey}: ${(error as Error).message}`,
@@ -176,7 +185,10 @@ export class CachedService {
   ): Promise<T | null> {
     const cached = await this.get<T | string>(key);
     if (cached !== null) {
-      return cached === this.NULLABLE_SENTINEL ? null : (cached as T);
+      if (cached === this.NULLABLE_SENTINEL) {
+        return null;
+      }
+      return cached as T;
     }
 
     if (this.inFlightRequests.has(key)) {
@@ -188,7 +200,10 @@ export class CachedService {
 
     const fetchPromise = fetcher()
       .then(async (data) => {
-        const toCache = data === null ? this.NULLABLE_SENTINEL : data;
+        let toCache: any = data;
+        if (data === null) {
+          toCache = this.NULLABLE_SENTINEL;
+        }
         await this.set(key, toCache, ttl, true);
         this.inFlightRequests.delete(key);
         return data;
