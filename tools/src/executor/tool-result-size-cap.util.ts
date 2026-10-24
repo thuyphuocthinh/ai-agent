@@ -5,7 +5,15 @@ import {
   PayloadCompressor,
   JsonValue,
 } from 'agentic-io-parser';
-import { LLM_MODEL_REGISTRY } from '@agent/core/constants';
+const DEFAULT_MODEL_CONTEXT_TOKENS: Record<string, number> = {
+  'gemini-1.5-pro': 2_000_000,
+  'gemini-1.5-flash': 1_000_000,
+  'gemini-2.0-flash-exp': 1_000_000,
+  'gpt-4o': 128_000,
+  'gpt-4o-mini': 128_000,
+  'claude-3-5-sonnet-20241022': 200_000,
+  'claude-3-5-haiku-20241022': 200_000,
+};
 import { isLikelyReadOnlyRound } from './read-only-round-heuristic.util';
 
 // Chặn cuối cùng trước khi 1 kết quả tool (MCP tĩnh HOẶC dynamic provider) được
@@ -120,13 +128,13 @@ const DATA_BUDGET_FRACTION = 0.3;
 const MAX_DATA_CHARS_CEILING = 200_000;
 
 export function resolveDataCharBudget(modelId: string): number {
-  const entry = LLM_MODEL_REGISTRY[modelId];
+  const tokens = DEFAULT_MODEL_CONTEXT_TOKENS[modelId];
   // Model chưa đăng ký contextWindowTokens (hoặc modelId lạ) → rơi về đúng
   // hành vi CŨ (6000), an toàn, không đoán mù.
-  if (!entry?.contextWindowTokens) return MAX_TOOL_RESULT_CHARS;
+  if (!tokens) return MAX_TOOL_RESULT_CHARS;
 
   const scaled = Math.floor(
-    entry.contextWindowTokens * CHARS_PER_TOKEN_ESTIMATE * DATA_BUDGET_FRACTION,
+    tokens * CHARS_PER_TOKEN_ESTIMATE * DATA_BUDGET_FRACTION,
   );
   return Math.min(scaled, MAX_DATA_CHARS_CEILING);
 }

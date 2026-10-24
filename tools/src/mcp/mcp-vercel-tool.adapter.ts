@@ -4,8 +4,8 @@ import {
   CallToolRequestDto,
   CallToolResponseDto,
   McpToolDto,
-} from '@agent/core/dto/mcp.dto';
-import { extractTextFromMcpResult } from '@agent/core/common/mcp.util';
+} from '../contracts';
+import { extractTextFromMcpResult } from '../common/tool-utils';
 
 /** Phần của McpClientService mà adapter cần — tách ra để test không phải dựng cả client. */
 export interface IMcpToolCaller {

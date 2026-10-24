@@ -1,5 +1,5 @@
 import { OpenAPI, OpenAPIV2, OpenAPIV3 } from 'openapi-types';
-import { McpToolDto } from '@agent/core/dto/mcp.dto';
+import { McpToolDto } from '../contracts';
 import {
   iterateOperations,
   deriveToolName,

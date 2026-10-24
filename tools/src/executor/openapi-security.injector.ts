@@ -1,6 +1,6 @@
 import { Logger } from '@nestjs/common';
 
-import { EDynamicProviderAuthType } from '@agent/core/entity/dynamic-provider.entity';
+import { EDynamicProviderAuthType } from '../contracts';
 
 /**
  * @deprecated Not called anymore — dynamic-tool-executor.service.ts now uses

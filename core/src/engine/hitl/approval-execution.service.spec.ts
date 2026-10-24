@@ -5,14 +5,14 @@ import { MessageClientService } from '../../contracts/message-client.service';
 import { SupervisorService } from '../supervisor/supervisor.service';
 import { AgentStreamService } from '../../contracts/agent-stream.service';
 import { CheckpointService } from './checkpoint.service';
-import { McpClientService } from '@agent/tools';
+import { McpToolConnectorService } from '../../infrastructure/tools/mcp-tool-connector.service';
 import { AgentCancellationService } from '../cancellation/agent-cancellation.service';
 import { TurnCancelledError } from '../loop/turn-cancelled.error';
 import { TurnResolverService } from '../orchestrator/turn-resolver.service';
 import { MemoryManagerService } from '../../memory/memory-manager.service';
 import { ApprovalContinuationPlannerService } from './approval-continuation-planner.service';
 import { ApprovalSkillRecorderService } from './approval-skill-recorder.service';
-import { resolveDataCharBudget } from '@agent/tools';
+import { resolveDataCharBudget } from '../../common/token-budget.util';
 
 // approval-execution.service.ts import @agent/core/common ở module scope (extractTextFromMcpResult)
 // — mock thẳng barrel để tránh kéo theo "nanoid" (ESM-only) mà jest không transform được.
@@ -72,7 +72,7 @@ describe('ApprovalExecutionService', () => {
         { provide: SupervisorService, useValue: mockSupervisor },
         { provide: AgentStreamService, useValue: mockAgentStream },
         { provide: CheckpointService, useValue: mockCheckpoint },
-        { provide: McpClientService, useValue: mockMcpClient },
+        { provide: McpToolConnectorService, useValue: mockMcpClient },
         { provide: AgentCancellationService, useValue: mockCancellation },
         { provide: TurnResolverService, useValue: mockTurnResolver },
         { provide: MemoryManagerService, useValue: mockMemoryManager },

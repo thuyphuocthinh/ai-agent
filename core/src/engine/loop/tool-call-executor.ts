@@ -17,15 +17,14 @@ import { LlmToolCall, LlmToolResult } from '../strategy/llm-strategy.interface';
 import { ApprovalRequiredError } from './approval-required.error';
 import { CallToolResponseDto, McpToolDto } from '../../contracts/dtos/mcp.dto';
 import { abortableSleep } from '../../common/abortable-sleep.util';
-import { capToolResultSize } from '@agent/tools';
-import { classifyToolError } from '@agent/tools';
+import { capToolResultSize } from '../../common/token-budget.util';
+import { classifyToolError, parseInsertValues } from './tool-execution.util';
 import { PiiScrubberUtil } from '../../security/pii/pii-scrubber.util';
 import { formatActionSummary } from '../../common/action-summary';
 import { MemoryManagerService } from '../../memory/memory-manager.service';
 import { ToolRepeatGuard } from './tool-repeat-guard';
 import { InsertAccumulator } from './insert-accumulator';
 import { ToolRiskGate } from './tool-risk-gate';
-import { parseInsertValues } from '@agent/tools';
 import {
   ToolCallExecutorDeps,
   ToolCallExecutorOptions,

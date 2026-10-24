@@ -24,29 +24,9 @@
       "@agent/tools/*": [
         "src/*"
       ],
-      "@agent/core": [
-        "../core/src/index.ts"
-      ],
-      "@agent/core/*": [
-        "../core/src/*"
-      ],
-      "@agent/core/entity/*": [
-        "../core/src/infrastructure/database/entities/*"
-      ],
-      "@agent/core/entity": [
-        "../core/src/infrastructure/database/entities/index.ts"
-      ],
-      "@agent/core/dto/*": [
-        "../core/src/contracts/dtos/*"
-      ],
-      "@agent/core/dto": [
-        "../core/src/contracts/dtos/index.ts"
-      ],
-      "@agent/core/loop/*": [
-        "../core/src/engine/loop/*"
-      ],
       "agentic-openapi-parser/*": [
-        "../core/node_modules/agentic-openapi-parser/dist/*/index.js"
+        "./node_modules/agentic-openapi-parser/dist/*/index.d.ts",
+        "./node_modules/agentic-openapi-parser/dist/*"
       ]
     }
   },

@@ -1,6 +1,6 @@
 import { asSchema } from 'ai';
 import type { ToolExecutionOptions } from 'ai';
-import { McpToolDto } from '@agent/core/dto/mcp.dto';
+import { McpToolDto } from '../contracts';
 import {
   IMcpToolCaller,
   mapMcpToolsToVercel,

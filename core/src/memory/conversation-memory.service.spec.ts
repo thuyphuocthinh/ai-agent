@@ -3,7 +3,7 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { LessThan } from 'typeorm';
 import { ConversationMemoryService } from './conversation-memory.service';
 import { ConversationMemoryEntity } from '../infrastructure/database/entities/conversation-memory.entity';
-import { OpenAiEmbeddingProvider } from '@agent/tools';
+import { OpenAiEmbeddingProvider } from './embedding/openai-embedding.provider';
 
 describe('ConversationMemoryService', () => {
   let service: ConversationMemoryService;

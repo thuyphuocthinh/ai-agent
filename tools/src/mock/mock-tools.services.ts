@@ -4,8 +4,8 @@ import {
   CallToolResponseDto,
   McpResourceDto,
   McpToolDto,
-} from '@agent/core/dto/mcp.dto';
-import { IToolProvider } from '@agent/core/contracts';
+  IToolProvider,
+} from '../contracts';
 import { MockProvider, errorResult } from './mock-provider';
 import { MOCK_PROVIDER_ID, createMockSqlProvider } from './mock-sql.provider';
 import { MOCK_SHEETS_PROVIDER_ID, createMockSheetsProvider } from './mock-sheets.provider';

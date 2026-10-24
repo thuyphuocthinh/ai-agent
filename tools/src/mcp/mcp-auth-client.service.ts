@@ -1,13 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { RpcException } from '@nestjs/microservices';
 import axios from 'axios';
-import { ORCHESTRATION_ERROR } from '@agent/core/constants';
+import { TOOL_ERRORS } from '../constants/tool.constants';
 import {
   InitiateConnectRequestDto,
   InitiateConnectResponseDto,
   ProviderStatusDto,
   SubmitCredentialsRequestDto,
-} from '@agent/core/dto/mcp-auth.dto';
+} from '../contracts';
 
 @Injectable()
 export class McpAuthClientService {
@@ -53,7 +53,7 @@ export class McpAuthClientService {
       return data;
     } catch (error: any) {
       this.logger.error(`getConnectionStatus failed: ${error.message}`);
-      throw new RpcException(ORCHESTRATION_ERROR.MCP_AUTH_REQUEST_FAILED);
+      throw new RpcException(TOOL_ERRORS.MCP_AUTH_REQUEST_FAILED);
     }
   }
 
@@ -76,7 +76,7 @@ export class McpAuthClientService {
       );
     } catch (error: any) {
       this.logger.error(`initiateConnect failed: ${error.message}`);
-      throw new RpcException(ORCHESTRATION_ERROR.MCP_AUTH_REQUEST_FAILED);
+      throw new RpcException(TOOL_ERRORS.MCP_AUTH_REQUEST_FAILED);
     }
   }
 
@@ -93,7 +93,7 @@ export class McpAuthClientService {
       );
     } catch (error: any) {
       this.logger.error(`submitCredentials failed: ${error.message}`);
-      throw new RpcException(ORCHESTRATION_ERROR.MCP_AUTH_REQUEST_FAILED);
+      throw new RpcException(TOOL_ERRORS.MCP_AUTH_REQUEST_FAILED);
     }
   }
 
@@ -105,7 +105,7 @@ export class McpAuthClientService {
       });
     } catch (error: any) {
       this.logger.error(`disconnectProvider failed: ${error.message}`);
-      throw new RpcException(ORCHESTRATION_ERROR.MCP_AUTH_REQUEST_FAILED);
+      throw new RpcException(TOOL_ERRORS.MCP_AUTH_REQUEST_FAILED);
     }
   }
 }

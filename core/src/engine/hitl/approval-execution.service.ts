@@ -7,7 +7,7 @@ import {
 import { extractTextFromMcpResult } from '@agent/core/common';
 import { MessageClientService } from '../../contracts/message-client.service';
 import { SupervisorService } from '../supervisor/supervisor.service';
-import { McpClientService } from '@agent/tools';
+import { McpToolConnectorService } from '../../infrastructure/tools/mcp-tool-connector.service';
 import { AgentStreamService } from '../../contracts/agent-stream.service';
 import { describeExternalServiceError } from '../loop/external-service-error.util';
 import { CheckpointService } from './checkpoint.service';
@@ -16,7 +16,7 @@ import { DelegationDto } from '../../contracts/dtos/supervisor.dto';
 import { AgentCancellationService } from '../cancellation/agent-cancellation.service';
 import { TurnCancelledError } from '../loop/turn-cancelled.error';
 import { TurnResolverService } from '../orchestrator/turn-resolver.service';
-import { capToolResultSize } from '@agent/tools';
+import { capToolResultSize } from '../../common/token-budget.util';
 import { MemoryManagerService } from '../../memory/memory-manager.service';
 import { ApprovalContinuationPlannerService } from './approval-continuation-planner.service';
 import { ApprovalSkillRecorderService } from './approval-skill-recorder.service';
@@ -40,7 +40,7 @@ export class ApprovalExecutionService {
     private readonly supervisor: SupervisorService,
     private readonly agentStream: AgentStreamService,
     private readonly checkpoint: CheckpointService,
-    private readonly mcpClient: McpClientService,
+    private readonly mcpClient: McpToolConnectorService,
     private readonly cancellation: AgentCancellationService,
     private readonly turnResolver: TurnResolverService,
     private readonly memoryManager: MemoryManagerService,

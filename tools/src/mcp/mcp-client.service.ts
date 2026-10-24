@@ -1,9 +1,9 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional, Inject } from '@nestjs/common';
 import { RpcException } from '@nestjs/microservices';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
-import { ORCHESTRATION_CONSTANTS, ORCHESTRATION_ERROR } from '@agent/core/constants';
+import { TOOL_CONSTANTS, TOOL_ERRORS } from '../constants/tool.constants';
 import { AGENT_REGISTRY } from '../registry/agents.registry';
 import {
   CallToolRequestDto,
@@ -11,16 +11,16 @@ import {
   McpToolDto,
   McpResourceDto,
   McpPromptDto,
-} from '@agent/core/dto/mcp.dto';
-import { IToolProvider } from '@agent/core/contracts';
+  IToolProvider,
+  ICircuitBreaker,
+  CIRCUIT_BREAKER,
+  IProviderConcurrencyLimiter,
+  PROVIDER_CONCURRENCY_LIMITER,
+} from '../contracts';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { withTimeout } from '@agent/core/loop/with-timeout.util';
-import { abortableSleep } from '@agent/core/common';
-import { CircuitBreakerService } from '@agent/core/common';
-import { ProviderConcurrencyLimiterService } from '@agent/core/common';
+import { withTimeout, abortableSleep, PiiScrubberUtil } from '../common/tool-utils';
 import { DynamicToolRegistryService } from '../registry/dynamic-tool-registry.service';
 import { DynamicToolExecutorService } from '../executor/dynamic-tool-executor.service';
-import { PiiScrubberUtil } from '@agent/core/security';
 import { routeKey, clientCacheKey } from './route-key.util';
 
 interface CacheEntry<T> {
@@ -47,10 +47,16 @@ export class McpClientService implements IToolProvider {
   private readonly inFlightLists = new Map<string, Promise<any>>();
 
   constructor(
-    private readonly circuitBreaker: CircuitBreakerService,
-    private readonly concurrencyLimiter: ProviderConcurrencyLimiterService,
-    private readonly dynamicRegistry: DynamicToolRegistryService,
-    private readonly dynamicExecutor: DynamicToolExecutorService,
+    @Optional()
+    @Inject(CIRCUIT_BREAKER)
+    private readonly circuitBreaker?: ICircuitBreaker,
+    @Optional()
+    @Inject(PROVIDER_CONCURRENCY_LIMITER)
+    private readonly concurrencyLimiter?: IProviderConcurrencyLimiter,
+    @Optional()
+    private readonly dynamicRegistry?: DynamicToolRegistryService,
+    @Optional()
+    private readonly dynamicExecutor?: DynamicToolExecutorService,
   ) {}
 
   private async getClient(
@@ -85,7 +91,7 @@ export class McpClientService implements IToolProvider {
     const entry = AGENT_REGISTRY[provider];
 
     if (!entry?.endpoint) {
-      throw new RpcException(ORCHESTRATION_ERROR.AGENT_NOT_REGISTERED);
+      throw new RpcException(TOOL_ERRORS.AGENT_NOT_REGISTERED);
     }
 
     const headers: Record<string, string> = {
@@ -102,8 +108,8 @@ export class McpClientService implements IToolProvider {
     );
     await withTimeout(
       client.connect(transport),
-      ORCHESTRATION_CONSTANTS.MCP_CALL_TIMEOUT_MS,
-      `MCP connect() timeout sau ${ORCHESTRATION_CONSTANTS.MCP_CALL_TIMEOUT_MS / 1000}s (provider=${provider})`,
+      TOOL_CONSTANTS.MCP_CALL_TIMEOUT_MS,
+      `MCP connect() timeout sau ${TOOL_CONSTANTS.MCP_CALL_TIMEOUT_MS / 1000}s (provider=${provider})`,
     );
 
     this.logger.log(
@@ -117,7 +123,7 @@ export class McpClientService implements IToolProvider {
     const now = Date.now();
     const idleEntries = Array.from(this.clients.entries()).filter(
       ([, entry]) =>
-        now - entry.lastUsedAt > ORCHESTRATION_CONSTANTS.MCP_CLIENT_IDLE_TTL_MS,
+        now - entry.lastUsedAt > TOOL_CONSTANTS.MCP_CLIENT_IDLE_TTL_MS,
     );
     if (idleEntries.length === 0) return;
 
@@ -130,7 +136,7 @@ export class McpClientService implements IToolProvider {
         // dẹp — tránh xoá nhầm 1 entry MỚI đã thay thế entry cũ tại cùng cacheKey.
         if (
           Date.now() - entry.lastUsedAt <=
-          ORCHESTRATION_CONSTANTS.MCP_CLIENT_IDLE_TTL_MS
+          TOOL_CONSTANTS.MCP_CLIENT_IDLE_TTL_MS
         ) {
           return;
         }
@@ -158,7 +164,7 @@ export class McpClientService implements IToolProvider {
     for (const [key, entry] of this.resourceContentCache.entries()) {
       if (
         now - entry.fetchedAt >
-        ORCHESTRATION_CONSTANTS.MCP_RESOURCE_CONTENT_CACHE_TTL_MS
+        TOOL_CONSTANTS.MCP_RESOURCE_CONTENT_CACHE_TTL_MS
       ) {
         this.resourceContentCache.delete(key);
         evicted++;
@@ -183,7 +189,7 @@ export class McpClientService implements IToolProvider {
     if (
       cached &&
       Date.now() - cached.fetchedAt <
-        ORCHESTRATION_CONSTANTS.MCP_TOOLS_CACHE_TTL_MS
+        TOOL_CONSTANTS.MCP_TOOLS_CACHE_TTL_MS
     ) {
       return cached.data;
     }
@@ -238,7 +244,7 @@ export class McpClientService implements IToolProvider {
     if (
       !cached ||
       Date.now() - cached.fetchedAt >=
-        ORCHESTRATION_CONSTANTS.MCP_TOOLS_CACHE_TTL_MS
+        TOOL_CONSTANTS.MCP_TOOLS_CACHE_TTL_MS
     ) {
       return undefined;
     }
@@ -251,7 +257,7 @@ export class McpClientService implements IToolProvider {
     signal?: AbortSignal,
     workspaceId?: string,
   ): Promise<McpToolDto[]> {
-    if (await this.dynamicRegistry.isDynamicProvider(provider)) {
+    if (this.dynamicRegistry && (await this.dynamicRegistry.isDynamicProvider(provider))) {
       return this.dynamicRegistry.getTools(provider, query);
     }
 
@@ -280,7 +286,7 @@ export class McpClientService implements IToolProvider {
     signal?: AbortSignal,
     workspaceId?: string,
   ): Promise<McpResourceDto[]> {
-    if (await this.dynamicRegistry.isDynamicProvider(provider)) return [];
+    if (this.dynamicRegistry && (await this.dynamicRegistry.isDynamicProvider(provider))) return [];
 
     return this.getCachedList(
       provider,
@@ -307,7 +313,7 @@ export class McpClientService implements IToolProvider {
     signal?: AbortSignal,
     workspaceId?: string,
   ): Promise<McpPromptDto[]> {
-    if (await this.dynamicRegistry.isDynamicProvider(provider)) return [];
+    if (this.dynamicRegistry && (await this.dynamicRegistry.isDynamicProvider(provider))) return [];
 
     return this.getCachedList(
       provider,
@@ -359,14 +365,16 @@ export class McpClientService implements IToolProvider {
     const ownerId = dto.userId ?? dto.ownerId ?? 'default';
     const workspaceId = dto.tenantId ?? dto.workspaceId;
 
-    if (await this.dynamicRegistry.isDynamicProvider(provider)) {
-      return this.dynamicExecutor.execute(
-        provider,
-        dto.name,
-        dto.args,
-        ownerId,
-        signal,
-      );
+    if (this.dynamicRegistry && (await this.dynamicRegistry.isDynamicProvider(provider))) {
+      if (this.dynamicExecutor) {
+        return this.dynamicExecutor.execute(
+          provider,
+          dto.name,
+          dto.args,
+          ownerId,
+          signal,
+        );
+      }
     }
 
     let cachedTool = this.getFreshCachedTool(
@@ -428,7 +436,7 @@ export class McpClientService implements IToolProvider {
     if (
       cached &&
       Date.now() - cached.fetchedAt <
-        ORCHESTRATION_CONSTANTS.MCP_RESOURCE_CONTENT_CACHE_TTL_MS
+        TOOL_CONSTANTS.MCP_RESOURCE_CONTENT_CACHE_TTL_MS
     ) {
       return cached.data;
     }
@@ -484,25 +492,29 @@ export class McpClientService implements IToolProvider {
     workspaceId?: string,
   ): Promise<T> {
     const failureDomainKey = `mcp:${routeKey(provider, workspaceId)}`;
-    return this.circuitBreaker.run(
-      failureDomainKey,
-      () =>
-        this.concurrencyLimiter.run(
-          failureDomainKey,
-          ORCHESTRATION_CONSTANTS.MAX_CONCURRENT_MCP_CALLS_PER_PROVIDER,
-          () =>
-            this.callWithReconnect(
-              provider,
-              ownerId,
-              fn,
-              maxRetries,
-              signal,
-              workspaceId,
-            ),
-          signal,
-        ),
-      signal,
-    );
+    const runInner = () =>
+      this.callWithReconnect(
+        provider,
+        ownerId,
+        fn,
+        maxRetries,
+        signal,
+        workspaceId,
+      );
+
+    const withLimiter = this.concurrencyLimiter
+      ? () =>
+          this.concurrencyLimiter!.run(
+            failureDomainKey,
+            TOOL_CONSTANTS.MAX_CONCURRENT_MCP_CALLS_PER_PROVIDER,
+            runInner,
+            signal,
+          )
+      : runInner;
+
+    return this.circuitBreaker
+      ? this.circuitBreaker.run(failureDomainKey, withLimiter, signal)
+      : withLimiter();
   }
 
   private async callWithReconnect<T>(
@@ -514,7 +526,7 @@ export class McpClientService implements IToolProvider {
     workspaceId?: string,
   ): Promise<T> {
     const cacheKey = clientCacheKey(provider, ownerId, workspaceId);
-    const timeoutMsg = `MCP call timeout sau ${ORCHESTRATION_CONSTANTS.MCP_CALL_TIMEOUT_MS / 1000}s (${cacheKey})`;
+    const timeoutMsg = `MCP call timeout sau ${TOOL_CONSTANTS.MCP_CALL_TIMEOUT_MS / 1000}s (${cacheKey})`;
 
     let attempt = 0;
     let staleSessionBonusUsed = false;
@@ -527,7 +539,7 @@ export class McpClientService implements IToolProvider {
         const client = await this.getClient(provider, ownerId, workspaceId);
         return await withTimeout(
           fn(client),
-          ORCHESTRATION_CONSTANTS.MCP_CALL_TIMEOUT_MS,
+          TOOL_CONSTANTS.MCP_CALL_TIMEOUT_MS,
           timeoutMsg,
         );
       } catch (error: any) {

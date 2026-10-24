@@ -1,9 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
-import { ORCHESTRATION_CONSTANTS } from '@agent/core/constants';
 import { McpClientService } from './mcp-client.service';
-import { CircuitBreakerService } from '@agent/core/common';
-import { ProviderConcurrencyLimiterService } from '@agent/core/common';
+import { TOOL_CONSTANTS as ORCHESTRATION_CONSTANTS } from '../constants/tool.constants';
+import { CIRCUIT_BREAKER, PROVIDER_CONCURRENCY_LIMITER } from '../contracts';
 import { DynamicToolRegistryService } from '../registry/dynamic-tool-registry.service';
 import { DynamicToolExecutorService } from '../executor/dynamic-tool-executor.service';
 
@@ -64,8 +63,13 @@ describe('McpClientService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         McpClientService,
-        { provide: CircuitBreakerService, useValue: mockCircuitBreaker },
-        ProviderConcurrencyLimiterService,
+        { provide: CIRCUIT_BREAKER, useValue: mockCircuitBreaker },
+        {
+          provide: PROVIDER_CONCURRENCY_LIMITER,
+          useValue: {
+            run: jest.fn((_k, _l, action) => action()),
+          },
+        },
         {
           provide: DynamicToolRegistryService,
           useValue: { isDynamicProvider: jest.fn().mockReturnValue(false) },
@@ -178,8 +182,13 @@ describe('McpClientService', () => {
       const module: TestingModule = await Test.createTestingModule({
         providers: [
           McpClientService,
-          { provide: CircuitBreakerService, useValue: mockCircuitBreaker },
-          ProviderConcurrencyLimiterService,
+          { provide: CIRCUIT_BREAKER, useValue: mockCircuitBreaker },
+          {
+            provide: PROVIDER_CONCURRENCY_LIMITER,
+            useValue: {
+              run: jest.fn((_k, _l, action) => action()),
+            },
+          },
           {
             provide: DynamicToolRegistryService,
             useValue: mockDynamicRegistry,
@@ -212,8 +221,13 @@ describe('McpClientService', () => {
       const module: TestingModule = await Test.createTestingModule({
         providers: [
           McpClientService,
-          { provide: CircuitBreakerService, useValue: mockCircuitBreaker },
-          ProviderConcurrencyLimiterService,
+          { provide: CIRCUIT_BREAKER, useValue: mockCircuitBreaker },
+          {
+            provide: PROVIDER_CONCURRENCY_LIMITER,
+            useValue: {
+              run: jest.fn((_k, _l, action) => action()),
+            },
+          },
           {
             provide: DynamicToolRegistryService,
             useValue: mockDynamicRegistry,
@@ -1090,8 +1104,13 @@ describe('McpClientService', () => {
       const module2: TestingModule = await Test.createTestingModule({
         providers: [
           McpClientService,
-          { provide: CircuitBreakerService, useValue: mockCircuitBreaker },
-          ProviderConcurrencyLimiterService,
+          { provide: CIRCUIT_BREAKER, useValue: mockCircuitBreaker },
+          {
+            provide: PROVIDER_CONCURRENCY_LIMITER,
+            useValue: {
+              run: jest.fn((_k, _l, action) => action()),
+            },
+          },
           {
             provide: DynamicToolRegistryService,
             useValue: mockDynamicRegistry2,

@@ -1,4 +1,4 @@
-import { McpResourceDto, McpToolDto } from '@agent/core/dto/mcp.dto';
+import { McpResourceDto, McpToolDto } from '../contracts';
 import {
   MockQueryResult,
   createMockDatabase,

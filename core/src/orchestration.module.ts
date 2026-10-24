@@ -32,7 +32,25 @@ import { CheckpointCleanupService } from './engine/hitl/checkpoint-cleanup.servi
 import { TriggerClaimService } from './engine/hitl/trigger-claim.service';
 import { CircuitBreakerService } from './common/circuit-breaker.service';
 import { ProviderConcurrencyLimiterService } from './common/provider-concurrency-limiter.service';
-import { ToolsModule } from '@agent/tools';
+import { McpToolConnectorService } from './infrastructure/tools/mcp-tool-connector.service';
+import { MockToolConnectorService } from './infrastructure/tools/mock-tool-connector.service';
+import { McpAuthClientService } from './infrastructure/tools/mcp-auth-client.service';
+import {
+  CoreOpenApiParserService,
+  CoreDynamicToolRegistryService,
+  DYNAMIC_PROVIDER_LOADER,
+  ON_TOKEN_REFRESHED,
+  TokenRefreshPayload,
+} from './infrastructure/tools/dynamic-tool-registry.port';
+import {
+  TOOL_PROVIDER,
+  CIRCUIT_BREAKER,
+  PROVIDER_CONCURRENCY_LIMITER,
+} from './contracts/tool-provider.interface';
+import { OpenAiEmbeddingProvider } from './memory/embedding/openai-embedding.provider';
+import { DynamicProviderDbService } from './engine/orchestrator/dynamic-provider-db.service';
+import { ProviderSummaryService } from './engine/orchestrator/provider-summary.service';
+import { QueueService, EJobName } from './infrastructure/queue';
 import { AgentCancellationService } from './engine/cancellation/agent-cancellation.service';
 import { TurnResolverService } from './engine/orchestrator/turn-resolver.service';
 import { CheckpointPauseService } from './engine/hitl/checkpoint-pause.service';
@@ -70,7 +88,6 @@ import {
       ConversationMemoryEntity,
       SkillEntity,
     ]),
-    ToolsModule,
     ScheduleModule.forRoot(),
     CachedModule.forRoot(),
     QueueModule.forRoot(),
@@ -108,6 +125,7 @@ import {
     ConversationMemoryService,
     ConversationMemoryCleanupService,
     MemoryManagerService,
+    OpenAiEmbeddingProvider,
     SkillService,
     SkillRetrievalService,
     TriggerClaimService,
@@ -132,17 +150,65 @@ import {
     },
     MetricsRegistryService,
     HealthCheckService,
+    DynamicProviderDbService,
+    ProviderSummaryService,
+    {
+      provide: DYNAMIC_PROVIDER_LOADER,
+      useExisting: DynamicProviderDbService,
+    },
+    {
+      provide: CIRCUIT_BREAKER,
+      useExisting: CircuitBreakerService,
+    },
+    {
+      provide: PROVIDER_CONCURRENCY_LIMITER,
+      useExisting: ProviderConcurrencyLimiterService,
+    },
+    McpAuthClientService,
+    CoreOpenApiParserService,
+    CoreDynamicToolRegistryService,
+    MockToolConnectorService,
+    McpToolConnectorService,
+    {
+      provide: TOOL_PROVIDER,
+      useExisting:
+        process.env.MOCK_TOOLS === 'true'
+          ? MockToolConnectorService
+          : McpToolConnectorService,
+    },
+    {
+      provide: ON_TOKEN_REFRESHED,
+      useFactory: (queueService: QueueService) => {
+        return (payload: TokenRefreshPayload) => {
+          return queueService.addJob(
+            EQueueName.DYNAMIC_PROVIDER_QUEUE,
+            EJobName.UPDATE_DYNAMIC_PROVIDER_TOKEN,
+            payload,
+            {
+              attempts: 3,
+              backoff: { type: 'exponential', delay: 1000 },
+              removeOnComplete: true,
+            },
+          );
+        };
+      },
+      inject: [QueueService],
+    },
   ],
   exports: [
     AiOrchestrationProcessor,
     ReactLoopService,
     SupervisorService,
+    DynamicProviderDbService,
+    ProviderSummaryService,
     LlmStrategyFactory,
     MessageClientService,
     AgentStreamService,
     MESSAGE_SINK,
     STREAM_SINK,
-    ToolsModule,
+    TOOL_PROVIDER,
+    McpToolConnectorService,
+    McpAuthClientService,
   ],
 })
 export class OrchestrationModule {}

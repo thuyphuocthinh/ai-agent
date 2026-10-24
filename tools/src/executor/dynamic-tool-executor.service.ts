@@ -1,10 +1,8 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional, Inject } from '@nestjs/common';
 import { DynamicToolRegistryService } from '../registry/dynamic-tool-registry.service';
 import { DynamicProviderSpec } from '../registry/dynamic-tool.interface';
-import { CallToolResponseDto } from '@agent/core/dto/mcp.dto';
-import { EDynamicProviderAuthType } from '@agent/core/entity/dynamic-provider.entity';
-import { QueueService, EQueueName, EJobName } from '@agent/core/infrastructure/queue';
-import { PiiScrubProcessor } from '@agent/core/security';
+import { CallToolResponseDto, EDynamicProviderAuthType } from '../contracts';
+import { PiiScrubProcessor, inferOAuth2RefreshFormat } from '../common/tool-utils';
 import {
   OpenApiSecurityInjector as LibSecurityInjector,
   Oauth2RefreshTokenRefresher,
@@ -16,7 +14,20 @@ import {
   DynamicProviderAuthType as ELibAuthType,
   ObservabilityHooks,
 } from 'agentic-openapi-parser';
-import { inferOAuth2RefreshFormat } from '@agent/core/common';
+
+export interface TokenRefreshPayload {
+  providerId: string;
+  accessToken?: string;
+  refreshToken?: string;
+  tokenExpiresAt?: Date;
+  previousRefreshToken?: string;
+}
+
+export type OnTokenRefreshedCallback = (
+  payload: TokenRefreshPayload,
+) => Promise<void> | void;
+
+export const ON_TOKEN_REFRESHED = Symbol('ON_TOKEN_REFRESHED');
 
 @Injectable()
 export class DynamicToolExecutorService {
@@ -42,8 +53,14 @@ export class DynamicToolExecutorService {
 
   constructor(
     private readonly registry: DynamicToolRegistryService,
-    private readonly queueService: QueueService,
+    @Optional()
+    @Inject(ON_TOKEN_REFRESHED)
+    private onTokenRefreshed?: OnTokenRefreshedCallback,
   ) {}
+
+  public setOnTokenRefreshed(callback: OnTokenRefreshedCallback): void {
+    this.onTokenRefreshed = callback;
+  }
 
   /**
    * Nhận Tool Call từ LLM và thực thi HTTP request dựa trên OpenAPI spec.
@@ -211,28 +228,21 @@ export class DynamicToolExecutorService {
       responseExpiresInPath: providerSpec.authConfig?.responseExpiresInPath,
       defaultExpiresInSecs: providerSpec.authConfig?.defaultExpiresInSecs,
       onRefreshed: (newState) => {
-        this.queueService
-          .addJob(
-            EQueueName.DYNAMIC_PROVIDER_QUEUE,
-            EJobName.UPDATE_DYNAMIC_PROVIDER_TOKEN,
-            {
+        if (this.onTokenRefreshed) {
+          Promise.resolve(
+            this.onTokenRefreshed({
               providerId,
               accessToken: newState.accessToken,
               refreshToken: newState.refreshToken,
               tokenExpiresAt: newState.tokenExpiresAt,
               previousRefreshToken: providerSpec.refreshToken,
-            },
-            {
-              attempts: 3,
-              backoff: { type: 'exponential', delay: 1000 },
-              removeOnComplete: true,
-            },
-          )
-          .catch((qErr: any) =>
+            }),
+          ).catch((qErr: any) =>
             this.logger.error(
-              `Failed to enqueue token update job: ${qErr.message}`,
+              `Failed to handle token update callback: ${qErr?.message}`,
             ),
           );
+        }
       },
     });
 

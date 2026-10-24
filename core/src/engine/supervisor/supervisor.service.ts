@@ -11,9 +11,9 @@ import {
   PROVIDER_DESCRIPTIONS,
   ESupervisorVerdict,
 } from '@agent/core/constants';
-import { McpAuthClientService } from '@agent/tools';
-import { AGENT_REGISTRY } from '@agent/tools';
-import { DynamicProviderDbService } from '@agent/tools';
+import { McpAuthClientService } from '../../infrastructure/tools/mcp-auth-client.service';
+import { AGENT_REGISTRY } from './agents.registry';
+import { DynamicProviderDbService } from '../orchestrator/dynamic-provider-db.service';
 import {
   AvailableAgentDto,
   DelegationDto,
@@ -31,7 +31,7 @@ import { CircuitBreakerService } from '../../common/circuit-breaker.service';
 import {
   capRoundResults,
   capToolResultSize,
-} from '@agent/tools';
+} from '../../common/token-budget.util';
 import { hasPendingActionStep } from '../../common/pending-action-step.util';
 import { MetricsRegistryService } from '../../common/metrics-registry.service';
 import { MemoryManagerService } from '../../memory/memory-manager.service';

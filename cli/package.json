@@ -15,7 +15,6 @@
     "test": "jest"
   },
   "dependencies": {
-    "@agent/core": "workspace:*",
     "@nestjs/common": "^11.0.1",
     "reflect-metadata": "^0.2.2"
   },
@@ -46,9 +45,7 @@
     },
     "testEnvironment": "node",
     "moduleNameMapper": {
-      "^@agent/cli(|/.*)$": "<rootDir>/$1",
-      "^@agent/core/dto/(.*)$": "<rootDir>/../../core/src/contracts/dtos/$1",
-      "^@agent/core(|/.*)$": "<rootDir>/../../core/src/$1"
+      "^@agent/cli(|/.*)$": "<rootDir>/$1"
     }
   }
 }

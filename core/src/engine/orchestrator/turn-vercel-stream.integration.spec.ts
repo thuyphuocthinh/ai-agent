@@ -2,7 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { readUIMessageStream } from 'ai';
 import type { UIMessage, UIMessageChunk } from 'ai';
 import { IProcessAiTriggerJobData } from '@agent/core/infrastructure/queue';
-import { McpClientService } from '@agent/tools';
+import { McpToolConnectorService } from '../../infrastructure/tools/mcp-tool-connector.service';
 import { TurnResolverService } from './turn-resolver.service';
 import { MessageClientService } from '../../contracts/message-client.service';
 import { ReactLoopService } from '../loop/react-loop.service';
@@ -130,7 +130,7 @@ describe('1 turn thật → AgentStreamService → VercelUiStreamAdapter → ai@
           },
         },
         { provide: SupervisorService, useValue: mockSupervisor },
-        { provide: McpClientService, useValue: mockMcp },
+        { provide: McpToolConnectorService, useValue: mockMcp },
         {
           provide: LlmStrategyFactory,
           useValue: {

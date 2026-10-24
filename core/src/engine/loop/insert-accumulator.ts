@@ -1,4 +1,4 @@
-import { parseInsertValues } from '@agent/tools';
+import { parseInsertValues } from './tool-execution.util';
 
 export type InsertShortfallOutcome =
   | { mergedQuery: string }

@@ -4,7 +4,7 @@ import {
   ORCHESTRATION_SELF_CHECK_PROMPT,
 } from '@agent/core/constants';
 import { ReactLoopService } from './react-loop.service';
-import { McpClientService } from '@agent/tools';
+import { McpToolConnectorService } from '../../infrastructure/tools/mcp-tool-connector.service';
 import { LlmStrategyFactory } from '../strategy/llm-strategy.factory';
 import { AgentStreamService } from '../../contracts/agent-stream.service';
 import { RunReactLoopRequestDto } from '../../contracts/dtos/react-loop.dto';
@@ -17,7 +17,7 @@ import {
   resolveDataCharBudget,
   resolveHistoryCharBudget,
   resolveMemoryCharBudget,
-} from '@agent/tools';
+} from '../../common/token-budget.util';
 
 // @agent/core/common barrel transitively kéo theo "nanoid" (ESM-only) qua
 // string.util.ts — jest không transform được, mock thẳng theo đúng convention
@@ -113,7 +113,7 @@ describe('ReactLoopService', () => {
       providers: [
         ReactLoopService,
         { provide: TOOL_PROVIDER, useValue: mockMcpClient },
-        { provide: McpClientService, useValue: mockMcpClient },
+        { provide: McpToolConnectorService, useValue: mockMcpClient },
         { provide: LlmStrategyFactory, useValue: mockLlmFactory },
         { provide: STREAM_SINK, useValue: mockAgentStream },
         { provide: AgentStreamService, useValue: mockAgentStream },

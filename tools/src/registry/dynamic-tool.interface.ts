@@ -3,7 +3,7 @@ import {
   McpToolDto,
   EDynamicProviderAuthType,
   DynamicProviderAuthConfig,
-} from '@agent/core/contracts';
+} from '../contracts';
 
 export interface DynamicProviderSpec {
   providerId: string;

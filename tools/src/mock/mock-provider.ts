@@ -2,7 +2,7 @@ import {
   CallToolResponseDto,
   McpResourceDto,
   McpToolDto,
-} from '@agent/core/dto/mcp.dto';
+} from '../contracts';
 
 export interface MockResource {
   dto: McpResourceDto;

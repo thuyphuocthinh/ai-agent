@@ -7,7 +7,7 @@ import {
 } from '@agent/core/constants';
 import { extractTextFromMcpResult } from '@agent/core/common';
 import { MessageClientService } from '../../contracts/message-client.service';
-import { McpClientService } from '@agent/tools';
+import { McpToolConnectorService } from '../../infrastructure/tools/mcp-tool-connector.service';
 import { CheckpointService } from './checkpoint.service';
 import {
   AmbiguousAgentCandidate,
@@ -31,7 +31,7 @@ import {
   ApprovalRequiredDelegateResult,
   buildAnswer,
 } from '../orchestrator/orchestration-answer.types';
-import { capToolResultSize } from '@agent/tools';
+import { capToolResultSize } from '../../common/token-budget.util';
 import { formatActionSummary } from '../../common/action-summary';
 
 @Injectable()
@@ -41,7 +41,7 @@ export class CheckpointPauseService {
   constructor(
     private readonly messageClient: MessageClientService,
     private readonly checkpoint: CheckpointService,
-    private readonly mcpClient: McpClientService,
+    private readonly mcpClient: McpToolConnectorService,
   ) {}
 
   // Dừng turn khi gặp tool rủi ro: tạo message MỚI "approval_request" (không

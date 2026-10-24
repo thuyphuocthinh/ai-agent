@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import SwaggerParser from '@apidevtools/swagger-parser';
 import { OpenAPI } from 'openapi-types';
 import { RpcException } from '@nestjs/microservices';
-import { ORCHESTRATION_ERROR } from '@agent/core/constants';
+import { TOOL_ERRORS } from '../constants/tool.constants';
 import { readUrlSafely } from './ssrf-safe-http-reader.util';
 
 @Injectable()
@@ -38,7 +38,7 @@ export class OpenApiParserService {
         error.stack,
       );
       throw new RpcException({
-        ...ORCHESTRATION_ERROR.INVALID_OPENAPI_SPEC,
+        ...TOOL_ERRORS.INVALID_OPENAPI_SPEC,
         details: error.message,
       });
     }

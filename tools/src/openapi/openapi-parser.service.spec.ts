@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { OpenApiParserService } from './openapi-parser.service';
 import { RpcException } from '@nestjs/microservices';
-import { ORCHESTRATION_ERROR } from '@agent/core/constants';
+import { TOOL_ERRORS } from '../constants/tool.constants';
 import SwaggerParser from '@apidevtools/swagger-parser';
 import { OpenAPI } from 'openapi-types';
 
@@ -60,7 +60,7 @@ describe('OpenApiParserService', () => {
       await expect(service.loadSpec(url)).rejects.toThrow(RpcException);
       await expect(service.loadSpec(url)).rejects.toMatchObject({
         error: expect.objectContaining({
-          code: ORCHESTRATION_ERROR.INVALID_OPENAPI_SPEC.code,
+          code: TOOL_ERRORS.INVALID_OPENAPI_SPEC.code,
         }),
       });
     });

@@ -1,4 +1,4 @@
-import { CallToolResponseDto, McpToolDto } from '@agent/core/dto/mcp.dto';
+import { CallToolResponseDto, McpToolDto } from '../contracts';
 import { MockProvider, errorResult, isToolResult, jsonResult, limitArg, stringArg } from './mock-provider';
 
 export const MOCK_SLACK_PROVIDER_ID = 'slack';

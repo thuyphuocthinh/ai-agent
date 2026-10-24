@@ -6,10 +6,10 @@ import {
   SUPERVISOR_PLAN_SCHEMA_NO_ANSWER,
 } from '@agent/core/constants';
 import { SupervisorService } from './supervisor.service';
-import { McpAuthClientService } from '@agent/tools';
+import { McpAuthClientService } from '../../infrastructure/tools/mcp-auth-client.service';
 import { LlmStrategyFactory } from '../strategy/llm-strategy.factory';
 import { CircuitBreakerService } from '../../common/circuit-breaker.service';
-import { DynamicProviderDbService } from '@agent/tools';
+import { DynamicProviderDbService } from '../orchestrator/dynamic-provider-db.service';
 import { MetricsRegistryService } from '../../common/metrics-registry.service';
 import { MemoryManagerService } from '../../memory/memory-manager.service';
 import { SkillRetrievalService } from '../../memory/skill-retrieval.service';
@@ -19,21 +19,17 @@ import {
   resolveDataCharBudget,
   resolveHistoryCharBudget,
   resolveMemoryCharBudget,
-} from '@agent/tools';
-import { AGENT_REGISTRY } from '@agent/tools';
+} from '../../common/token-budget.util';
+import { AGENT_REGISTRY } from './agents.registry';
 
 // Cô lập test khỏi giá trị thật của process.env.AGENT_SQL_SERVER_URL — mock
 // thẳng registry để chủ động quyết định agent nào có/thiếu hạ tầng thật.
-jest.mock('@agent/tools', () => {
-  const actual = jest.requireActual('@agent/tools');
-  return {
-    ...actual,
-    AGENT_REGISTRY: {
-      sql_server: { label: 'SQL Server', endpoint: 'http://mcp-server/mcp' },
-      notion: { label: 'Notion', endpoint: undefined },
-    },
-  };
-});
+jest.mock('./agents.registry', () => ({
+  AGENT_REGISTRY: {
+    sql_server: { label: 'SQL Server', endpoint: 'http://mcp-server/mcp' },
+    notion: { label: 'Notion', endpoint: undefined },
+  },
+}));
 
 describe('SupervisorService', () => {
   let service: SupervisorService;

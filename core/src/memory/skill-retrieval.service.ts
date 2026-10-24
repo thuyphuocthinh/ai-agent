@@ -4,11 +4,11 @@ import { ECheckpointRiskLevel } from '@agent/core/constants';
 import {
   OPENAI_EMBEDDING_MODEL,
   OpenAiEmbeddingProvider,
-} from '@agent/tools';
+  CHARS_PER_TOKEN_ESTIMATE,
+} from './embedding/openai-embedding.provider';
 import { SkillService } from './skill.service';
 import { SkillEntity } from '../infrastructure/database/entities/skill.entity';
 import { cosineSimilarity } from './skill-cosine-similarity.util';
-import { CHARS_PER_TOKEN_ESTIMATE } from '@agent/tools';
 import { attachEmbeddingCostMetadata } from '../engine/loop/llm-cost.util';
 
 // Bảo thủ có chủ đích — chưa có số liệu thật để tinh chỉnh, thà bỏ sót gợi ý

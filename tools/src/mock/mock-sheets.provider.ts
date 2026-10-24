@@ -1,4 +1,4 @@
-import { CallToolResponseDto, McpToolDto } from '@agent/core/dto/mcp.dto';
+import { CallToolResponseDto, McpToolDto } from '../contracts';
 import { MockProvider, errorResult, isToolResult, jsonResult, stringArg } from './mock-provider';
 
 export const MOCK_SHEETS_PROVIDER_ID = 'google_sheets';

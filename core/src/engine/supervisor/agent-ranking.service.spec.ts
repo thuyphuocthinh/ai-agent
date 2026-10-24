@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ORCHESTRATION_CONSTANTS } from '@agent/core/constants';
 import { AgentRankingService } from './agent-ranking.service';
-import { OpenAiEmbeddingProvider } from '@agent/tools';
+import { OpenAiEmbeddingProvider } from '../../memory/embedding/openai-embedding.provider';
 import { AvailableAgentDto } from '../../contracts/dtos/supervisor.dto';
 
 describe('AgentRankingService', () => {

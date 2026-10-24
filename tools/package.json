@@ -11,13 +11,11 @@
     "test": "jest"
   },
   "dependencies": {
-    "@agent/core": "workspace:*",
     "@apidevtools/swagger-parser": "^12.1.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@nestjs/common": "^11.0.1",
     "@nestjs/microservices": "^11.1.19",
     "@nestjs/schedule": "^6.1.3",
-    "@nestjs/typeorm": "^11.0.1",
     "agentic-io-parser": "^1.0.1",
     "agentic-openapi-parser": "^1.8.0",
     "ai": "^7.0.148",
@@ -29,7 +27,6 @@
     "opossum": "^9.0.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
-    "typeorm": "^0.3.28",
     "uuid": "^13.0.0"
   },
   "devDependencies": {
@@ -65,10 +62,6 @@
     "testEnvironment": "node",
     "moduleNameMapper": {
       "^@agent/tools(|/.*)$": "<rootDir>/$1",
-      "^@agent/core/entity/(.*)$": "<rootDir>/../../core/src/infrastructure/database/entities/$1",
-      "^@agent/core/dto/(.*)$": "<rootDir>/../../core/src/contracts/dtos/$1",
-      "^@agent/core/loop/(.*)$": "<rootDir>/../../core/src/engine/loop/$1",
-      "^@agent/core(|/.*)$": "<rootDir>/../../core/src/$1",
       "^uuid$": "<rootDir>/../../core/src/common/__mocks__/uuid.js",
       "^nanoid$": "<rootDir>/../../core/src/common/__mocks__/nanoid.js"
     }

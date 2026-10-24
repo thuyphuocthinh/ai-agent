@@ -5,7 +5,9 @@ import {
   McpResourceDto,
 } from './dtos/mcp.dto';
 
-export const TOOL_PROVIDER = Symbol('TOOL_PROVIDER');
+export const TOOL_PROVIDER = Symbol.for('TOOL_PROVIDER');
+export const CIRCUIT_BREAKER = Symbol.for('CIRCUIT_BREAKER');
+export const PROVIDER_CONCURRENCY_LIMITER = Symbol.for('PROVIDER_CONCURRENCY_LIMITER');
 
 export interface ToolContext {
   userId?: string;
@@ -53,7 +55,7 @@ export interface IToolProvider {
   readResource?(
     provider: string,
     uri: string,
-    userId: string,
+    userId?: string,
     signal?: AbortSignal,
     workspaceId?: string,
   ): Promise<string>;

@@ -1,11 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PROVIDER_DESCRIPTIONS, PROVIDER_LABELS } from '@agent/core/constants';
-import { McpAuthClientService } from '../mcp/mcp-auth-client.service';
-import { McpClientService } from '../mcp/mcp-client.service';
-import { ProviderStatusDto } from '@agent/core/dto/mcp-auth.dto';
-import { ProviderSummaryDto } from '@agent/core/dto/orchestration.dto';
+import { McpAuthClientService } from '../../infrastructure/tools/mcp-auth-client.service';
+import { McpToolConnectorService } from '../../infrastructure/tools/mcp-tool-connector.service';
+import { AGENT_REGISTRY } from '../supervisor/agents.registry';
+import { ProviderStatusDto } from '../../contracts/dtos/mcp-auth.dto';
+import { ProviderSummaryDto } from '../../contracts/dtos/orchestration.dto';
 import { DynamicProviderDbService } from './dynamic-provider-db.service';
-import { AGENT_REGISTRY } from './agents.registry';
 
 @Injectable()
 export class ProviderSummaryService {
@@ -13,14 +13,10 @@ export class ProviderSummaryService {
 
   constructor(
     private readonly mcpAuthClient: McpAuthClientService,
-    private readonly mcpClient: McpClientService,
+    private readonly mcpClient: McpToolConnectorService,
     private readonly dynamicProviderDb: DynamicProviderDbService,
   ) {}
 
-  /**
-   * Gộp danh sách provider tĩnh (Google, Slack, Notion...) và provider động (Swagger tự đăng ký)
-   * thành 1 danh sách summary duy nhất cho FE.
-   */
   async getProviders(userId: string): Promise<ProviderSummaryDto[]> {
     const statuses = await this.mcpAuthClient.getConnectionStatus(userId);
 
@@ -61,13 +57,13 @@ export class ProviderSummaryService {
 
         return {
           provider,
-          label: PROVIDER_LABELS[provider] ?? provider,
-          description: PROVIDER_DESCRIPTIONS[provider] ?? '',
+          label: PROVIDER_LABELS[provider] || provider,
+          description: PROVIDER_DESCRIPTIONS[provider] || '',
           isConnected: status.is_connected,
+          connectedAt: status.connected_at,
           tools,
           resources,
           prompts,
-          isDynamic: false,
         };
       }),
     );
@@ -96,7 +92,7 @@ export class ProviderSummaryService {
           label: entity.name,
           description:
             entity.description || `Custom Swagger API: ${entity.specUrl}`,
-          isConnected: true, // Dynamic provider luôn connected sau khi register
+          isConnected: true,
           hasAuth: entity.hasAuth,
           authType: entity.authType,
           hasAccessToken: entity.hasAccessToken,

@@ -1,16 +1,18 @@
 import { Injectable, Logger } from '@nestjs/common';
 import * as readline from 'readline';
-import { IMessageSink } from '@agent/core/contracts';
-import { IStreamSink, AgentStreamContext, AgentStreamStep } from '@agent/core/contracts';
 import {
+  IMessageSink,
+  IStreamSink,
+  AgentStreamContext,
+  AgentStreamStep,
   ChatHistoryTurnDto,
   CreateOrchestrationMessageRequestDto,
   CreateOrchestrationMessageResponseDto,
   GetMessageTextRequestDto,
   GetRecentHistoryRequestDto,
   UpdateOrchestrationMessageRequestDto,
-} from '@agent/core/dto/message-client.dto';
-import { EMessageRole } from '@agent/core/constants';
+  EMessageRole,
+} from './contracts/terminal-sink.interface';
 
 export interface CliServiceOptions {
   inputStream?: NodeJS.ReadableStream;

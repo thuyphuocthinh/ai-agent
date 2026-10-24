@@ -25,30 +25,6 @@
       ],
       "@agent/cli/*": [
         "src/*"
-      ],
-      "@agent/core": [
-        "../core/src/index.ts"
-      ],
-      "@agent/core/*": [
-        "../core/src/*"
-      ],
-      "@agent/core/entity/*": [
-        "../core/src/infrastructure/database/entities/*"
-      ],
-      "@agent/core/dto/*": [
-        "../core/src/contracts/dtos/*"
-      ],
-      "@agent/core/loop/*": [
-        "../core/src/engine/loop/*"
-      ],
-      "@agent/tools": [
-        "../tools/src/index.ts"
-      ],
-      "@agent/tools/*": [
-        "../tools/src/*"
-      ],
-      "agentic-openapi-parser/*": [
-        "../core/node_modules/agentic-openapi-parser/dist/*/index.js"
       ]
     }
   },

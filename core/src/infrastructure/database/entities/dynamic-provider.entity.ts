@@ -11,8 +11,7 @@ import {
   EDynamicProviderAuthType,
 } from '../../../contracts/dtos';
 
-export type { DynamicProviderAuthConfig };
-export { EDynamicProviderAuthType };
+
 
 @Entity('orchestration_dynamic_providers')
 export class DynamicProviderEntity {

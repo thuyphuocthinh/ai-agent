@@ -2,13 +2,13 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { DynamicToolRegistryService } from './dynamic-tool-registry.service';
 import { OpenApiParserService } from '../openapi/openapi-parser.service';
 import { OpenAiEmbeddingProvider } from './openai-embedding.provider';
-import { getRepositoryToken } from '@nestjs/typeorm';
-import { DynamicProviderEntity } from '@agent/core/entity/dynamic-provider.entity';
+import { DYNAMIC_PROVIDER_LOADER } from '../contracts';
+
 import { OpenAPI } from 'openapi-types';
 import { RpcException } from '@nestjs/microservices';
-import { buildTTL } from '@agent/core/common';
 
-const CACHE_TTL_MS = buildTTL('HOUR', 1);
+
+const CACHE_TTL_MS = 60 * 60 * 1000;
 
 /** A spec with `operationCount` GET operations — operation 0 is about "refund", the rest are
  *  generic filler — enough to exercise the >128-tool semantic-search path deterministically. */
@@ -69,8 +69,15 @@ describe('DynamicToolRegistryService', () => {
           useValue: mockParserService,
         },
         {
-          provide: getRepositoryToken(DynamicProviderEntity),
-          useValue: mockRepo,
+          provide: DYNAMIC_PROVIDER_LOADER,
+          useValue: {
+            loadEntity: jest.fn().mockImplementation(async (id: string) => {
+              return mockRepo.findOne({ where: { id, isActive: true } });
+            }),
+            hasProvider: jest.fn().mockImplementation(async (id: string) => {
+              return (await mockRepo.count({ where: { id, isActive: true } })) > 0;
+            }),
+          },
         },
         {
           provide: OpenAiEmbeddingProvider,

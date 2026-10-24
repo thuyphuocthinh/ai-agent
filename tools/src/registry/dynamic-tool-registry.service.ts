@@ -1,15 +1,16 @@
-import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { McpToolDto } from '@agent/core/dto/mcp.dto';
+import { Injectable, Logger, OnModuleDestroy, Optional, Inject } from '@nestjs/common';
+import {
+  McpToolDto,
+  EDynamicProviderAuthType,
+  IDynamicProviderLoader,
+  DYNAMIC_PROVIDER_LOADER,
+  DynamicProviderRecord,
+} from '../contracts';
 import { OpenApiParserService } from '../openapi/openapi-parser.service';
 import { OpenApiConverter } from '../openapi/openapi-converter.util';
-import { DynamicProviderEntity } from '@agent/core/entity/dynamic-provider.entity';
 import { OpenAPI } from 'openapi-types';
 import { RpcException } from '@nestjs/microservices';
-import { ORCHESTRATION_ERROR } from '@agent/core/constants';
-import { buildTTL } from '@agent/core/common';
-import { EDynamicProviderAuthType } from '@agent/core/entity/dynamic-provider.entity';
+import { TOOL_ERRORS } from '../constants/tool.constants';
 import { SemanticToolIndex } from '../common/agentic-openapi-parser';
 import { OpenAiEmbeddingProvider } from './openai-embedding.provider';
 
@@ -48,19 +49,20 @@ export class DynamicToolRegistryService implements OnModuleDestroy {
   private readonly registry = new Map<string, CacheEntry>();
 
   // Tự động giải phóng RAM sau 1 giờ không có ai sử dụng
-  private readonly CACHE_TTL_MS = buildTTL('HOUR', 1);
+  private readonly CACHE_TTL_MS = 60 * 60 * 1000;
   private cleanupInterval: NodeJS.Timeout;
 
   constructor(
     private readonly parserService: OpenApiParserService,
-    @InjectRepository(DynamicProviderEntity)
-    private readonly providerRepo: Repository<DynamicProviderEntity>,
     private readonly embeddingProvider: OpenAiEmbeddingProvider,
+    @Optional()
+    @Inject(DYNAMIC_PROVIDER_LOADER)
+    private readonly providerLoader?: IDynamicProviderLoader,
   ) {
     // Định kỳ 30 phút quét 1 lần để dọn rác RAM
     this.cleanupInterval = setInterval(
       () => this.cleanupExpiredCache(),
-      buildTTL('MINUTE', 30),
+      30 * 60 * 1000,
     );
   }
 
@@ -125,7 +127,7 @@ export class DynamicToolRegistryService implements OnModuleDestroy {
   // thì DB mới là nguồn đáng tin.
   private shouldKeepRamToken(
     existing: CacheEntry | undefined,
-    entity: DynamicProviderEntity,
+    entity: DynamicProviderRecord,
   ): boolean {
     return (
       existing?.tokenMutatedAt !== undefined &&
@@ -135,12 +137,16 @@ export class DynamicToolRegistryService implements OnModuleDestroy {
   }
 
   private async loadIntoCache(providerId: string): Promise<void> {
-    const entity = await this.providerRepo.findOne({
-      where: { id: providerId, isActive: true },
-    });
+    if (!this.providerLoader) {
+      throw new RpcException({
+        ...TOOL_ERRORS.DYNAMIC_PROVIDER_NOT_FOUND,
+        details: `Dynamic provider ${providerId} not found (no loader configured)`,
+      });
+    }
+    const entity = await this.providerLoader.loadEntity(providerId);
     if (!entity) {
       throw new RpcException({
-        ...ORCHESTRATION_ERROR.DYNAMIC_PROVIDER_NOT_FOUND,
+        ...TOOL_ERRORS.DYNAMIC_PROVIDER_NOT_FOUND,
         details: `Dynamic provider ${providerId} not found in DB`,
       });
     }
@@ -162,7 +168,7 @@ export class DynamicToolRegistryService implements OnModuleDestroy {
           accessToken: keepRamToken
             ? existing!.data.accessToken
             : entity.accessToken,
-          authType: entity.authType,
+          authType: entity.authType as EDynamicProviderAuthType,
           refreshToken: keepRamToken
             ? existing!.data.refreshToken
             : entity.refreshToken,
@@ -186,7 +192,7 @@ export class DynamicToolRegistryService implements OnModuleDestroy {
       }
       // Nếu là lỗi lạ từ quá trình converter
       throw new RpcException({
-        ...ORCHESTRATION_ERROR.INVALID_OPENAPI_SPEC,
+        ...TOOL_ERRORS.INVALID_OPENAPI_SPEC,
         details: error.message,
       });
     }
@@ -265,14 +271,24 @@ export class DynamicToolRegistryService implements OnModuleDestroy {
   }
 
   /**
+   * Đăng ký trực tiếp 1 dynamic provider spec vào in-memory registry
+   */
+  registerProviderSpec(spec: DynamicProviderSpec): void {
+    const now = Date.now();
+    this.registry.set(spec.providerId, {
+      data: spec,
+      lastAccessed: now,
+      loadedAt: now,
+    });
+  }
+
+  /**
    * Kiểm tra xem providerId có phải là dynamic provider không
    */
   async isDynamicProvider(providerId: string): Promise<boolean> {
     if (this.registry.has(providerId)) return true;
-    const count = await this.providerRepo.count({
-      where: { id: providerId, isActive: true },
-    });
-    return count > 0;
+    if (!this.providerLoader) return false;
+    return this.providerLoader.hasProvider(providerId);
   }
 
   /**

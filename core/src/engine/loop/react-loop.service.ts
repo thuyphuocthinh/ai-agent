@@ -19,7 +19,7 @@ import { CircuitBreakerService } from '../../common/circuit-breaker.service';
 import { AgentCancellationService } from '../cancellation/agent-cancellation.service';
 import { runCancellable } from '../../common/cancellable-run.util';
 import { TurnCancelledError } from './turn-cancelled.error';
-import { capToolResultSize } from '@agent/tools';
+import { capToolResultSize } from '../../common/token-budget.util';
 import { MemoryManagerService } from '../../memory/memory-manager.service';
 import { ReactLoopRun } from './react-loop-run';
 import { ToolRepeatGuard } from './tool-repeat-guard';

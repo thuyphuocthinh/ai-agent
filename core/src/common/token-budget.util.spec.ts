@@ -1,0 +1,81 @@
+import {
+  capRoundResults,
+  capRoundResultsWeighted,
+  capToolResultSize,
+  resolveDataCharBudget,
+  resolveMemoryCharBudget,
+  resolveHistoryCharBudget,
+  isLikelyReadOnlyRound,
+  CHARS_PER_TOKEN_ESTIMATE,
+  MAX_TOOL_RESULT_CHARS,
+} from './token-budget.util';
+
+describe('token-budget.util', () => {
+  describe('capToolResultSize', () => {
+    it('returns raw text unchanged if under maxChars', () => {
+      const text = 'short output';
+      expect(capToolResultSize(text, 100)).toBe(text);
+    });
+
+    it('truncates cleanly when text exceeds maxChars', () => {
+      const longText = 'a'.repeat(200);
+      const capped = capToolResultSize(longText, 50);
+      expect(capped.length).toBeLessThanOrEqual(50);
+    });
+
+    it('minifies json if possible', () => {
+      const json = JSON.stringify({ key: 'value', emptyArr: [], nullVal: null });
+      const capped = capToolResultSize(json, 1000);
+      expect(capped).toContain('"key":"value"');
+      expect(capped).not.toContain('nullVal');
+    });
+  });
+
+  describe('resolveDataCharBudget', () => {
+    it('returns 6000 for unknown model', () => {
+      expect(resolveDataCharBudget('unknown-model')).toBe(MAX_TOOL_RESULT_CHARS);
+    });
+
+    it('scales for known model up to ceiling', () => {
+      const gpt4oBudget = resolveDataCharBudget('gpt-4o');
+      expect(gpt4oBudget).toBeGreaterThan(MAX_TOOL_RESULT_CHARS);
+      expect(gpt4oBudget).toBeLessThanOrEqual(200_000);
+    });
+  });
+
+  describe('isLikelyReadOnlyRound', () => {
+    it('detects read-only queries', () => {
+      expect(isLikelyReadOnlyRound({ task: 'Tra cứu danh sách nhân viên' })).toBe(true);
+      expect(isLikelyReadOnlyRound({ task: 'SELECT * FROM users' })).toBe(true);
+      expect(isLikelyReadOnlyRound({ task: 'fetch latest orders' })).toBe(true);
+    });
+
+    it('detects write operations as not read-only', () => {
+      expect(isLikelyReadOnlyRound({ task: 'Cập nhật trạng thái đơn hàng' })).toBe(false);
+      expect(isLikelyReadOnlyRound({ task: 'Delete invalid records' })).toBe(false);
+    });
+  });
+
+  describe('capRoundResults & capRoundResultsWeighted', () => {
+    it('caps round results evenly', () => {
+      const rounds = [
+        { task: 'query 1', result: 'hello world' },
+        { task: 'query 2', result: 'foo bar' },
+      ];
+      const capped = capRoundResults(rounds, 1000);
+      expect(capped.length).toBe(2);
+      expect(capped[0].result).toBe('hello world');
+    });
+
+    it('weights rounds based on read-only vs destructive', () => {
+      const rounds = [
+        { task: 'tra cứu dữ liệu', result: 'result 1' },
+        { task: 'cập nhật database', result: 'result 2' },
+      ];
+      const capped = capRoundResultsWeighted(rounds, 1000);
+      expect(capped.length).toBe(2);
+      expect(capped[0].result).toBeDefined();
+      expect(capped[1].result).toBeDefined();
+    });
+  });
+});

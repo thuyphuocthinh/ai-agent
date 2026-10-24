@@ -1,15 +1,18 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { Logger } from '@nestjs/common';
-import { DynamicToolExecutorService } from './dynamic-tool-executor.service';
+import {
+  DynamicToolExecutorService,
+  ON_TOKEN_REFRESHED,
+} from './dynamic-tool-executor.service';
 import { DynamicToolRegistryService } from '../registry/dynamic-tool-registry.service';
 import axios from 'axios';
 import { OpenAPIV3 } from 'openapi-types';
-import { getRepositoryToken } from '@nestjs/typeorm';
+import { EDynamicProviderAuthType } from '../contracts';
 import {
   DynamicProviderEntity,
   EDynamicProviderAuthType,
-} from '@agent/core/entity/dynamic-provider.entity';
-import { QueueService } from '@agent/core/infrastructure/queue';
+} from '../contracts';
+
 
 jest.mock('axios');
 jest.mock(
@@ -42,12 +45,12 @@ describe('DynamicToolExecutorService', () => {
           useValue: mockRegistryService,
         },
         {
-          provide: getRepositoryToken(DynamicProviderEntity),
+          provide: 'DYNAMIC_PROVIDER_REPO',
           useValue: mockRepo,
         },
         {
-          provide: QueueService,
-          useValue: { addJob: jest.fn().mockResolvedValue({}) },
+          provide: ON_TOKEN_REFRESHED,
+          useValue: jest.fn().mockResolvedValue(undefined),
         },
       ],
     }).compile();

@@ -1,4 +1,4 @@
-import { McpToolDto } from '@agent/core/dto/mcp.dto';
+import { McpToolDto } from '../contracts';
 import {
   MockProvider,
   errorResult,
