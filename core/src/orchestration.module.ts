@@ -75,6 +75,7 @@ import {
   TurnStreamFactory,
   UiStreamPresenter,
 } from './api';
+import { SecurityModule } from './security';
 
 @Module({
   imports: [
@@ -95,6 +96,7 @@ import {
       EQueueName.AI_ORCHESTRATION_QUEUE,
       EQueueName.DYNAMIC_PROVIDER_QUEUE,
     ]),
+    SecurityModule,
   ],
   controllers: [ChatController],
   providers: [
@@ -209,6 +211,7 @@ import {
     TOOL_PROVIDER,
     McpToolConnectorService,
     McpAuthClientService,
+    SecurityModule,
   ],
 })
 export class OrchestrationModule {}

@@ -1,0 +1,127 @@
+{
+  "version": "1.0.0",
+  "description": "Cấu hình quy tắc nghiệp vụ CSKH, Hoàn tiền và Hủy đơn hàng cho AI Agent",
+  "rules": [
+    {
+      "id": "RULE_REFUND_ALREADY_PROCESSED",
+      "name": "Đơn hàng đã hoàn tiền trước đó",
+      "action": "REFUND_ORDER",
+      "priority": 10,
+      "condition": {
+        "field": "status",
+        "operator": "EQUALS",
+        "value": "REFUNDED"
+      },
+      "outcome": {
+        "status": "POLICY_VIOLATION",
+        "reason": "Đơn hàng đã được hoàn tiền trước đó."
+      }
+    },
+    {
+      "id": "RULE_REFUND_EXPIRED_WINDOW",
+      "name": "Quá thời hạn hoàn tiền quy định (7 ngày)",
+      "action": "REFUND_ORDER",
+      "priority": 20,
+      "condition": {
+        "field": "diffDays",
+        "operator": "GREATER_THAN",
+        "value": 7
+      },
+      "outcome": {
+        "status": "POLICY_VIOLATION",
+        "reason": "Đơn hàng đã giao thành công quá 7 ngày, không đủ điều kiện hoàn tiền theo chính sách."
+      }
+    },
+    {
+      "id": "RULE_REFUND_SUSPICIOUS_CUSTOMER",
+      "name": "Khách hàng thuộc danh sách giám sát rủi ro",
+      "action": "REFUND_ORDER",
+      "priority": 30,
+      "condition": {
+        "field": "isSuspiciousCustomer",
+        "operator": "IS_TRUE"
+      },
+      "outcome": {
+        "status": "EXCEEDS_AI_AUTHORITY",
+        "reason": "Tài khoản khách hàng thuộc danh sách cần giám sát rủi ro, chuyển tiếp nhân viên kiểm tra."
+      }
+    },
+    {
+      "id": "RULE_REFUND_EXCEEDS_AI_AUTHORITY",
+      "name": "Số tiền hoàn vượt quá hạn mức tối đa của AI (2.000.000 VNĐ)",
+      "action": "REFUND_ORDER",
+      "priority": 40,
+      "condition": {
+        "field": "amount",
+        "operator": "GREATER_THAN",
+        "value": 2000000
+      },
+      "outcome": {
+        "status": "EXCEEDS_AI_AUTHORITY",
+        "reason": "Số tiền hoàn vượt quá hạn mức tự động của AI (2.000.000 VNĐ). Cần chuyển tiếp cho Quản lý.",
+        "thresholdLimit": 2000000
+      }
+    },
+    {
+      "id": "RULE_REFUND_AUTO_APPROVED",
+      "name": "Đơn hàng giá trị nhỏ tự động duyệt hoàn tiền (<= 200.000 VNĐ)",
+      "action": "REFUND_ORDER",
+      "priority": 50,
+      "condition": {
+        "field": "amount",
+        "operator": "LESS_THAN_OR_EQUAL",
+        "value": 200000
+      },
+      "outcome": {
+        "status": "AUTO_APPROVED",
+        "reason": "Đơn hàng đủ điều kiện và nằm trong hạn mức tự duyệt của AI.",
+        "thresholdLimit": 200000
+      }
+    },
+    {
+      "id": "RULE_CANCEL_SHIPPING_ORDER",
+      "name": "Đơn hàng đang vận chuyển không được hủy",
+      "action": "CANCEL_ORDER",
+      "priority": 10,
+      "condition": {
+        "field": "status",
+        "operator": "EQUALS",
+        "value": "SHIPPING"
+      },
+      "outcome": {
+        "status": "POLICY_VIOLATION",
+        "reason": "Đơn hàng đang trong quá trình giao hàng bởi đơn vị vận chuyển, không thể hủy tự động. Vui lòng từ chối nhận hàng khi shipper liên hệ."
+      }
+    },
+    {
+      "id": "RULE_CANCEL_DELIVERED_ORDER",
+      "name": "Đơn hàng đã giao thành công không được hủy",
+      "action": "CANCEL_ORDER",
+      "priority": 20,
+      "condition": {
+        "field": "status",
+        "operator": "EQUALS",
+        "value": "DELIVERED"
+      },
+      "outcome": {
+        "status": "POLICY_VIOLATION",
+        "reason": "Đơn hàng đã được giao thành công. Vui lòng tạo yêu cầu Đổi/Trả hàng thay vì hủy đơn."
+      }
+    },
+    {
+      "id": "RULE_CANCEL_ALREADY_CANCELLED",
+      "name": "Đơn hàng đã ở trạng thái hủy",
+      "action": "CANCEL_ORDER",
+      "priority": 30,
+      "condition": {
+        "field": "status",
+        "operator": "EQUALS",
+        "value": "CANCELLED"
+      },
+      "outcome": {
+        "status": "POLICY_VIOLATION",
+        "reason": "Đơn hàng đã ở trạng thái hủy trước đó."
+      }
+    }
+  ]
+}

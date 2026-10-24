@@ -3,6 +3,7 @@ import { Injectable } from '@nestjs/common';
 import {
   IChatSession,
   IChatSessionManager,
+  EConversationState,
 } from '../../contracts';
 
 /**
@@ -30,6 +31,7 @@ export class InMemoryChatSessionManager implements IChatSessionManager {
       tenantId: randomUUID(),
       botUserId: randomUUID(),
       approvalMessageIds: new Set<string>(),
+      state: EConversationState.AI_ACTIVE,
       createdAt: new Date(),
       lastSeenAt: new Date(),
     };
@@ -48,6 +50,20 @@ export class InMemoryChatSessionManager implements IChatSessionManager {
   hasApproval(sessionId: string, messageId: string): boolean {
     const session = this.sessions.get(sessionId);
     return !!session?.approvalMessageIds.has(messageId);
+  }
+
+  setConversationState(sessionId: string, state: EConversationState): void {
+    const session = this.getOrCreate(sessionId);
+    session.state = state;
+    session.lastSeenAt = new Date();
+  }
+
+  getConversationState(sessionId: string): EConversationState {
+    const session = this.sessions.get(sessionId);
+    if (session && session.state) {
+      return session.state;
+    }
+    return EConversationState.AI_ACTIVE;
   }
 }
 

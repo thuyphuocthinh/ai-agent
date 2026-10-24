@@ -26,6 +26,11 @@ import { ToolRepeatGuard } from './tool-repeat-guard';
 import { InsertAccumulator } from './insert-accumulator';
 import { ToolRiskGate } from './tool-risk-gate';
 import {
+  EPolicyStatus,
+  EscalationRequiredError,
+  ActionAuditService,
+} from '../../security';
+import {
   ToolCallExecutorDeps,
   ToolCallExecutorOptions,
 } from './tool-executor.interface';
@@ -81,6 +86,7 @@ export class ToolCallExecutor {
   private readonly repeatGuard: ToolRepeatGuard;
   private readonly insertAccumulator: InsertAccumulator;
   private readonly riskGate: ToolRiskGate;
+  private readonly actionAudit?: ActionAuditService;
 
   private readonly toolCalls: ToolCallTraceDto[] = [];
 
@@ -104,6 +110,7 @@ export class ToolCallExecutor {
     this.repeatGuard = deps.repeatGuard;
     this.insertAccumulator = deps.insertAccumulator;
     this.riskGate = deps.riskGate;
+    this.actionAudit = deps.actionAudit;
 
     this.tracedHandleToolCall = traceable(
       (name: string, args: Record<string, unknown>) =>
@@ -258,6 +265,67 @@ export class ToolCallExecutor {
       toolDescription: toolDef?.description,
     });
 
+    // 1. Preflight check: kiểm tra quyền kết nối & OAuth Scopes
+    const preflightError = this.riskGate.checkPreflight
+      ? await this.riskGate.checkPreflight(name)
+      : null;
+    if (preflightError) {
+      this.logger.warn(
+        `tool_call ${displayName} bị từ chối bởi Preflight Guard: ${preflightError}`,
+      );
+      await this.emitToolCall(displayName, argsPreview, toolCallId, friendlySummary);
+      await this.recordResult(
+        displayName,
+        EStepExecutionStatus.ERROR,
+        preflightError,
+        argsPreview,
+        toolCallId,
+        friendlySummary,
+      );
+      return preflightError;
+    }
+
+    // 2. Thẩm định chính sách kinh doanh (Declarative Policy Engine / Semantic RAG)
+    const policyResult = this.riskGate.evaluatePolicy
+      ? await this.riskGate.evaluatePolicy(name, args)
+      : null;
+    if (policyResult) {
+      if (policyResult.status === EPolicyStatus.POLICY_VIOLATION) {
+        const violationMsg = `[Chính sách kinh doanh] Từ chối thực thi: ${policyResult.reason}`;
+        this.logger.warn(`tool_call ${displayName} vi phạm chính sách: ${policyResult.reason}`);
+        await this.emitToolCall(displayName, argsPreview, toolCallId, friendlySummary);
+        await this.recordResult(
+          displayName,
+          EStepExecutionStatus.ERROR,
+          violationMsg,
+          argsPreview,
+          toolCallId,
+          friendlySummary,
+        );
+        return violationMsg;
+      }
+      if (policyResult.status === EPolicyStatus.EXCEEDS_AI_AUTHORITY) {
+        this.logger.warn(
+          `tool_call ${displayName} vượt quá thẩm quyền AI, cần escalation: ${policyResult.reason}`,
+        );
+        throw new EscalationRequiredError(
+          policyResult.reason || `Hành động vượt quá thẩm quyền AI`,
+          undefined,
+          `Thao tác ${displayName} yêu cầu số tiền ${policyResult.currentAmount ?? 'N/A'} vượt hạn mức AI (${policyResult.thresholdLimit ?? 'N/A'})`,
+          policyResult.currentAmount,
+        );
+      }
+      if (policyResult.status === EPolicyStatus.USER_CONFIRMATION_REQUIRED) {
+        this.logger.log(
+          `tool_call ${displayName} cần người dùng xác nhận theo chính sách`,
+        );
+        throw new ApprovalRequiredError(
+          { provider: this.dto.provider, name, args },
+          this.toolCalls,
+        );
+      }
+    }
+
     if (this.riskGate.isDestructive(name)) {
       return this.handleDestructiveToolCall(
         name,
@@ -315,15 +383,59 @@ export class ToolCallExecutor {
       );
     }
 
-    return this.runToolCall(
-      name,
-      args,
-      displayName,
-      argsPreview,
-      signature,
-      toolCallId,
-      friendlySummary,
-    );
+    const idempotency = this.riskGate.acquireIdempotency
+      ? await this.riskGate.acquireIdempotency(name, args)
+      : { success: true, key: '' };
+    if (!idempotency.success) {
+      const msg = `[Idempotency] Thao tác đang được xử lý hoặc đã hoàn tất trước đó (${idempotency.reason}).`;
+      this.logger.warn(`tool_call ${displayName} bị khóa bởi Idempotency: ${idempotency.reason}`);
+      await this.emitToolCall(displayName, argsPreview, toolCallId, friendlySummary);
+      await this.recordResult(
+        displayName,
+        EStepExecutionStatus.ERROR,
+        msg,
+        argsPreview,
+        toolCallId,
+        friendlySummary,
+      );
+      return msg;
+    }
+
+    try {
+      const result = await this.runToolCall(
+        name,
+        args,
+        displayName,
+        argsPreview,
+        signature,
+        toolCallId,
+        friendlySummary,
+      );
+      if (this.riskGate.completeIdempotency && idempotency.key) {
+        await this.riskGate.completeIdempotency(idempotency.key, result);
+      }
+
+      if (this.actionAudit) {
+        await this.actionAudit.record({
+          userId: this.dto.userId,
+          tenantId: this.dto.workspaceId,
+          actionType: name,
+          entityId: String(args.orderId ?? args.id ?? args.order_id ?? ''),
+          amount: typeof args.amount === 'number' ? args.amount : undefined,
+          evaluationStatus: 'SUCCESS',
+          reviewer: 'AI',
+          idempotencyKey: idempotency.key,
+          metadata: args,
+        });
+      }
+
+      return result;
+    } catch (error) {
+      if (this.riskGate.releaseIdempotency && idempotency.key) {
+        await this.riskGate.releaseIdempotency(idempotency.key);
+      }
+      throw error;
+    }
   }
 
   /** Risk Gate (Giai đoạn 3, HITL) — chặn TRƯỚC KHI thực thi, trừ khi model

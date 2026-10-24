@@ -603,6 +603,41 @@ describe('ReactLoopService', () => {
     );
   });
 
+  it('tiêm quy chế doanh nghiệp từ policyCorpus vào systemInstruction để chống sinh hướng dẫn lách luật', async () => {
+    const mockPolicyCorpus = {
+      findRelevantPolicies: jest.fn().mockResolvedValue([
+        {
+          chunk: {
+            id: 'SEC-DEVOPS-002',
+            title: 'Sửa đổi schema hoặc network ingress cần phê duyệt',
+            content: 'Các câu lệnh cấu hình mạng ingress bắt buộc phải được phê duyệt trước khi thực thi.',
+          },
+          score: 0.85,
+        },
+      ]),
+    };
+
+    const customService = new ReactLoopService(
+      mockMcpClient as never,
+      mockLlmFactory as never,
+      mockAgentStream as never,
+      mockCircuitBreaker as never,
+      mockCancellation as never,
+      mockMemoryManager as never,
+      undefined,
+      undefined,
+      undefined,
+      mockPolicyCorpus as never,
+    );
+
+    await customService.run({ ...baseDto, prompt: 'Áp dụng cấu hình ingress mới cho dev-cluster' });
+
+    const lastCall = mockStrategy.startChat.mock.calls[mockStrategy.startChat.mock.calls.length - 1][0];
+    expect(lastCall.systemInstruction).toContain('SEC-DEVOPS-002');
+    expect(lastCall.systemInstruction).toContain('QUY CHẾ DOANH NGHIỆP BẮT BUỘC');
+    expect(lastCall.systemInstruction).toContain('TUYỆT ĐỐI KHÔNG ĐƯỢC tự ý sinh script, file cấu hình (YAML, JSON)');
+  });
+
   describe('hybrid persona', () => {
     const persona = {
       role: 'Financial Auditor',

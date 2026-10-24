@@ -2,6 +2,12 @@ import { ArgumentsHost, BadRequestException, NotFoundException } from '@nestjs/c
 import { RpcException } from '@nestjs/microservices';
 import { AllExceptionsFilter } from './all-exceptions.filter';
 import { ORCHESTRATION_ERROR } from '@agent/core/constants';
+import {
+  PromptInjectionDetectedError,
+  BusinessPolicyViolationError,
+  EscalationRequiredError,
+} from '../../../security/errors';
+import { BaseDomainException } from '../../../common/errors';
 
 describe('AllExceptionsFilter', () => {
   let filter: AllExceptionsFilter;
@@ -86,5 +92,100 @@ describe('AllExceptionsFilter', () => {
         message: 'Internal server error',
       }),
     );
+  });
+
+  describe('Polymorphic BaseDomainException Handling', () => {
+    it('polymorphically formats PromptInjectionDetectedError with 400 and userFriendlyMessage', () => {
+      const error = new PromptInjectionDetectedError('Chỉ thị vượt rào', 'high', 'ignore previous instructions');
+      filter.catch(error, mockHost);
+
+      expect(mockStatus).toHaveBeenCalledWith(400);
+      expect(mockJson).toHaveBeenCalledWith(
+        expect.objectContaining({
+          statusCode: 400,
+          code: 'PROMPT_INJECTION_DETECTED',
+          message: 'Yêu cầu không được chấp nhận do vi phạm quy tắc an toàn bảo mật.',
+          errors: {
+            reason: 'Chỉ thị vượt rào',
+            riskLevel: 'high',
+            matchedPattern: 'ignore previous instructions',
+          },
+          path: '/api/test',
+          traceId: 'test-trace-id',
+        }),
+      );
+    });
+
+    it('polymorphically formats BusinessPolicyViolationError with 422 and policy details', () => {
+      const error = new BusinessPolicyViolationError(
+        'ORDER_REFUND_WINDOW_EXPIRED',
+        'Đơn hàng giao quá 7 ngày không được hoàn tiền',
+      );
+      filter.catch(error, mockHost);
+
+      expect(mockStatus).toHaveBeenCalledWith(422);
+      expect(mockJson).toHaveBeenCalledWith(
+        expect.objectContaining({
+          statusCode: 422,
+          code: 'BUSINESS_POLICY_VIOLATION',
+          message: 'Thao tác không hợp lệ theo chính sách: Đơn hàng giao quá 7 ngày không được hoàn tiền',
+          errors: {
+            policyRule: 'ORDER_REFUND_WINDOW_EXPIRED',
+            explanation: 'Đơn hàng giao quá 7 ngày không được hoàn tiền',
+          },
+        }),
+      );
+    });
+
+    it('polymorphically formats EscalationRequiredError with 403 and ticket details', () => {
+      const error = new EscalationRequiredError(
+        'Hoàn tiền vượt ngưỡng 2,000,000 VND',
+        'TK-999',
+        'Khách yêu cầu hoàn đơn 3.5 triệu',
+        3500000,
+      );
+      filter.catch(error, mockHost);
+
+      expect(mockStatus).toHaveBeenCalledWith(403);
+      expect(mockJson).toHaveBeenCalledWith(
+        expect.objectContaining({
+          statusCode: 403,
+          code: 'EXCEEDS_AI_AUTHORITY',
+          message: 'Yêu cầu cần được nhân viên hỗ trợ trực tiếp. Mã phiếu hỗ trợ của bạn là #TK-999.',
+          errors: {
+            ticketId: 'TK-999',
+            reason: 'Hoàn tiền vượt ngưỡng 2,000,000 VND',
+            handoverSummary: 'Khách yêu cầu hoàn đơn 3.5 triệu',
+            requestedAmount: 3500000,
+          },
+        }),
+      );
+    });
+
+    it('handles non-operational BaseDomainException by logging error while returning correct status', () => {
+      class NonOperationalDomainException extends BaseDomainException {
+        public readonly code = 'CRITICAL_DOMAIN_CORRUPTION';
+        public readonly statusCode = 500;
+
+        constructor() {
+          super('Corrupted domain state', {
+            isOperational: false,
+            userFriendlyMessage: 'Hệ thống phát sinh trạng thái bất thường',
+          });
+        }
+      }
+
+      const error = new NonOperationalDomainException();
+      filter.catch(error, mockHost);
+
+      expect(mockStatus).toHaveBeenCalledWith(500);
+      expect(mockJson).toHaveBeenCalledWith(
+        expect.objectContaining({
+          statusCode: 500,
+          code: 'CRITICAL_DOMAIN_CORRUPTION',
+          message: 'Hệ thống phát sinh trạng thái bất thường',
+        }),
+      );
+    });
   });
 });

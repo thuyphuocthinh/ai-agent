@@ -8,6 +8,18 @@ import { isLikelyCreateToolCall } from '../../memory/create-tool-heuristic.util'
 import { extractWriteQueryPreviewTarget } from './write-query-preview.util';
 import { InsertAccumulator } from './insert-accumulator';
 import { ToolRiskGateOptions } from './tool-executor.interface';
+import {
+  ProviderPreflightGuard,
+  BusinessPolicyEngine,
+  SemanticPolicyEvaluatorService,
+  IdempotencyManager,
+  PolicyEvaluationResult,
+  PolicyActionStatus,
+  EActionType,
+  EPolicyStatus,
+  EPolicyVerdict,
+  EProviderAuthType,
+} from '../../security';
 
 /**
  * Quyết định risk-gate (destructive? auto-approve INSERT? thiếu dòng so với
@@ -24,6 +36,10 @@ export class ToolRiskGate {
   private readonly logger: Logger;
   private readonly signal: AbortSignal;
   private readonly insertAccumulator: InsertAccumulator;
+  private readonly preflightGuard?: ProviderPreflightGuard;
+  private readonly policyEngine?: BusinessPolicyEngine;
+  private readonly semanticPolicyEvaluator?: SemanticPolicyEvaluatorService;
+  private readonly idempotencyManager?: IdempotencyManager;
 
   // Lazy + memoized — chỉ tốn 1 LLM call DUY NHẤT cho cả lượt chạy, và chỉ
   // khi thật sự cần (tool ghi dạng create bị chặn approval), không tốn cho
@@ -39,12 +55,127 @@ export class ToolRiskGate {
     this.logger = options.logger;
     this.signal = options.signal;
     this.insertAccumulator = options.insertAccumulator;
+    this.preflightGuard = options.preflightGuard;
+    this.policyEngine = options.policyEngine;
+    this.semanticPolicyEvaluator = options.semanticPolicyEvaluator;
+    this.idempotencyManager = options.idempotencyManager;
   }
 
   isDestructive(name: string): boolean {
+    const tool = this.mcpTools.find((t) => t.name === name);
     return Boolean(
-      this.mcpTools.find((t) => t.name === name)?.annotations?.destructiveHint,
+      tool?.annotations?.destructiveHint || tool?.isIrreversible,
     );
+  }
+
+  async checkPreflight(name: string): Promise<string | null> {
+    if (!this.preflightGuard) return null;
+    const toolDef = this.mcpTools.find((t) => t.name === name);
+    const requiredScopes =
+      toolDef?.requiredScopes ?? toolDef?.annotations?.requiredScopes ?? [];
+    const authType =
+      (toolDef?.authType as EProviderAuthType) ??
+      (toolDef?.annotations?.authType as EProviderAuthType) ??
+      EProviderAuthType.OAUTH2;
+
+    const check = await this.preflightGuard.check(
+      this.dto.userId,
+      this.dto.provider,
+      requiredScopes,
+      authType,
+    );
+    if (!check.ready) {
+      return this.preflightGuard.formatActionableMessage(check);
+    }
+    return null;
+  }
+
+  async evaluatePolicy(
+    name: string,
+    args: Record<string, unknown>,
+  ): Promise<PolicyEvaluationResult | null> {
+    // 1. Ưu tiên Semantic Policy Evaluator (Domain-Agnostic Hybrid Gate)
+    if (this.semanticPolicyEvaluator) {
+      const semantic = await this.semanticPolicyEvaluator.evaluate(
+        {
+          userId: this.dto.userId,
+          provider: this.dto.provider,
+          toolName: name,
+          args,
+          userIntent: this.dto.prompt,
+        },
+        {
+          strategy: this.strategy,
+          model: this.model,
+          signal: this.signal,
+        },
+      );
+
+      const status = this.mapVerdictToPolicyStatus(semantic.verdict);
+      const allowed =
+        semantic.verdict === EPolicyVerdict.ALLOW ||
+        semantic.verdict === EPolicyVerdict.REQUIRE_APPROVAL;
+
+      return {
+        allowed,
+        status,
+        reason: semantic.reason,
+      };
+    }
+
+    // 2. Fallback cho legacy BusinessPolicyEngine nếu có
+    if (!this.policyEngine) return null;
+    let actionType: string | null = null;
+    const lowerName = name.toLowerCase();
+    if (lowerName.includes('refund')) {
+      actionType = EActionType.REFUND_ORDER;
+    } else if (lowerName.includes('cancel')) {
+      actionType = EActionType.CANCEL_ORDER;
+    }
+    if (!actionType) return null;
+
+    return this.policyEngine.evaluate(actionType, {
+      ...args,
+      userId: this.dto.userId,
+    });
+  }
+
+  async acquireIdempotency(
+    name: string,
+    args: Record<string, unknown>,
+  ): Promise<{
+    success: boolean;
+    key?: string;
+    reason?: string;
+    previousResult?: unknown;
+  }> {
+    if (!this.idempotencyManager) return { success: true };
+
+    const res = await this.idempotencyManager.acquireForTool({
+      userId: this.dto.userId,
+      provider: this.dto.provider,
+      toolName: name,
+      args,
+    });
+
+    return {
+      success: res.success,
+      key: res.fingerprint,
+      reason: res.reason,
+      previousResult: res.previousResult,
+    };
+  }
+
+  async releaseIdempotency(key?: string): Promise<void> {
+    if (key && this.idempotencyManager) {
+      await this.idempotencyManager.release(key);
+    }
+  }
+
+  async completeIdempotency(key?: string, result?: unknown): Promise<void> {
+    if (key && this.idempotencyManager) {
+      await this.idempotencyManager.complete(key, result);
+    }
   }
 
   // INSERT không đụng tới dữ liệu CŨ — sai thì chỉ cần xoá dòng vừa thêm,
@@ -102,5 +233,19 @@ export class ToolRiskGate {
       );
     }
     return this.requiredCountPromise;
+  }
+
+  private mapVerdictToPolicyStatus(verdict: EPolicyVerdict): PolicyActionStatus {
+    switch (verdict) {
+      case EPolicyVerdict.DENY:
+        return EPolicyStatus.POLICY_VIOLATION;
+      case EPolicyVerdict.ESCALATE:
+        return EPolicyStatus.EXCEEDS_AI_AUTHORITY;
+      case EPolicyVerdict.REQUIRE_APPROVAL:
+        return EPolicyStatus.USER_CONFIRMATION_REQUIRED;
+      case EPolicyVerdict.ALLOW:
+      default:
+        return EPolicyStatus.AUTO_APPROVED;
+    }
   }
 }

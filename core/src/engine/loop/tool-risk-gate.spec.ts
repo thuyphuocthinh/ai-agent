@@ -5,6 +5,11 @@ import { RunReactLoopRequestDto } from '../../contracts/dtos/react-loop.dto';
 import { McpToolDto } from '../../contracts/dtos/mcp.dto';
 import { LlmStrategy } from '../strategy/llm-strategy.interface';
 import { CircuitBreakerService } from '../../common/circuit-breaker.service';
+import {
+  EProviderAuthType,
+  EPolicyVerdict,
+  EPolicyStatus,
+} from '../../security';
 
 describe('ToolRiskGate', () => {
   const baseDto: RunReactLoopRequestDto = {
@@ -244,6 +249,146 @@ describe('ToolRiskGate', () => {
         { query: "INSERT INTO Products (Name) VALUES ('B')" },
       );
       expect(afterClear).toContain('1/5');
+    });
+  });
+
+  describe('Security Integration (Preflight, Policy, Idempotency)', () => {
+    it('checkPreflight() trả lỗi định dạng khi preflight guard báo not ready', async () => {
+      const mockPreflight = {
+        check: jest.fn().mockResolvedValue({
+          ready: false,
+          status: 'PROVIDER_NOT_CONNECTED',
+          provider: 'google_mail',
+          reauthUrl: 'https://auth.example.com',
+        }),
+        formatActionableMessage: jest.fn().mockReturnValue('Vui lòng kết nối Google Mail tại https://auth.example.com'),
+      };
+
+      const gate = new ToolRiskGate({
+        dto: { ...baseDto, provider: 'google_mail' },
+        mcpTools: [{ name: 'send_mail', description: '', inputSchema: {}, annotations: { requiredScopes: ['mail.send'] } }],
+        strategy: createStrategy(),
+        model: 'gemini-2.0-flash',
+        circuitBreaker,
+        logger,
+        signal: new AbortController().signal,
+        insertAccumulator: new InsertAccumulator(),
+        preflightGuard: mockPreflight as never,
+      });
+
+      const error = await gate.checkPreflight('send_mail');
+      expect(error).toContain('https://auth.example.com');
+      expect(mockPreflight.check).toHaveBeenCalledWith(
+        'user-1',
+        'google_mail',
+        ['mail.send'],
+        EProviderAuthType.OAUTH2,
+      );
+    });
+
+    it('evaluatePolicy() ưu tiên SemanticPolicyEvaluatorService khi được cung cấp', async () => {
+      const mockSemanticEvaluator = {
+        evaluate: jest.fn().mockResolvedValue({
+          verdict: EPolicyVerdict.REQUIRE_APPROVAL,
+          reason: 'Cần phê duyệt từ cấp quản lý',
+          matchingPolicies: [],
+        }),
+      };
+
+      const gate = new ToolRiskGate({
+        dto: baseDto,
+        mcpTools: [],
+        strategy: createStrategy(),
+        model: 'gemini-2.0-flash',
+        circuitBreaker,
+        logger,
+        signal: new AbortController().signal,
+        insertAccumulator: new InsertAccumulator(),
+        semanticPolicyEvaluator: mockSemanticEvaluator as never,
+      });
+
+      const result = await gate.evaluatePolicy('finance.issue_refund', { amount: 500 });
+      expect(result).toEqual({
+        allowed: true,
+        status: EPolicyStatus.USER_CONFIRMATION_REQUIRED,
+        reason: 'Cần phê duyệt từ cấp quản lý',
+      });
+      expect(mockSemanticEvaluator.evaluate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: 'user-1',
+          provider: 'sql_server',
+          toolName: 'finance.issue_refund',
+          args: { amount: 500 },
+        }),
+        expect.anything(),
+      );
+    });
+
+    it('evaluatePolicy() fallback đến BusinessPolicyEngine theo action type', async () => {
+      const mockPolicyEngine = {
+        evaluate: jest.fn().mockReturnValue({
+          status: 'EXCEEDS_AI_AUTHORITY',
+          reason: 'Số tiền hoàn vượt 500k',
+        }),
+      };
+
+      const gate = new ToolRiskGate({
+        dto: baseDto,
+        mcpTools: [],
+        strategy: createStrategy(),
+        model: 'gemini-2.0-flash',
+        circuitBreaker,
+        logger,
+        signal: new AbortController().signal,
+        insertAccumulator: new InsertAccumulator(),
+        policyEngine: mockPolicyEngine as never,
+      });
+
+      const result = await gate.evaluatePolicy('refund_order', { orderId: '102', amount: 1_000_000 });
+      expect(result?.status).toBe('EXCEEDS_AI_AUTHORITY');
+      expect(mockPolicyEngine.evaluate).toHaveBeenCalledWith(
+        'REFUND_ORDER',
+        expect.objectContaining({ orderId: '102', amount: 1_000_000, userId: 'user-1' }),
+      );
+    });
+
+    it('acquireIdempotency() và release/complete tương tác đúng với IdempotencyManager', async () => {
+      const mockIdempotency = {
+        acquireForTool: jest.fn().mockResolvedValue({
+          success: true,
+          fingerprint: 'idemp-key-102',
+        }),
+        complete: jest.fn().mockResolvedValue(undefined),
+        release: jest.fn().mockResolvedValue(undefined),
+      };
+
+      const gate = new ToolRiskGate({
+        dto: baseDto,
+        mcpTools: [],
+        strategy: createStrategy(),
+        model: 'gemini-2.0-flash',
+        circuitBreaker,
+        logger,
+        signal: new AbortController().signal,
+        insertAccumulator: new InsertAccumulator(),
+        idempotencyManager: mockIdempotency as never,
+      });
+
+      const res = await gate.acquireIdempotency('cancel_order', { orderId: '102' });
+      expect(res.success).toBe(true);
+      expect(res.key).toBe('idemp-key-102');
+      expect(mockIdempotency.acquireForTool).toHaveBeenCalledWith({
+        userId: 'user-1',
+        provider: 'sql_server',
+        toolName: 'cancel_order',
+        args: { orderId: '102' },
+      });
+
+      await gate.completeIdempotency('idemp-key-102', { ok: true });
+      expect(mockIdempotency.complete).toHaveBeenCalledWith('idemp-key-102', { ok: true });
+
+      await gate.releaseIdempotency('idemp-key-102');
+      expect(mockIdempotency.release).toHaveBeenCalledWith('idemp-key-102');
     });
   });
 });

@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import {
   ORCHESTRATION_CONSTANTS,
   SUPERVISOR_PLANNING_PROMPT,
@@ -29,6 +29,11 @@ import { describeExternalServiceError } from '../loop/external-service-error.uti
 import { withLlmRetry } from '../loop/with-llm-retry.util';
 import { CircuitBreakerService } from '../../common/circuit-breaker.service';
 import {
+  PolicyCorpusService,
+  SemanticPolicyEvaluatorService,
+  EPolicyVerdict,
+} from '../../security';
+import {
   capRoundResults,
   capToolResultSize,
 } from '../../common/token-budget.util';
@@ -56,6 +61,10 @@ export class SupervisorService {
     private readonly skillRetrieval: SkillRetrievalService,
     private readonly agentRanking: AgentRankingService,
     private readonly promptBuilder: SupervisorPromptBuilder,
+    @Optional()
+    private readonly policyCorpus?: PolicyCorpusService,
+    @Optional()
+    private readonly semanticPolicyEvaluator?: SemanticPolicyEvaluatorService,
   ) {}
 
   private getSystemAgents(): AvailableAgentDto[] {
@@ -165,6 +174,65 @@ export class SupervisorService {
           `[frustration-signal] channelId=${channelId ?? 'unknown'} pattern="${frustrationPattern}"`,
         );
       }
+      // Policy Guard: Thẩm định chính sách ngữ nghĩa trước khi phân công SubAgent
+      if (this.semanticPolicyEvaluator && rounds.length === 0) {
+        try {
+          const evalResult = await this.semanticPolicyEvaluator.evaluatePrompt(prompt);
+          if (evalResult.verdict === EPolicyVerdict.REQUIRE_APPROVAL) {
+            const hasAuthorizedTool = agents.some(
+              (a) => a.provider === 'k8s_ops' || a.provider === 'ingress_manager',
+            );
+            if (!hasAuthorizedTool) {
+              this.logger.warn(`[Supervisor Policy Guard] Chặn yêu cầu Ingress rủi ro cao không có tool: ${prompt}`);
+              return {
+                action: 'respond',
+                answer: `Thao tác cấu hình định tuyến mạng Ingress diện rộng có rủi ro cao và cần có sự phê duyệt từ Quản trị viên (theo quy chế ${evalResult.citedRuleId || 'SEC-DEVOPS-002'}). Hệ thống không tự ý áp dụng hoặc hướng dẫn tạo file cấu hình khi chưa có phê duyệt chính thức.`,
+              };
+            }
+          } else if (evalResult.verdict === EPolicyVerdict.DENY) {
+            this.logger.warn(`[Supervisor Policy Guard] Chặn yêu cầu vi phạm chính sách cấm: ${prompt}`);
+            return {
+              action: 'respond',
+              answer: `Từ chối thực thi: ${evalResult.reason || 'Yêu cầu vi phạm quy chế bảo mật doanh nghiệp.'} (Điều khoản: ${evalResult.citedRuleId || 'ENTERPRISE_POLICY'}).`,
+            };
+          } else if (evalResult.verdict === EPolicyVerdict.ESCALATE) {
+            this.logger.warn(`[Supervisor Policy Guard] Chuyển tiếp sự vụ vượt thẩm quyền AI: ${prompt}`);
+            return {
+              action: 'respond',
+              answer: `Yêu cầu vượt quá thẩm quyền của AI: ${evalResult.reason || 'Sự vụ cần được xử lý bởi nhân sự chuyên trách.'} (Điều khoản: ${evalResult.citedRuleId || 'ENTERPRISE_POLICY'}). Sự vụ đã được ghi nhận để nhân sự có thẩm quyền tiếp quản.`,
+            };
+          }
+        } catch (err) {
+          this.logger.warn(`Lỗi thẩm định policy ở Supervisor: ${(err as Error)?.message}`);
+        }
+      }
+
+      let policyGuidance = '';
+      if (this.policyCorpus) {
+        try {
+          const relevant = await this.policyCorpus.findRelevantPolicies(prompt, {
+            limit: 3,
+            minScore: 0.15,
+          });
+
+          if (relevant.length > 0) {
+            const rules = relevant
+              .map((r) => `- [${r.chunk.id}] ${r.chunk.title}: ${r.chunk.content}`)
+              .join('\n');
+
+            policyGuidance =
+              `\n\n--- QUY CHẾ AN NINH & TUÂN THỦ DOANH NGHIỆP (BẮT BUỘC TUÂN THỦ) ---\n${rules}\n\n` +
+              `QUY TẮC BẢO MẬT BẮT BUỘC CHO SUPERVISOR:\n` +
+              `1. Nếu yêu cầu của người dùng thuộc diện cần phê duyệt (REQUIRE_APPROVAL) hoặc bị nghiêm cấm (DENY) hoặc vượt thẩm quyền (ESCALATE) mà hệ thống KHÔNG CÓ tool chính thức hỗ trợ quy trình đó (hoặc người dùng yêu cầu trực tiếp thay đổi định tuyến Ingress, xóa CSDL production, trích xuất bảng lương nhân viên):\n` +
+              `   - BẠN BẮT BUỘC PHẢI CHỌN action="respond".\n` +
+              `   - Điền "answer" bằng câu trả lời từ chối/yêu cầu phê duyệt rõ ràng, trích dẫn đúng mã điều khoản (ví dụ: SEC-DEVOPS-002, SEC-DEVOPS-001, SEC-HR-001).\n` +
+              `   - TUYỆT ĐỐI KHÔNG phân công (plan) cho bất kỳ agent nào (như compute/python) để sinh script, YAML, JSON, hay viết hướng dẫn người dùng làm thủ công nhằm lách quy chế!`;
+          }
+        } catch (err) {
+          this.logger.warn(`Lỗi truy xuất policy grounding ở Supervisor: ${(err as Error)?.message}`);
+        }
+      }
+
       const fullPrompt = this.promptBuilder.build(
         prompt,
         rounds,
@@ -183,7 +251,7 @@ export class SupervisorService {
             (attemptSignal) =>
               strategy.generateStructured<SupervisorPlanDto>({
                 model,
-                systemInstruction: `${SUPERVISOR_PLANNING_PROMPT}\n${agentListText}`,
+                systemInstruction: `${SUPERVISOR_PLANNING_PROMPT}${policyGuidance}\n${agentListText}`,
                 prompt: fullPrompt,
                 schema: planSchema,
                 signal: attemptSignal,

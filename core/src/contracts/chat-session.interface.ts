@@ -1,5 +1,11 @@
 export const CHAT_SESSION_MANAGER = Symbol('CHAT_SESSION_MANAGER');
 
+export enum EConversationState {
+  AI_ACTIVE = 'AI_ACTIVE',
+  HUMAN_TAKEOVER = 'HUMAN_TAKEOVER',
+  RESOLVED = 'RESOLVED',
+}
+
 /**
  * Phiên làm việc hội thoại của người dùng (Chat Session).
  */
@@ -10,6 +16,7 @@ export interface IChatSession {
   tenantId: string;
   botUserId: string;
   approvalMessageIds: Set<string>;
+  state?: EConversationState;
   createdAt?: Date;
   lastSeenAt?: Date;
 }
@@ -26,4 +33,6 @@ export interface IChatSessionManager {
   getOrCreate(sessionId?: string): Promise<IChatSession> | IChatSession;
   trackApproval(sessionId: string, messageId: string): Promise<void> | void;
   hasApproval(sessionId: string, messageId: string): Promise<boolean> | boolean;
+  setConversationState?(sessionId: string, state: EConversationState): Promise<void> | void;
+  getConversationState?(sessionId: string): Promise<EConversationState> | EConversationState;
 }

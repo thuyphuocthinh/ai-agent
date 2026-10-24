@@ -17,6 +17,7 @@
     "strictBindCallApply": false,
     "forceConsistentCasingInFileNames": false,
     "isolatedModules": true,
+    "resolveJsonModule": true,
     "noFallthroughCasesInSwitch": false,
     "paths": {
       "@agent/core": [

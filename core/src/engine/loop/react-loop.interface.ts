@@ -6,6 +6,13 @@ import { LlmChatSession, LlmStrategy } from '../strategy/llm-strategy.interface'
 import { CircuitBreakerService } from '../../common/circuit-breaker.service';
 import { MemoryManagerService } from '../../memory/memory-manager.service';
 import { ToolRepeatGuard } from './tool-repeat-guard';
+import {
+  ProviderPreflightGuard,
+  BusinessPolicyEngine,
+  SemanticPolicyEvaluatorService,
+  IdempotencyManager,
+  ActionAuditService,
+} from '../../security';
 
 export interface ReactLoopRunOptions {
   dto: RunReactLoopRequestDto;
@@ -26,4 +33,9 @@ export interface ReactLoopRunDeps {
   circuitBreaker: CircuitBreakerService;
   memoryManager: MemoryManagerService;
   logger: Logger;
+  preflightGuard?: ProviderPreflightGuard;
+  policyEngine?: BusinessPolicyEngine;
+  semanticPolicyEvaluator?: SemanticPolicyEvaluatorService;
+  idempotencyManager?: IdempotencyManager;
+  actionAudit?: ActionAuditService;
 }

@@ -5,7 +5,7 @@ import { MessageClientService } from '../../contracts/message-client.service';
 import { SupervisorService } from '../supervisor/supervisor.service';
 import { AgentStreamService } from '../../contracts/agent-stream.service';
 import { CheckpointService } from './checkpoint.service';
-import { McpToolConnectorService } from '../../infrastructure/tools/mcp-tool-connector.service';
+import { TOOL_PROVIDER } from '../../contracts';
 import { AgentCancellationService } from '../cancellation/agent-cancellation.service';
 import { TurnCancelledError } from '../loop/turn-cancelled.error';
 import { TurnResolverService } from '../orchestrator/turn-resolver.service';
@@ -72,7 +72,7 @@ describe('ApprovalExecutionService', () => {
         { provide: SupervisorService, useValue: mockSupervisor },
         { provide: AgentStreamService, useValue: mockAgentStream },
         { provide: CheckpointService, useValue: mockCheckpoint },
-        { provide: McpToolConnectorService, useValue: mockMcpClient },
+        { provide: TOOL_PROVIDER, useValue: mockMcpClient },
         { provide: AgentCancellationService, useValue: mockCancellation },
         { provide: TurnResolverService, useValue: mockTurnResolver },
         { provide: MemoryManagerService, useValue: mockMemoryManager },

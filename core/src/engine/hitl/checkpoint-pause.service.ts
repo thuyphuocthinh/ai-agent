@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { IProcessAiTriggerJobData } from '@agent/core/infrastructure/queue';
 import {
   ECheckpointKind,
@@ -7,7 +7,7 @@ import {
 } from '@agent/core/constants';
 import { extractTextFromMcpResult } from '@agent/core/common';
 import { MessageClientService } from '../../contracts/message-client.service';
-import { McpToolConnectorService } from '../../infrastructure/tools/mcp-tool-connector.service';
+import { IToolProvider, TOOL_PROVIDER } from '../../contracts';
 import { CheckpointService } from './checkpoint.service';
 import {
   AmbiguousAgentCandidate,
@@ -41,7 +41,8 @@ export class CheckpointPauseService {
   constructor(
     private readonly messageClient: MessageClientService,
     private readonly checkpoint: CheckpointService,
-    private readonly mcpClient: McpToolConnectorService,
+    @Inject(TOOL_PROVIDER)
+    private readonly mcpClient: IToolProvider,
   ) {}
 
   // Dừng turn khi gặp tool rủi ro: tạo message MỚI "approval_request" (không

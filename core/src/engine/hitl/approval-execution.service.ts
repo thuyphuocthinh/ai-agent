@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { IProcessApprovalJobData } from '@agent/core/infrastructure/queue';
 import {
   ORCHESTRATION_CONSTANTS,
@@ -7,7 +7,7 @@ import {
 import { extractTextFromMcpResult } from '@agent/core/common';
 import { MessageClientService } from '../../contracts/message-client.service';
 import { SupervisorService } from '../supervisor/supervisor.service';
-import { McpToolConnectorService } from '../../infrastructure/tools/mcp-tool-connector.service';
+import { IToolProvider, TOOL_PROVIDER } from '../../contracts';
 import { AgentStreamService } from '../../contracts/agent-stream.service';
 import { describeExternalServiceError } from '../loop/external-service-error.util';
 import { CheckpointService } from './checkpoint.service';
@@ -40,7 +40,8 @@ export class ApprovalExecutionService {
     private readonly supervisor: SupervisorService,
     private readonly agentStream: AgentStreamService,
     private readonly checkpoint: CheckpointService,
-    private readonly mcpClient: McpToolConnectorService,
+    @Inject(TOOL_PROVIDER)
+    private readonly mcpClient: IToolProvider,
     private readonly cancellation: AgentCancellationService,
     private readonly turnResolver: TurnResolverService,
     private readonly memoryManager: MemoryManagerService,

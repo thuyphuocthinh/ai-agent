@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import {
   ORCHESTRATION_CONSTANTS,
   ORCHESTRATION_SYSTEM_PROMPT,
@@ -25,6 +25,14 @@ import { ReactLoopRun } from './react-loop-run';
 import { ToolRepeatGuard } from './tool-repeat-guard';
 import { formatPersonaPrompt } from './persona-prompt.util';
 import { PersonaDto } from '../../contracts/dtos/supervisor.dto';
+import {
+  ProviderPreflightGuard,
+  BusinessPolicyEngine,
+  PolicyCorpusService,
+  SemanticPolicyEvaluatorService,
+  IdempotencyManager,
+  ActionAuditService,
+} from '../../security';
 
 // Ghi chú thiết kế đầy đủ (WHY): docs/orchestration/code-notes/react-loop.service.md
 // Logic chi tiết 1 lượt chạy (tool call, self-check, quantity-nudge...) nằm
@@ -42,6 +50,18 @@ export class ReactLoopService {
     private readonly circuitBreaker: CircuitBreakerService,
     private readonly cancellation: AgentCancellationService,
     private readonly memoryManager: MemoryManagerService,
+    @Optional()
+    private readonly preflightGuard?: ProviderPreflightGuard,
+    @Optional()
+    private readonly policyEngine?: BusinessPolicyEngine,
+    @Optional()
+    private readonly semanticPolicyEvaluator?: SemanticPolicyEvaluatorService,
+    @Optional()
+    private readonly policyCorpus?: PolicyCorpusService,
+    @Optional()
+    private readonly idempotencyManager?: IdempotencyManager,
+    @Optional()
+    private readonly actionAudit?: ActionAuditService,
   ) {}
 
   async run(
@@ -96,6 +116,7 @@ export class ReactLoopService {
             signal,
             dto.workspaceId,
             dto.persona,
+            dto.prompt,
           ),
         ]);
 
@@ -139,6 +160,11 @@ export class ReactLoopService {
             circuitBreaker: this.circuitBreaker,
             memoryManager: this.memoryManager,
             logger: this.logger,
+            preflightGuard: this.preflightGuard,
+            policyEngine: this.policyEngine,
+            semanticPolicyEvaluator: this.semanticPolicyEvaluator,
+            idempotencyManager: this.idempotencyManager,
+            actionAudit: this.actionAudit,
           },
         );
 
@@ -156,6 +182,7 @@ export class ReactLoopService {
     signal?: AbortSignal,
     workspaceId?: string,
     persona?: PersonaDto,
+    userPrompt?: string,
   ): Promise<string> {
     const mcpResources = (await this.toolProvider.getResources?.(
       provider,
@@ -192,6 +219,32 @@ export class ReactLoopService {
     if (injectedResources) {
       systemInstruction += `\n\nBạn có sẵn các Context/Resources sau trong bộ nhớ để tham khảo, tuyệt đối ưu tiên sử dụng thông tin này nếu liên quan đến câu hỏi của người dùng:\n${injectedResources}`;
     }
+
+    // Context-Aware Policy Grounding: Tự động tiêm các quy chế doanh nghiệp liên quan trực tiếp vào System Prompt
+    if (this.policyCorpus && userPrompt) {
+      try {
+        const relevant = await this.policyCorpus.findRelevantPolicies(userPrompt, {
+          limit: 3,
+          minScore: 0.15,
+        });
+
+        if (relevant.length > 0) {
+          const policiesText = relevant
+            .map((r) => `- [${r.chunk.id}] ${r.chunk.title}:\n  ${r.chunk.content}`)
+            .join('\n\n');
+
+          systemInstruction += `\n\n--- QUY CHẾ DOANH NGHIỆP BẮT BUỘC (ENTERPRISE POLICIES) ---\n` +
+            `Các quy chế sau đây áp dụng trực tiếp cho yêu cầu của người dùng:\n\n${policiesText}\n\n` +
+            `NGUYÊN TẮC THI HÀNH BẮT BUỘC:\n` +
+            `Nếu yêu cầu của người dùng thuộc phạm vi cần phê duyệt (REQUIRE_APPROVAL) hoặc bị nghiêm cấm (DENY), ` +
+            `bạn TUYỆT ĐỐI KHÔNG ĐƯỢC tự ý sinh script, file cấu hình (YAML, JSON), hoặc viết hướng dẫn chi tiết để người dùng tự làm thủ công nhằm lách quy chế. ` +
+            `Hãy thông báo rõ ràng về điều khoản quy định và hướng dẫn người dùng xin phê duyệt từ cấp quản lý có thẩm quyền.`;
+        }
+      } catch (err) {
+        this.logger.warn(`Lỗi truy xuất policy grounding: ${(err as Error).message}`);
+      }
+    }
+
     return systemInstruction;
   }
 }

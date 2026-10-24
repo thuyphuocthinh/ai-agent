@@ -4,7 +4,7 @@ import { ECheckpointRiskLevel } from '@agent/core/constants';
 import { CheckpointPauseService } from './checkpoint-pause.service';
 import { MessageClientService } from '../../contracts/message-client.service';
 import { CheckpointService } from './checkpoint.service';
-import { McpToolConnectorService } from '../../infrastructure/tools/mcp-tool-connector.service';
+import { TOOL_PROVIDER } from '../../contracts';
 import { ApprovalRequiredDelegateResult } from '../orchestrator/orchestration-answer.types';
 
 // checkpoint-pause.service.ts import @agent/core/common ở module scope (extractTextFromMcpResult)
@@ -42,7 +42,7 @@ describe('CheckpointPauseService', () => {
         CheckpointPauseService,
         { provide: MessageClientService, useValue: mockMessageClient },
         { provide: CheckpointService, useValue: mockCheckpoint },
-        { provide: McpToolConnectorService, useValue: mockMcpClient },
+        { provide: TOOL_PROVIDER, useValue: mockMcpClient },
       ],
     }).compile();
 

@@ -1,6 +1,9 @@
 export class McpToolAnnotationsDto {
   readOnlyHint?: boolean;
   destructiveHint?: boolean;
+  requiredScopes?: string[];
+  isIrreversible?: boolean;
+  authType?: string;
 }
 
 export class McpToolDto {
@@ -10,6 +13,9 @@ export class McpToolDto {
   // Chuẩn MCP ToolAnnotations — dùng để Risk Gate (Giai đoạn 3) nhận diện tool
   // rủi ro (destructiveHint) trước khi cho ReactLoop gọi thật.
   annotations?: McpToolAnnotationsDto;
+  requiredScopes?: string[];
+  isIrreversible?: boolean;
+  authType?: string;
 }
 
 export class CallToolRequestDto {

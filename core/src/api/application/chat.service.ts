@@ -5,6 +5,7 @@ import {
   InternalServerErrorException,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { RpcException } from '@nestjs/microservices';
 import type { UIMessageChunk } from 'ai';
@@ -23,10 +24,18 @@ import {
   IMessageSink,
   MESSAGE_SINK,
   TurnStream,
+  EConversationState,
 } from '../../contracts';
 import { ChatHistoryTurnDto } from '../../contracts/dtos/message-client.dto';
 import { TurnStreamFactory } from './turn-stream.factory';
 import { OrchestrationRpcExceptionFilter } from '../presentation/filters/orchestration-exception.filter';
+import {
+  PromptInjectionGuard,
+  SemanticPolicyEvaluatorService,
+  HumanEscalationService,
+  BusinessPolicyViolationError,
+  EPolicyVerdict,
+} from '../../security';
 
 const HISTORY_LIMIT = 200;
 
@@ -44,15 +53,40 @@ export class ChatService {
     @Inject(MESSAGE_SINK)
     private readonly messages: IMessageSink,
     private readonly approvals: ApprovalRequestService,
+    @Optional()
+    private readonly injectionGuard?: PromptInjectionGuard,
+    @Optional()
+    private readonly semanticPolicyEvaluator?: SemanticPolicyEvaluatorService,
+    @Optional()
+    private readonly humanEscalation?: HumanEscalationService,
   ) {}
 
   async chat(prompt: string, sessionId?: string): Promise<TurnStream> {
     const session = await this.sessionManager.getOrCreate(sessionId);
-    const turn = this.streamFactory.createTurn(session);
+
+    const safePrompt = this.injectionGuard
+      ? this.injectionGuard.assertSafe(prompt)
+      : prompt;
+
     const userMessage = await this.messages.addUserMessage({
       conversationId: session.conversationId,
-      text: prompt,
+      text: safePrompt,
     });
+
+    const state =
+      (await this.sessionManager.getConversationState?.(session.id)) ??
+      session.state;
+
+    if (state === EConversationState.HUMAN_TAKEOVER) {
+      this.logger.log(
+        `Session ${session.id} is in HUMAN_TAKEOVER state. AI Mute active - skipping AI orchestration.`,
+      );
+      const turn = this.streamFactory.createTurn(session);
+      turn.close();
+      return { sessionId: session.id, stream: turn.stream, cancel: turn.cancel };
+    }
+
+    const turn = this.streamFactory.createTurn(session);
 
     const data: IProcessAiTriggerJobData = {
       userId: session.userId,

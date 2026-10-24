@@ -10,6 +10,7 @@ import { RpcException } from '@nestjs/microservices';
 import { randomUUID } from 'crypto';
 import { ApiErrorResponseDto } from '../dtos/api-error-response.dto';
 import { ORCHESTRATION_ERROR } from '@agent/core/constants';
+import { isBaseDomainException } from '../../../common/errors';
 
 interface HttpResponse {
   status(code: number): HttpResponse;
@@ -61,6 +62,22 @@ export class AllExceptionsFilter implements ExceptionFilter {
       } else {
         message = exception.message;
         code = `HTTP_${status}`;
+      }
+    } else if (isBaseDomainException(exception)) {
+      status = exception.statusCode;
+      code = exception.code;
+      message = exception.userFriendlyMessage || exception.message;
+      errors = exception.details;
+
+      if (!exception.isOperational) {
+        this.logger.error(
+          `[Domain Non-Operational] ${request?.method || 'HTTP'} ${path} - ${status} - ${exception.message}`,
+          exception.stack,
+        );
+      } else {
+        this.logger.warn(
+          `[Domain Operational] ${request?.method || 'HTTP'} ${path} - ${status} [${code}]: ${exception.message}`,
+        );
       }
     } else if (exception instanceof RpcException) {
       const detail = exception.getError() as { code?: string; message?: string };

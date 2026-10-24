@@ -90,6 +90,32 @@ describe('InMemoryChatSessionManager', () => {
     });
   });
 
+  describe('conversation state management', () => {
+    it('defaults session state to AI_ACTIVE', () => {
+      const session = manager.getOrCreate('sess-state');
+      expect(session.state).toBe('AI_ACTIVE');
+      expect(manager.getConversationState('sess-state')).toBe('AI_ACTIVE');
+    });
+
+    it('returns AI_ACTIVE when session does not exist', () => {
+      expect(manager.getConversationState('non-existent')).toBe('AI_ACTIVE');
+    });
+
+    it('updates session conversation state to HUMAN_TAKEOVER and RESOLVED', () => {
+      manager.getOrCreate('sess-state-2');
+      manager.setConversationState('sess-state-2', 'HUMAN_TAKEOVER');
+      expect(manager.getConversationState('sess-state-2')).toBe('HUMAN_TAKEOVER');
+
+      manager.setConversationState('sess-state-2', 'RESOLVED');
+      expect(manager.getConversationState('sess-state-2')).toBe('RESOLVED');
+    });
+
+    it('creates session when setConversationState is called for non-existent session', () => {
+      manager.setConversationState('sess-auto-create', 'HUMAN_TAKEOVER');
+      expect(manager.getConversationState('sess-auto-create')).toBe('HUMAN_TAKEOVER');
+    });
+  });
+
   describe('ChatSessionManager alias & Pluggable Architecture', () => {
     it('ChatSessionManager inherits from InMemoryChatSessionManager', () => {
       const legacyAlias = new ChatSessionManager();

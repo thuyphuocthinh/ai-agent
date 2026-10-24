@@ -8,6 +8,13 @@ import { MemoryManagerService } from '../../memory/memory-manager.service';
 import { ToolRepeatGuard } from './tool-repeat-guard';
 import { InsertAccumulator } from './insert-accumulator';
 import { ToolRiskGate } from './tool-risk-gate';
+import {
+  ProviderPreflightGuard,
+  BusinessPolicyEngine,
+  SemanticPolicyEvaluatorService,
+  IdempotencyManager,
+  ActionAuditService,
+} from '../../security';
 
 export interface ToolCallExecutorOptions {
   dto: RunReactLoopRequestDto;
@@ -26,6 +33,7 @@ export interface ToolCallExecutorDeps {
   repeatGuard: ToolRepeatGuard;
   insertAccumulator: InsertAccumulator;
   riskGate: ToolRiskGate;
+  actionAudit?: ActionAuditService;
 }
 
 export interface ToolRiskGateOptions {
@@ -37,4 +45,8 @@ export interface ToolRiskGateOptions {
   logger: Logger;
   signal: AbortSignal;
   insertAccumulator: InsertAccumulator;
+  preflightGuard?: ProviderPreflightGuard;
+  policyEngine?: BusinessPolicyEngine;
+  semanticPolicyEvaluator?: SemanticPolicyEvaluatorService;
+  idempotencyManager?: IdempotencyManager;
 }

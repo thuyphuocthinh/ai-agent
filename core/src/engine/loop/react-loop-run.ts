@@ -71,6 +71,10 @@ export class ReactLoopRun {
       logger: deps.logger,
       signal: options.signal,
       insertAccumulator,
+      preflightGuard: deps.preflightGuard,
+      policyEngine: deps.policyEngine,
+      semanticPolicyEvaluator: deps.semanticPolicyEvaluator,
+      idempotencyManager: deps.idempotencyManager,
     });
     this.toolExecutor = new ToolCallExecutor(
       {
@@ -89,6 +93,7 @@ export class ReactLoopRun {
         repeatGuard: options.repeatGuard ?? new ToolRepeatGuard(),
         insertAccumulator,
         riskGate,
+        actionAudit: deps.actionAudit,
       },
     );
   }
