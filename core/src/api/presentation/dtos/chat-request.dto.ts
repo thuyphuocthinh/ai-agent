@@ -22,4 +22,13 @@ export class ChatRequestDto {
   @IsOptional()
   @IsUUID('4', { message: 'sessionId phải là định dạng UUID' })
   sessionId?: string;
+
+  @ApiPropertyOptional({
+    description: 'Mã định danh Fixed Workflow muốn thực thi trực tiếp (bỏ qua Dynamic Supervisor).',
+    example: 'customer-support',
+  })
+  @Transform(trim)
+  @IsOptional()
+  @IsString()
+  workflowId?: string;
 }

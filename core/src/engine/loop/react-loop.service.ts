@@ -125,14 +125,19 @@ export class ReactLoopService {
         }
 
         const { strategy, model } = this.llmFactory.resolve(reactModelId);
+        const effectiveTools =
+          dto.allowedTools && dto.allowedTools.length > 0 && !dto.allowedTools.includes('*')
+            ? mcpTools.filter((t) => dto.allowedTools!.includes(t.name))
+            : mcpTools;
+
         this.logger.log(
-          `run() userId=${dto.userId} provider=${dto.provider} model=${model} toolsAvailable=${mcpTools.length}`,
+          `run() userId=${dto.userId} provider=${dto.provider} model=${model} toolsAvailable=${effectiveTools.length}/${mcpTools.length}`,
         );
 
         const session = strategy.startChat({
           model,
           systemInstruction,
-          tools: mcpTools.map((t) => ({
+          tools: effectiveTools.map((t) => ({
             name: t.name,
             description: t.description,
             parameters: t.inputSchema,
@@ -144,7 +149,7 @@ export class ReactLoopService {
         const reactLoopRun = new ReactLoopRun(
           {
             dto,
-            mcpTools,
+            mcpTools: effectiveTools,
             strategy,
             model,
             reactModelId,

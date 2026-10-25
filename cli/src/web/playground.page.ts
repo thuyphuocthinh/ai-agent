@@ -566,7 +566,12 @@ export const PLAYGROUND_HTML = /* html */ `<!doctype html>
     <span>Agent Playground</span>
     <span class="brand-tag">/ multi-agent</span>
   </div>
-  <div class="header-status" id="status">phiên mới</div>
+  <div style="display:flex;align-items:center;gap:12px;">
+    <select id="workflow-select" style="background:#1e1e24;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer;outline:none;">
+      <option value="">Chế độ: Auto (Dynamic Supervisor)</option>
+    </select>
+    <div class="header-status" id="status">phiên mới</div>
+  </div>
 </header>
 
 <div id="log">
@@ -628,6 +633,22 @@ export const PLAYGROUND_HTML = /* html */ `<!doctype html>
   var promptBox = document.getElementById('prompt');
   var sendBtn = document.getElementById('send');
   var statusEl = document.getElementById('status');
+  var workflowSelect = document.getElementById('workflow-select');
+  if (workflowSelect) {
+    fetch('/api/workflows')
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        var list = Array.isArray(res) ? res : (res && res.data) ? res.data : [];
+        list.forEach(function (wf) {
+          var opt = document.createElement('option');
+          opt.value = wf.id;
+          opt.textContent = 'Workflow: ' + wf.name;
+          opt.title = wf.description || '';
+          workflowSelect.appendChild(opt);
+        });
+      })
+      .catch(function () {});
+  }
   var progressWrap = document.getElementById('workflow-progress');
   var progressPercent = document.getElementById('global-progress-percent');
   var progressFill = document.getElementById('global-progress-fill');
@@ -894,8 +915,12 @@ export const PLAYGROUND_HTML = /* html */ `<!doctype html>
     supLeft.appendChild(supBadge);
 
     var supTitles = el('div', 'agent-titles');
-    supTitles.appendChild(el('div', 'agent-role', 'Bộ điều phối (Supervisor)'));
-    var supGoal = el('div', 'agent-goal', 'Đang phân tích yêu cầu và lập kế hoạch...');
+    var isWorkflow = Boolean(workflowSelect && workflowSelect.value);
+    var workflowLabel = isWorkflow && workflowSelect.selectedIndex >= 0
+      ? workflowSelect.options[workflowSelect.selectedIndex].text
+      : 'Bộ điều phối (Supervisor)';
+    supTitles.appendChild(el('div', 'agent-role', workflowLabel));
+    var supGoal = el('div', 'agent-goal', isWorkflow ? 'Đang thực thi kịch bản định sẵn...' : 'Đang phân tích yêu cầu và lập kế hoạch...');
     supTitles.appendChild(supGoal);
     supLeft.appendChild(supTitles);
     supHeader.appendChild(supLeft);
@@ -908,6 +933,7 @@ export const PLAYGROUND_HTML = /* html */ `<!doctype html>
     log.appendChild(box);
     var b = {
       box: box,
+      isWorkflow: isWorkflow,
       texts: {},
       tools: {},
       reply: null,
@@ -1062,7 +1088,7 @@ export const PLAYGROUND_HTML = /* html */ `<!doctype html>
       bubble.supervisor.done = true;
       bubble.supervisor.status.textContent = 'Hoàn thành';
       bubble.supervisor.status.classList.add('done');
-      bubble.supervisor.goal.textContent = 'Đã phân chia nhiệm vụ cho các Agent';
+      bubble.supervisor.goal.textContent = bubble.isWorkflow ? 'Hoàn tất thực thi workflow' : 'Đã phân chia nhiệm vụ cho các Agent';
     }
     Object.keys(bubble.agents).forEach(function (k) {
       var a = bubble.agents[k];
@@ -1192,7 +1218,7 @@ export const PLAYGROUND_HTML = /* html */ `<!doctype html>
           bubble.supervisor.done = true;
           bubble.supervisor.status.textContent = 'Hoàn thành';
           bubble.supervisor.status.classList.add('done');
-          bubble.supervisor.goal.textContent = 'Đã phân chia nhiệm vụ cho các Agent';
+          bubble.supervisor.goal.textContent = bubble.isWorkflow ? 'Hoàn tất thực thi workflow' : 'Đã phân chia nhiệm vụ cho các Agent';
         }
 
         getOrCreateAgent(bubble, chunk.id, chunk.data);
@@ -1376,7 +1402,8 @@ export const PLAYGROUND_HTML = /* html */ `<!doctype html>
 
     log.appendChild(el('div', 'msg user', text));
     showGlobalProgress(10, 'Đang gửi yêu cầu và khởi tạo bộ điều phối...', 'Khởi tạo');
-    run('/api/chat', { prompt: text, sessionId: sessionId || undefined });
+    var selectedWf = (workflowSelect && workflowSelect.value) ? workflowSelect.value : undefined;
+    run('/api/chat', { prompt: text, sessionId: sessionId || undefined, workflowId: selectedWf });
   }
 
   promptBox.addEventListener('input', autoResize);

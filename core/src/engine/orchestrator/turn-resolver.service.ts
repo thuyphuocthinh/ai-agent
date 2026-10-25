@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { IProcessAiTriggerJobData } from '@agent/core/infrastructure/queue';
 import { ORCHESTRATION_CONSTANTS } from '@agent/core/constants';
 import {
@@ -6,9 +6,13 @@ import {
   MESSAGE_SINK,
   IStreamSink,
   STREAM_SINK,
+  IWorkflowRegistry,
+  WORKFLOW_REGISTRY,
+  WORKFLOW_RUNNER,
 } from '../../contracts';
 import { ReactLoopService } from '../loop/react-loop.service';
 import { SupervisorService } from '../supervisor/supervisor.service';
+import { WorkflowRunnerService } from '../workflow/workflow-runner.service';
 import {
   AvailableAgentDto,
   DelegationDto,
@@ -45,6 +49,12 @@ export class TurnResolverService {
     private readonly checkpointPause: CheckpointPauseService,
     private readonly metrics: MetricsRegistryService,
     private readonly memoryManager: MemoryManagerService,
+    @Optional()
+    @Inject(WORKFLOW_REGISTRY)
+    private readonly workflowRegistry?: IWorkflowRegistry,
+    @Optional()
+    @Inject(WORKFLOW_RUNNER)
+    private readonly workflowRunner?: WorkflowRunnerService,
   ) {}
 
   private get messageClient(): IMessageSink {
@@ -59,7 +69,7 @@ export class TurnResolverService {
     data: IProcessAiTriggerJobData,
     replyMessageId: string,
   ): Promise<AnswerResult> {
-    const { userId, channelId, messageId, workspaceId } = data;
+    const { userId, channelId, messageId, workspaceId, workflowId } = data;
     const [prompt, agents, history] = await Promise.all([
       this.messageSink.getMessageText({ id: messageId, userId }),
       this.supervisor.getAvailableAgents(userId, workspaceId),
@@ -74,6 +84,25 @@ export class TurnResolverService {
         ).historyCharBudget,
       }),
     ]);
+
+    if (workflowId && this.workflowRegistry && this.workflowRunner) {
+      const workflow = this.workflowRegistry.get(workflowId);
+      if (workflow) {
+        this.logger.log(
+          `Routing trực tiếp tới fixed workflow "${workflowId}" (${workflow.name}) cho turn ${replyMessageId}`,
+        );
+        return this.workflowRunner.runWorkflow({
+          workflow,
+          prompt,
+          data,
+          replyMessageId,
+          history,
+        });
+      }
+      this.logger.warn(
+        `Không tìm thấy workflowId="${workflowId}" trong registry. Fallback về Dynamic Supervisor.`,
+      );
+    }
 
     return this.continueRounds(
       data,

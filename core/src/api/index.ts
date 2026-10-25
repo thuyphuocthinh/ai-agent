@@ -1,4 +1,5 @@
 export * from './presentation/controllers/chat.controller';
+export * from './presentation/controllers/workflow.controller';
 export * from './presentation/presenters/ui-stream.presenter';
 export * from './presentation/dtos';
 export * from './presentation/decorators';

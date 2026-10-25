@@ -33,6 +33,9 @@ export class RunReactLoopRequestDto {
   // Persona Supervisor giao cho Worker ở bước này (xem PersonaDto) — optional,
   // không truyền = Worker chạy với system prompt mặc định như cũ.
   persona?: PersonaDto;
+  // Danh sách công cụ được phép dùng (Principle of Least Privilege).
+  // Nếu truyền, ReactLoop chỉ nạp các tool trùng tên trong mảng này.
+  allowedTools?: string[];
 }
 
 export class ToolCallTraceDto {

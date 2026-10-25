@@ -5,3 +5,4 @@ export * from './orchestration.dto';
 export * from './supervisor.dto';
 export * from './checkpoint.dto';
 export * from './dynamic-provider.dto';
+export * from './workflow.dto';

@@ -61,7 +61,11 @@ export class ChatService {
     private readonly humanEscalation?: HumanEscalationService,
   ) {}
 
-  async chat(prompt: string, sessionId?: string): Promise<TurnStream> {
+  async chat(
+    prompt: string,
+    sessionId?: string,
+    workflowId?: string,
+  ): Promise<TurnStream> {
     const session = await this.sessionManager.getOrCreate(sessionId);
 
     const safePrompt = this.injectionGuard
@@ -98,6 +102,7 @@ export class ChatService {
       botUserId: session.botUserId,
       sessionType: 'web',
       channelType: 'web',
+      workflowId,
     };
 
     void this.queueDispatcher

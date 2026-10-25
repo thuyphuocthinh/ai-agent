@@ -53,6 +53,8 @@ import { ProviderSummaryService } from './engine/orchestrator/provider-summary.s
 import { QueueService, EJobName } from './infrastructure/queue';
 import { AgentCancellationService } from './engine/cancellation/agent-cancellation.service';
 import { TurnResolverService } from './engine/orchestrator/turn-resolver.service';
+import { WorkflowRegistryService } from './engine/workflow/workflow-registry.service';
+import { WorkflowRunnerService } from './engine/workflow/workflow-runner.service';
 import { CheckpointPauseService } from './engine/hitl/checkpoint-pause.service';
 import { ApprovalRequestService } from './engine/hitl/approval-request.service';
 import { ApprovalExecutionService } from './engine/hitl/approval-execution.service';
@@ -64,11 +66,14 @@ import {
   MESSAGE_SINK,
   STREAM_SINK,
   CHAT_SESSION_MANAGER,
+  WORKFLOW_REGISTRY,
+  WORKFLOW_RUNNER,
 } from './contracts';
 import { MetricsRegistryService } from './common/metrics-registry.service';
 import { HealthCheckService } from './common/health-check.service';
 import {
   ChatController,
+  WorkflowController,
   ChatService,
   ChatSessionManager,
   InMemoryChatSessionManager,
@@ -98,7 +103,7 @@ import { SecurityModule } from './security';
     ]),
     SecurityModule,
   ],
-  controllers: [ChatController],
+  controllers: [ChatController, WorkflowController],
   providers: [
     {
       provide: CHAT_SESSION_MANAGER,
@@ -135,6 +140,16 @@ import { SecurityModule } from './security';
     ProviderConcurrencyLimiterService,
     AgentCancellationService,
     TurnResolverService,
+    WorkflowRegistryService,
+    WorkflowRunnerService,
+    {
+      provide: WORKFLOW_REGISTRY,
+      useExisting: WorkflowRegistryService,
+    },
+    {
+      provide: WORKFLOW_RUNNER,
+      useExisting: WorkflowRunnerService,
+    },
     CheckpointPauseService,
     ApprovalRequestService,
     ApprovalExecutionService,
@@ -211,6 +226,10 @@ import { SecurityModule } from './security';
     TOOL_PROVIDER,
     McpToolConnectorService,
     McpAuthClientService,
+    WorkflowRegistryService,
+    WorkflowRunnerService,
+    WORKFLOW_REGISTRY,
+    WORKFLOW_RUNNER,
     SecurityModule,
   ],
 })

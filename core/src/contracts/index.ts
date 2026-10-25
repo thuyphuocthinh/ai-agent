@@ -4,6 +4,7 @@ export * from './stream-sink.interface';
 export * from './chat-session.interface';
 export * from './turn-stream.interface';
 export * from './vercel-stream.interface';
+export * from './agent-workflow.types';
 export * from './dtos';
 export * from './agent-stream.service';
 export * from './message-client.service';

@@ -11,6 +11,7 @@ export interface IProcessAiTriggerJobData {
   botUserId?: string;
   sessionType?: string;
   channelType?: string;
+  workflowId?: string;
 }
 
 export interface IProcessApprovalJobData {
