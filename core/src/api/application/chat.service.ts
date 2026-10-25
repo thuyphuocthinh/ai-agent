@@ -25,8 +25,14 @@ import {
   MESSAGE_SINK,
   TurnStream,
   EConversationState,
+  IConversationSummary,
 } from '../../contracts';
 import { ChatHistoryTurnDto } from '../../contracts/dtos/message-client.dto';
+import {
+  CursorPaginationQueryDto,
+  CursorPageMetaDto,
+  PaginatedResult,
+} from '../presentation/dtos/pagination.dto';
 import { TurnStreamFactory } from './turn-stream.factory';
 import { OrchestrationRpcExceptionFilter } from '../presentation/filters/orchestration-exception.filter';
 import {
@@ -71,6 +77,15 @@ export class ChatService {
     const safePrompt = this.injectionGuard
       ? this.injectionGuard.assertSafe(prompt)
       : prompt;
+
+    if (!session.title || session.title === 'Cuộc trò chuyện mới') {
+      const generatedTitle = this.generateConversationTitle(safePrompt);
+      if (this.sessionManager.updateTitle) {
+        void this.sessionManager.updateTitle(session.id, generatedTitle).catch((err) => {
+          this.logger.warn(`Không thể cập nhật tiêu đề cuộc trò chuyện: ${(err as Error)?.message}`);
+        });
+      }
+    }
 
     const userMessage = await this.messages.addUserMessage({
       conversationId: session.conversationId,
@@ -153,6 +168,31 @@ export class ChatService {
       beforeMessageId: '',
       limit: HISTORY_LIMIT,
     });
+  }
+
+  async listConversations(
+    query?: CursorPaginationQueryDto,
+  ): Promise<PaginatedResult<IConversationSummary, CursorPageMetaDto>> {
+    if (!this.sessionManager.listRecent) {
+      return {
+        data: [],
+        meta: new CursorPageMetaDto(query?.limit ?? 30, undefined, false),
+      };
+    }
+    const result = await this.sessionManager.listRecent({
+      cursor: query?.cursor,
+      limit: query?.limit,
+    });
+    return {
+      data: result.data,
+      meta: new CursorPageMetaDto(result.meta.limit, result.meta.nextCursor, result.meta.hasMore),
+    };
+  }
+
+  private generateConversationTitle(prompt: string): string {
+    const singleLine = prompt.replace(/\s+/g, ' ').trim();
+    if (singleLine.length <= 40) return singleLine;
+    return `${singleLine.slice(0, 40)}...`;
   }
 
   private toHttpException(error: unknown): HttpException {

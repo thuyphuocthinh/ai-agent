@@ -558,15 +558,187 @@ export const PLAYGROUND_HTML = /* html */ `<!doctype html>
     font-family: var(--font-mono);
     padding: 0 4px;
   }
+
+  /* Layout: App Body & Sidebar */
+  .app-body {
+    flex: 1;
+    display: flex;
+    overflow: hidden;
+    position: relative;
+  }
+  .sidebar {
+    width: 260px;
+    background: var(--panel);
+    border-right: 1px solid var(--line);
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    transition: width 0.2s ease, transform 0.2s ease;
+    overflow: hidden;
+  }
+  .sidebar.collapsed {
+    width: 0;
+    border-right: none;
+  }
+  .sidebar-header {
+    padding: 12px;
+    border-bottom: 1px solid var(--line-subtle);
+  }
+  .new-chat-btn {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    color: var(--text);
+    padding: 8px 12px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .new-chat-btn:hover {
+    background: var(--accent);
+    color: var(--accent-text);
+  }
+  .sidebar-section-title {
+    padding: 12px 14px 6px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+  }
+  .conversations-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 6px 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .conv-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    color: var(--text-dim);
+    font-size: 13px;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+    border: 1px solid transparent;
+  }
+  .conv-item:hover {
+    background: var(--surface);
+    color: var(--text);
+  }
+  .conv-item.active {
+    background: var(--surface);
+    color: var(--text);
+    font-weight: 500;
+    border-color: var(--line);
+  }
+  .conv-icon {
+    flex-shrink: 0;
+    color: var(--text-muted);
+  }
+  .conv-item.active .conv-icon {
+    color: var(--accent);
+  }
+  .conv-title {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .conv-empty {
+    font-size: 12px;
+    color: var(--text-muted);
+    padding: 24px 12px;
+    text-align: center;
+    font-family: var(--font-mono);
+  }
+  .chat-main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    position: relative;
+    width: 100%;
+  }
+  .badge-db {
+    font-size: 11px;
+    font-family: var(--font-mono);
+    color: var(--ok);
+    background: rgba(16, 185, 129, 0.08);
+    border: 1px solid rgba(16, 185, 129, 0.2);
+    padding: 2px 8px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .db-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--ok);
+  }
+  .icon-btn {
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 6px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s ease;
+  }
+  .icon-btn:hover {
+    color: var(--text);
+    background: var(--surface);
+    border-color: var(--line);
+  }
+  @media (max-width: 768px) {
+    .sidebar {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: 0;
+      z-index: 50;
+      box-shadow: 4px 0 24px rgba(0,0,0,0.5);
+    }
+    .sidebar.collapsed {
+      transform: translateX(-100%);
+      width: 260px;
+    }
+  }
 </style>
 </head>
 <body>
 <header>
-  <div class="brand">
-    <span>Agent Playground</span>
-    <span class="brand-tag">/ multi-agent</span>
+  <div style="display:flex;align-items:center;gap:10px;">
+    <button id="toggle-sidebar" class="icon-btn" title="Đóng/Mở lịch sử" type="button">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+        <line x1="9" y1="3" x2="9" y2="21"></line>
+      </svg>
+    </button>
+    <div class="brand">
+      <span>Agent Playground</span>
+      <span class="brand-tag">/ multi-agent</span>
+    </div>
   </div>
   <div style="display:flex;align-items:center;gap:12px;">
+    <div class="badge-db" title="Dữ liệu phiên và tin nhắn được lưu vĩnh viễn trong PostgreSQL">
+      <span class="db-dot"></span> PostgreSQL Synced
+    </div>
     <select id="workflow-select" style="background:#1e1e24;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer;outline:none;">
       <option value="">Chế độ: Auto (Dynamic Supervisor)</option>
     </select>
@@ -574,37 +746,57 @@ export const PLAYGROUND_HTML = /* html */ `<!doctype html>
   </div>
 </header>
 
-<div id="log">
-  <div class="hint-empty">Gõ câu hỏi bên dưới để bắt đầu hội thoại với Agent.</div>
-</div>
+<div class="app-body">
+  <aside id="sidebar" class="sidebar">
+    <div class="sidebar-header">
+      <button id="new-chat-btn" class="new-chat-btn" type="button">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <line x1="12" y1="5" x2="12" y2="19"></line>
+          <line x1="5" y1="12" x2="19" y2="12"></line>
+        </svg>
+        <span>Cuộc trò chuyện mới</span>
+      </button>
+    </div>
+    <div class="sidebar-section-title">Lịch sử trò chuyện</div>
+    <div id="conversations-list" class="conversations-list">
+      <div class="conv-empty">Đang tải lịch sử...</div>
+    </div>
+  </aside>
 
-<footer>
-  <div id="workflow-progress" class="workflow-progress" style="display: none;">
-    <div class="progress-header">
-      <div class="progress-title">
-        <span class="status-dot"></span> Tiến độ: <span class="progress-percent" id="global-progress-percent">0%</span>
+  <main class="chat-main">
+    <div id="log">
+      <div class="hint-empty">Gõ câu hỏi bên dưới để bắt đầu hội thoại với Agent.</div>
+    </div>
+
+    <footer>
+      <div id="workflow-progress" class="workflow-progress" style="display: none;">
+        <div class="progress-header">
+          <div class="progress-title">
+            <span class="status-dot"></span> Tiến độ: <span class="progress-percent" id="global-progress-percent">0%</span>
+          </div>
+          <span class="progress-count" id="global-progress-count">Sẵn sàng</span>
+        </div>
+        <div class="progress-track">
+          <div class="progress-fill" id="global-progress-fill"></div>
+        </div>
+        <div class="progress-desc" id="global-progress-desc">Đang chuẩn bị...</div>
       </div>
-      <span class="progress-count" id="global-progress-count">Sẵn sàng</span>
-    </div>
-    <div class="progress-track">
-      <div class="progress-fill" id="global-progress-fill"></div>
-    </div>
-    <div class="progress-desc" id="global-progress-desc">Đang chuẩn bị...</div>
-  </div>
-  <form id="form">
-    <textarea id="prompt" rows="1" placeholder="Nhập câu hỏi... (Enter để gửi, Shift+Enter xuống dòng)"></textarea>
-    <button id="send" type="button" aria-label="Gửi">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-        <line x1="12" y1="19" x2="12" y2="5"></line>
-        <polyline points="5 12 12 5 19 12"></polyline>
-      </svg>
-    </button>
-  </form>
-  <div class="form-hint">
-    <span>Enter to send, Shift+Enter for new line</span>
-    <span>Multi-Agent Engine</span>
-  </div>
-</footer>
+      <form id="form">
+        <textarea id="prompt" rows="1" placeholder="Nhập câu hỏi... (Enter để gửi, Shift+Enter xuống dòng)"></textarea>
+        <button id="send" type="button" aria-label="Gửi">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <line x1="12" y1="19" x2="12" y2="5"></line>
+            <polyline points="5 12 12 5 19 12"></polyline>
+          </svg>
+        </button>
+      </form>
+      <div class="form-hint">
+        <span>Enter to send, Shift+Enter for new line</span>
+        <span>Multi-Agent Engine</span>
+      </div>
+    </footer>
+  </main>
+</div>
 
 <script>
 (function () {
@@ -656,6 +848,9 @@ export const PLAYGROUND_HTML = /* html */ `<!doctype html>
   var progressCount = document.getElementById('global-progress-count');
   var progressTimer = null;
   var sessionId = null;
+  try {
+    sessionId = localStorage.getItem('agent_playground_session_id') || null;
+  } catch (e) {}
   var busy = false;
   var LF = String.fromCharCode(10);
   var CRLF = String.fromCharCode(13, 10);
@@ -1355,7 +1550,15 @@ export const PLAYGROUND_HTML = /* html */ `<!doctype html>
     try {
       var response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       var session = response.headers.get('x-playground-session');
-      if (session) { sessionId = session; statusEl.textContent = 'session: ' + session.slice(0, 8); }
+      if (session) {
+        var isNewSession = !sessionId || sessionId !== session;
+        sessionId = session;
+        try { localStorage.setItem('agent_playground_session_id', session); } catch (e) {}
+        statusEl.textContent = 'session: ' + session.slice(0, 8);
+        if (isNewSession) {
+          loadConversations();
+        }
+      }
       if (!response.ok || !response.body) {
         if (progressTimer) clearTimeout(progressTimer);
         if (progressWrap) progressWrap.style.display = 'none';
@@ -1387,6 +1590,7 @@ export const PLAYGROUND_HTML = /* html */ `<!doctype html>
     } finally {
       setBusy(false);
       scroll();
+      loadConversations();
     }
   }
 
@@ -1429,6 +1633,240 @@ export const PLAYGROUND_HTML = /* html */ `<!doctype html>
       e.preventDefault();
       submit();
     });
+  }
+
+  function highlightActiveConversation(id) {
+    var items = document.querySelectorAll('.conv-item');
+    Array.prototype.forEach.call(items, function (it) {
+      if (it.getAttribute('data-id') === id) {
+        it.classList.add('active');
+      } else {
+        it.classList.remove('active');
+      }
+    });
+  }
+
+  function renderConversations(list) {
+    var container = document.getElementById('conversations-list');
+    if (!container) return;
+    container.innerHTML = '';
+    if (!list || list.length === 0) {
+      container.appendChild(el('div', 'conv-empty', 'Chưa có cuộc trò chuyện nào'));
+      return;
+    }
+    list.forEach(function (conv) {
+      var item = el('div', 'conv-item' + (conv.id === sessionId ? ' active' : ''));
+      item.setAttribute('data-id', conv.id);
+      item.title = conv.title || 'Cuộc trò chuyện mới';
+
+      var titleText = conv.title || 'Cuộc trò chuyện mới';
+      item.innerHTML = '<svg class="conv-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg><span class="conv-title"></span>';
+      var titleSpan = item.querySelector('.conv-title');
+      if (titleSpan) titleSpan.textContent = titleText;
+
+      item.onclick = function () {
+        switchConversation(conv.id);
+      };
+      container.appendChild(item);
+    });
+  }
+
+  function loadConversations() {
+    fetch('/api/conversations?limit=30')
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        var list = (res && res.data) || [];
+        renderConversations(list);
+      })
+      .catch(function (e) {
+        console.warn('Lỗi lấy danh sách cuộc trò chuyện:', e);
+      });
+  }
+
+  function startNewChat() {
+    if (busy) return;
+    sessionId = null;
+    try { localStorage.removeItem('agent_playground_session_id'); } catch (e) {}
+    statusEl.textContent = 'phiên mới';
+    log.innerHTML = '';
+    log.appendChild(el('div', 'hint-empty', 'Gõ câu hỏi bên dưới để bắt đầu hội thoại với Agent.'));
+    highlightActiveConversation(null);
+    promptBox.value = '';
+    promptBox.focus();
+  }
+
+  function switchConversation(id) {
+    if (busy || id === sessionId) return;
+    sessionId = id;
+    try { localStorage.setItem('agent_playground_session_id', id); } catch (e) {}
+    statusEl.textContent = 'session: ' + id.slice(0, 8);
+    highlightActiveConversation(id);
+    loadHistory(id);
+  }
+
+  function createHistoryToolElement(tc) {
+    var isError = tc.status === 'error' || tc.status === 'failed';
+    var d = el('details', 'tool ' + (isError ? 'error' : 'done'));
+    var sum = el('summary', 'tool-summary');
+    sum.innerHTML = '<svg class="chevron" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><polyline points="9 18 15 12 9 6"></polyline></svg><span class="tool-title">' + escapeHtml(tc.tool) + '</span><span class="tool-name-tag">' + escapeHtml(tc.status || 'success') + '</span>';
+    d.appendChild(sum);
+
+    var b = el('div', 'tool-body');
+    if (tc.argsPreview) {
+      var tech = el('details', 'technical-details');
+      tech.appendChild(el('summary', 'technical-summary', '› View raw statement'));
+      tech.appendChild(el('pre', 'code-box', pretty(tc.argsPreview)));
+      b.appendChild(tech);
+    }
+    if (tc.resultPreview) {
+      var out = el('div', 'tool-output');
+      out.appendChild(el('pre', 'code-box', pretty(tc.resultPreview)));
+      b.appendChild(out);
+    }
+    d.appendChild(b);
+    return d;
+  }
+
+  function groupToolsByProvider(toolCalls, personas) {
+    if (!Array.isArray(toolCalls) || toolCalls.length === 0) return [];
+    var providerMap = {};
+    var providerOrder = [];
+    toolCalls.forEach(function (tc) {
+      var dotIdx = tc.tool ? tc.tool.indexOf('.') : -1;
+      var provider = dotIdx !== -1 ? tc.tool.slice(0, dotIdx) : 'general';
+      if (!providerMap[provider]) {
+        providerMap[provider] = [];
+        providerOrder.push(provider);
+      }
+      providerMap[provider].push(tc);
+    });
+
+    var personaList = Array.isArray(personas) ? personas.slice() : [];
+    return providerOrder.map(function (prov, idx) {
+      var p = personaList[idx] || null;
+      var friendlyRole = p && p.role ? p.role : (prov.charAt(0).toUpperCase() + prov.slice(1).replace(/_/g, ' ') + ' Agent');
+      var friendlyGoal = p && p.goal ? p.goal : ('Xử lý các tác vụ liên quan đến ' + prov);
+      return {
+        agent: prov,
+        task: friendlyGoal,
+        persona: { role: friendlyRole, goal: friendlyGoal },
+        toolCalls: providerMap[prov]
+      };
+    });
+  }
+
+  function loadHistory(sid) {
+    if (!sid) return;
+    setBusy(true);
+    fetch('/api/history?sessionId=' + encodeURIComponent(sid))
+      .then(function (r) {
+        if (!r.ok) throw new Error('Không thể tải lịch sử phiên');
+        return r.json();
+      })
+      .then(function (res) {
+        var turns = [];
+        if (res) {
+          if (Array.isArray(res)) turns = res;
+          else if (Array.isArray(res.turns)) turns = res.turns;
+          else if (res.data) {
+            if (Array.isArray(res.data.turns)) turns = res.data.turns;
+            else if (Array.isArray(res.data)) turns = res.data;
+          }
+        }
+        log.innerHTML = '';
+        if (turns.length === 0) {
+          log.appendChild(el('div', 'hint-empty', 'Cuộc trò chuyện chưa có tin nhắn. Gõ câu hỏi bên dưới để bắt đầu.'));
+          return;
+        }
+        turns.forEach(function (turn) {
+          if (turn.role === 'user') {
+            log.appendChild(el('div', 'msg user', turn.text));
+          } else {
+            var msgWrap = el('div', 'msg');
+            var botBox = el('div', 'bot');
+            var meta = turn.metadata || {};
+
+            // 1. Phục dựng các execution steps (mỗi Persona Card bọc các tool calls của riêng nó)
+            var steps = meta.steps;
+            if (!steps && Array.isArray(meta.toolCalls) && meta.toolCalls.length > 0) {
+              steps = groupToolsByProvider(meta.toolCalls, meta.personas || (meta.persona ? [meta.persona] : []));
+            }
+
+            if (Array.isArray(steps) && steps.length > 0) {
+              var gridEl = el('div', 'agents-grid');
+              steps.forEach(function (step) {
+                var card = el('div', 'agent-card');
+                var header = el('div', 'agent-header');
+                var left = el('div', 'agent-info');
+                var badge = el('span', 'agent-badge');
+                badge.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2 2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"/><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M2 14h2M20 14h2M9 13v2M15 13v2"/></svg>';
+                left.appendChild(badge);
+
+                var p = step.persona || {};
+                var titles = el('div', 'agent-titles');
+                titles.appendChild(el('div', 'agent-role', p.role || step.agent || 'Agent'));
+                var goalText = p.goal || step.task || '';
+                if (goalText) titles.appendChild(el('div', 'agent-goal', goalText));
+                left.appendChild(titles);
+                header.appendChild(left);
+
+                var statusTag = el('span', 'agent-status done', 'Hoàn thành');
+                header.appendChild(statusTag);
+                card.appendChild(header);
+
+                // Body của Card chứa trực tiếp các Tool calls thuộc về Agent/Persona này!
+                var cardBody = el('div', 'agent-body');
+                if (Array.isArray(step.toolCalls) && step.toolCalls.length > 0) {
+                  step.toolCalls.forEach(function (tc) {
+                    cardBody.appendChild(createHistoryToolElement(tc));
+                  });
+                }
+                card.appendChild(cardBody);
+                gridEl.appendChild(card);
+              });
+              botBox.appendChild(gridEl);
+            }
+
+            var wrap = el('div', 'final-wrapper');
+            var head = el('div', 'final-header');
+            head.appendChild(el('span', 'final-title', '✨ Câu trả lời'));
+            wrap.appendChild(head);
+            var body = el('div', 'final-body');
+            body.innerHTML = renderMarkdown(turn.text);
+            wrap.appendChild(body);
+            botBox.appendChild(wrap);
+            msgWrap.appendChild(botBox);
+            log.appendChild(msgWrap);
+          }
+        });
+        scroll();
+      })
+      .catch(function (e) {
+        console.warn('Lỗi khôi phục lịch sử:', e);
+        startNewChat();
+      })
+      .finally(function () {
+        setBusy(false);
+      });
+  }
+
+  var toggleSidebarBtn = document.getElementById('toggle-sidebar');
+  var sidebarEl = document.getElementById('sidebar');
+  if (toggleSidebarBtn && sidebarEl) {
+    toggleSidebarBtn.onclick = function () {
+      sidebarEl.classList.toggle('collapsed');
+    };
+  }
+
+  var newChatBtn = document.getElementById('new-chat-btn');
+  if (newChatBtn) {
+    newChatBtn.onclick = startNewChat;
+  }
+
+  loadConversations();
+  if (sessionId) {
+    statusEl.textContent = 'session: ' + sessionId.slice(0, 8);
+    loadHistory(sessionId);
   }
 })();
 </script>

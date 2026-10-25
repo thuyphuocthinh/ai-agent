@@ -19,6 +19,7 @@ export interface MessageEvent {
 }
 
 export interface IMessageSink {
+  onMessage(listener: (event: MessageEvent) => void): () => void;
   getMessageText(dto: GetMessageTextRequestDto): Promise<string>;
   getRecentHistory(dto: GetRecentHistoryRequestDto): Promise<ChatHistoryTurnDto[]>;
   createMessage(

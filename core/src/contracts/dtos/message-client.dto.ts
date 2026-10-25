@@ -1,4 +1,5 @@
 import { EStepExecutionStatus, EMessageRole } from '@agent/core/constants';
+import { PersonaDto } from './supervisor.dto';
 export class CreateOrchestrationMessageRequestDto {
   channelId?: string;
   conversationId?: string;
@@ -13,17 +14,31 @@ export class CreateOrchestrationMessageResponseDto {
   id: string;
 }
 
+export interface IMessageToolCallItem {
+  tool: string;
+  status: EStepExecutionStatus;
+  resultPreview?: string;
+  argsPreview?: string;
+}
+
+export class ExecutedStepDto {
+  agent: string;
+  task: string;
+  persona?: PersonaDto;
+  toolCalls: IMessageToolCallItem[];
+  result?: string;
+}
+
 export class UpdateOrchestrationMessageRequestDto {
   id: string;
   userId?: string;
   // object — Giai đoạn 3 (HITL) cần re-send content dạng object khi update
   // message "approval_request" kèm toolCalls (xem pauseForApproval()).
   content: string | Record<string, unknown>;
-  toolCalls?: {
-    tool: string;
-    status: EStepExecutionStatus;
-    resultPreview?: string;
-  }[];
+  toolCalls?: IMessageToolCallItem[];
+  steps?: ExecutedStepDto[];
+  persona?: PersonaDto;
+  personas?: PersonaDto[];
   // Optional: ghi nhớ channel_memory / conversation_memory
   channelId?: string;
   conversationId?: string;
@@ -49,6 +64,9 @@ export class GetRecentHistoryRequestDto {
 }
 
 export class ChatHistoryTurnDto {
+  id?: string;
   role: EMessageRole;
   text: string;
+  metadata?: Record<string, unknown>;
+  createdAt?: Date;
 }

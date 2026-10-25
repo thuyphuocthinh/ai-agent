@@ -65,6 +65,31 @@ export class InMemoryChatSessionManager implements IChatSessionManager {
     }
     return EConversationState.AI_ACTIVE;
   }
+
+  listRecent(options?: { cursor?: string; limit?: number }) {
+    const list = Array.from(this.sessions.values())
+      .sort((a, b) => (b.lastSeenAt?.getTime() ?? 0) - (a.lastSeenAt?.getTime() ?? 0))
+      .slice(0, options?.limit ?? 30)
+      .map((s) => ({
+        id: s.id,
+        title: s.title || 'Cuộc trò chuyện mới',
+        state: s.state || EConversationState.AI_ACTIVE,
+        lastSeenAt: s.lastSeenAt || new Date(),
+        createdAt: s.createdAt || new Date(),
+      }));
+    return Promise.resolve({
+      data: list,
+      meta: { limit: options?.limit ?? 30, hasMore: false },
+    });
+  }
+
+  updateTitle(sessionId: string, title: string) {
+    const session = this.sessions.get(sessionId);
+    if (session) {
+      session.title = title.trim();
+    }
+    return Promise.resolve();
+  }
 }
 
 /**

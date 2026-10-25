@@ -15,8 +15,11 @@ import {
 import { InMemoryAuditStore } from './adapters/in-memory-audit.store';
 import { InMemoryIdempotencyStore } from './adapters/in-memory-idempotency.store';
 import { InMemoryEscalationStore } from './adapters/in-memory-escalation.store';
+import { PrismaAuditStore } from './adapters/prisma-audit.store';
+import { DatabaseModule } from '../infrastructure/database/database.module';
 
 @Module({
+  imports: [DatabaseModule],
   providers: [
     PromptInjectionGuard,
     ProviderPreflightGuard,
@@ -29,9 +32,10 @@ import { InMemoryEscalationStore } from './adapters/in-memory-escalation.store';
     InMemoryAuditStore,
     InMemoryIdempotencyStore,
     InMemoryEscalationStore,
+    PrismaAuditStore,
     {
       provide: AUDIT_STORE,
-      useClass: InMemoryAuditStore,
+      useClass: PrismaAuditStore,
     },
     {
       provide: IDEMPOTENCY_STORE,
@@ -57,6 +61,7 @@ import { InMemoryEscalationStore } from './adapters/in-memory-escalation.store';
     InMemoryAuditStore,
     InMemoryIdempotencyStore,
     InMemoryEscalationStore,
+    PrismaAuditStore,
   ],
 })
 export class SecurityModule {}

@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { CachedService } from '@agent/core/infrastructure/redis';
-import { DatabaseHealthService } from '@agent/core/infrastructure/database';
+import { DatabaseHealthService } from '../infrastructure/database/database-health.service';
 import { QueueService, EQueueName } from '@agent/core/infrastructure/queue';
 import { HealthCheckService } from './health-check.service';
 import { CircuitBreakerService } from './circuit-breaker.service';

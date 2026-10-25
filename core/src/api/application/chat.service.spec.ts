@@ -454,5 +454,28 @@ describe('ChatService', () => {
       expect(listenerCount()).toBe(0);
     });
   });
+
+  describe('listConversations & title auto-generation', () => {
+    it('liệt kê danh sách các cuộc hội thoại từ session manager', async () => {
+      const turn1 = await service.chat('Tra cứu thông tin sản phẩm và đơn hàng');
+      await turn1.cancel();
+
+      const result = await service.listConversations({ limit: 10 });
+      expect(result.data).toBeDefined();
+      expect(result.data.length).toBeGreaterThanOrEqual(1);
+      expect(result.data[0].title).toBe('Tra cứu thông tin sản phẩm và đơn hàng');
+      expect(result.meta.limit).toBe(10);
+      expect(result.meta.hasMore).toBe(false);
+    });
+
+    it('tự động cắt ngắn tiêu đề nếu prompt dài hơn 40 ký tự', async () => {
+      const longPrompt = 'Đây là một câu prompt rất dài vượt quá 40 ký tự để kiểm tra tính năng cắt ngắn tiêu đề tự động';
+      const turn = await service.chat(longPrompt);
+      await turn.cancel();
+
+      const result = await service.listConversations();
+      expect(result.data[0].title).toBe('Đây là một câu prompt rất dài vượt quá 4...');
+    });
+  });
 });
 

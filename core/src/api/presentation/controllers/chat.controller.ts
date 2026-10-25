@@ -22,6 +22,10 @@ import {
   ChatRequestDto,
   HistoryQueryDto,
   HistoryResponseDto,
+  CursorPaginationQueryDto,
+  CursorPageMetaDto,
+  PaginatedResult,
+  ConversationItemDto,
 } from '../dtos';
 import { BypassTransform } from '../decorators/bypass-transform.decorator';
 import { ChatService } from '../../application/chat.service';
@@ -88,5 +92,25 @@ export class ChatController {
   async history(@Query() query: HistoryQueryDto): Promise<HistoryResponseDto> {
     const turns = await this.chatService.history(query.sessionId);
     return new HistoryResponseDto(turns);
+  }
+
+  @Get('conversations')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Lấy danh sách các cuộc trò chuyện gần nhất',
+    description:
+      'Truy vấn danh sách các phiên hội thoại được lưu trữ trong PostgreSQL với phân trang cursor.',
+  })
+  @ApiOkResponse({
+    description: 'Danh sách các cuộc trò chuyện gần nhất kèm metadata phân trang con trỏ',
+  })
+  async conversations(
+    @Query() query: CursorPaginationQueryDto,
+  ): Promise<PaginatedResult<ConversationItemDto, CursorPageMetaDto>> {
+    const result = await this.chatService.listConversations(query);
+    return {
+      data: result.data.map((item) => new ConversationItemDto(item)),
+      meta: result.meta,
+    };
   }
 }

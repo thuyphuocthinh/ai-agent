@@ -10,7 +10,7 @@ import { RpcException } from '@nestjs/microservices';
 import { randomUUID } from 'crypto';
 import { ApiErrorResponseDto } from '../dtos/api-error-response.dto';
 import { ORCHESTRATION_ERROR } from '@agent/core/constants';
-import { isBaseDomainException } from '../../../common/errors';
+import { isBaseDomainException, sanitizePrismaError } from '../../../common/errors';
 
 interface HttpResponse {
   status(code: number): HttpResponse;
@@ -101,6 +101,22 @@ export class AllExceptionsFilter implements ExceptionFilter {
           status = HttpStatus.BAD_REQUEST;
           break;
       }
+    } else if (
+      exception &&
+      typeof exception === 'object' &&
+      ('constructor' in exception &&
+        (exception.constructor.name.startsWith('PrismaClient') ||
+          (exception as Error).name?.startsWith('PrismaClient')))
+    ) {
+      // Phòng thủ chiều sâu: Bắt mọi lỗi Prisma chưa qua bọc adapter, khử 100% chi tiết SQL/Schema
+      const sanitized = sanitizePrismaError(exception, path);
+      status = sanitized.statusCode;
+      code = sanitized.code;
+      message = sanitized.userFriendlyMessage || sanitized.message;
+      this.logger.error(
+        `[Prisma Global Intercept] ${request?.method || 'HTTP'} ${path} - ${status} [${code}] - Đã làm sạch lỗi Prisma/SQL`,
+        (exception as Error)?.stack,
+      );
     } else {
       this.logger.error(
         `${request?.method || 'HTTP'} ${path} - ${status} - ${(exception as Error)?.message}`,

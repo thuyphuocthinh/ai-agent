@@ -14,10 +14,14 @@ import { IStreamSink } from '../../contracts';
 import {
   AvailableAgentDto,
   DelegationDto,
+  PersonaDto,
   SupervisorRoundDto,
 } from '../../contracts/dtos/supervisor.dto';
 import { ToolCallTraceDto } from '../../contracts/dtos/react-loop.dto';
-import { ChatHistoryTurnDto } from '../../contracts/dtos/message-client.dto';
+import {
+  ChatHistoryTurnDto,
+  ExecutedStepDto,
+} from '../../contracts/dtos/message-client.dto';
 import { ApprovalRequiredError } from '../loop/approval-required.error';
 import { AgentCancellationService } from '../cancellation/agent-cancellation.service';
 import { runCancellable } from '../../common/cancellable-run.util';
@@ -97,6 +101,7 @@ export class TurnResolverRun {
   private readonly history: ChatHistoryTurnDto[];
   private readonly rounds: SupervisorRoundDto[];
   private readonly toolCalls: ToolCallTraceDto[];
+  private readonly executionSteps: ExecutedStepDto[] = [];
   private readonly signal?: AbortSignal;
   // Kết quả các round ĐÃ CÓ trước khi lượt chạy này bắt đầu (resume sau HITL:
   // toolCalls bắt đầu rỗng nhưng rounds mang kết quả cũ) — chỉ chúng mới được
@@ -324,6 +329,7 @@ export class TurnResolverRun {
           plan.answer ||
             `Mình chưa thể xử lý yêu cầu này với các kết nối hiện có (Tên hệ thống mà AI đang cố gọi: "${attemptedAgents}" - Vui lòng đổi tên hoặc viết đúng tên). Vào Settings để kết nối agent phù hợp nhé.`,
           this.toolCalls,
+          this.executionSteps,
         ),
       };
     }
@@ -401,6 +407,13 @@ export class TurnResolverRun {
           },
         );
         if (res) this.toolCalls.push(...res.toolCalls);
+        this.executionSteps.push({
+          agent: s.agent,
+          task: s.task,
+          persona: sanitizePersona(s.persona),
+          toolCalls: res?.toolCalls ?? [],
+          result: res?.round?.result,
+        });
       }
 
       const approvalResult = results[approvalIdx] as ApprovalRequiredDelegateResult;
@@ -409,6 +422,12 @@ export class TurnResolverRun {
 
       this.realStepsRun = startRealSteps + approvalIdx + 1;
       this.toolCalls.push(...approvalResult.toolCalls);
+      this.executionSteps.push({
+        agent: pendingStep.agent,
+        task: pendingStep.task,
+        persona: sanitizePersona(pendingStep.persona),
+        toolCalls: approvalResult.toolCalls,
+      });
       const preApproval = this.buildPreApprovalRound(
         pendingStep,
         approvalResult.toolCalls,
@@ -449,6 +468,13 @@ export class TurnResolverRun {
 
       this.rounds.push(completedRound);
       if (result) this.toolCalls.push(...result.toolCalls);
+      this.executionSteps.push({
+        agent: step.agent,
+        task: step.task,
+        persona: sanitizePersona(step.persona),
+        toolCalls: result?.toolCalls ?? [],
+        result: completedRound.result,
+      });
     }
 
     const lastRound = this.rounds[this.rounds.length - 1];
@@ -523,6 +549,7 @@ export class TurnResolverRun {
     return buildAnswer(
       await this.appendDisclaimers(finalAnswer),
       this.toolCalls,
+      this.executionSteps,
     );
   }
 
@@ -535,6 +562,7 @@ export class TurnResolverRun {
       return buildAnswer(
         await this.appendDisclaimers(this.rounds[0].result),
         this.toolCalls,
+        this.executionSteps,
       );
     }
     if (this.rounds.length > 1) {
@@ -582,11 +610,13 @@ export class TurnResolverRun {
       return buildAnswer(
         await this.appendDisclaimers(finalAnswer),
         this.toolCalls,
+        this.executionSteps,
       );
     }
     return buildAnswer(
       answerHint || 'Xin lỗi, mình chưa có câu trả lời phù hợp.',
       this.toolCalls,
+      this.executionSteps,
     );
   }
 

@@ -284,10 +284,19 @@ describe('TurnResolverService (Plan-and-Execute, xem accuracy.md)', () => {
       [],
       expect.any(Object),
     );
-    expect(result).toEqual({
-      content: 'Có 2 bảng.',
-      toolCalls: [{ tool: 'get_database_schema', status: 'success' }],
-    });
+    expect(result).toEqual(
+      expect.objectContaining({
+        content: 'Có 2 bảng.',
+        toolCalls: [{ tool: 'get_database_schema', status: 'success' }],
+        steps: [
+          expect.objectContaining({
+            agent: 'sql_server',
+            task: 'liệt kê bảng',
+            result: 'Có 2 bảng.',
+          }),
+        ],
+      }),
+    );
   });
 
   it('falls back to the original user prompt when a step has no "task" text of its own', async () => {

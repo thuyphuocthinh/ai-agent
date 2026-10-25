@@ -1,11 +1,15 @@
 import { ToolCallTraceDto } from '../../contracts/dtos/react-loop.dto';
-import { SupervisorRoundDto } from '../../contracts/dtos/supervisor.dto';
+import { PersonaDto, SupervisorRoundDto } from '../../contracts/dtos/supervisor.dto';
+import { ExecutedStepDto } from '../../contracts/dtos/message-client.dto';
 import { PendingToolCall } from '../../infrastructure/database/entities/orchestration-checkpoint.entity';
 
 // Object content (approval_request) đi qua createMessage() riêng, không qua đây.
 export interface AnswerResult {
   content: string;
   toolCalls?: ToolCallTraceDto[];
+  steps?: ExecutedStepDto[];
+  persona?: PersonaDto;
+  personas?: PersonaDto[];
 }
 
 export interface DelegateRoundResult {
@@ -24,6 +28,18 @@ export interface ApprovalRequiredDelegateResult {
 export function buildAnswer(
   content: string,
   toolCalls: ToolCallTraceDto[],
+  steps?: ExecutedStepDto[],
 ): AnswerResult {
-  return { content, toolCalls: toolCalls.length > 0 ? toolCalls : undefined };
+  const personas = steps
+    ?.map((s) => s.persona)
+    .filter((p): p is PersonaDto => Boolean(p));
+
+  const result: AnswerResult = { content };
+  if (toolCalls.length > 0) result.toolCalls = toolCalls;
+  if (steps && steps.length > 0) result.steps = steps;
+  if (personas && personas.length > 0) {
+    result.persona = personas[0];
+    result.personas = personas;
+  }
+  return result;
 }

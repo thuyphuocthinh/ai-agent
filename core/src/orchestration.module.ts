@@ -3,6 +3,13 @@ import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { DatabaseModule } from './infrastructure/database/database.module';
+import {
+  PrismaChatSessionManager,
+  PrismaMessageSink,
+  PrismaCheckpointService,
+  PrismaTriggerClaimService,
+  PrismaWorkflowStore,
+} from './infrastructure/database';
 import { CachedModule } from './infrastructure/redis/redis.module';
 import { QueueModule } from './infrastructure/queue/queue.module';
 import { EQueueName } from './infrastructure/queue';
@@ -105,9 +112,11 @@ import { SecurityModule } from './security';
   ],
   controllers: [ChatController, WorkflowController],
   providers: [
+    PrismaChatSessionManager,
+    InMemoryChatSessionManager,
     {
       provide: CHAT_SESSION_MANAGER,
-      useClass: InMemoryChatSessionManager,
+      useExisting: PrismaChatSessionManager,
     },
     {
       provide: ChatSessionManager,
@@ -127,7 +136,11 @@ import { SecurityModule } from './security';
     OpenAiStrategy,
     AnthropicStrategy,
     MockStrategy,
-    CheckpointService,
+    PrismaCheckpointService,
+    {
+      provide: CheckpointService,
+      useExisting: PrismaCheckpointService,
+    },
     CheckpointCleanupService,
     ConversationMemoryService,
     ConversationMemoryCleanupService,
@@ -135,16 +148,21 @@ import { SecurityModule } from './security';
     OpenAiEmbeddingProvider,
     SkillService,
     SkillRetrievalService,
-    TriggerClaimService,
+    PrismaTriggerClaimService,
+    {
+      provide: TriggerClaimService,
+      useExisting: PrismaTriggerClaimService,
+    },
     CircuitBreakerService,
     ProviderConcurrencyLimiterService,
     AgentCancellationService,
     TurnResolverService,
+    PrismaWorkflowStore,
     WorkflowRegistryService,
     WorkflowRunnerService,
     {
       provide: WORKFLOW_REGISTRY,
-      useExisting: WorkflowRegistryService,
+      useExisting: PrismaWorkflowStore,
     },
     {
       provide: WORKFLOW_RUNNER,
@@ -155,11 +173,15 @@ import { SecurityModule } from './security';
     ApprovalExecutionService,
     ApprovalContinuationPlannerService,
     ApprovalSkillRecorderService,
-    MessageClientService,
+    PrismaMessageSink,
+    {
+      provide: MessageClientService,
+      useExisting: PrismaMessageSink,
+    },
     AgentStreamService,
     {
       provide: MESSAGE_SINK,
-      useExisting: MessageClientService,
+      useExisting: PrismaMessageSink,
     },
     {
       provide: STREAM_SINK,
@@ -221,8 +243,14 @@ import { SecurityModule } from './security';
     LlmStrategyFactory,
     MessageClientService,
     AgentStreamService,
+    PrismaChatSessionManager,
+    PrismaMessageSink,
+    PrismaCheckpointService,
+    PrismaTriggerClaimService,
+    PrismaWorkflowStore,
     MESSAGE_SINK,
     STREAM_SINK,
+    CHAT_SESSION_MANAGER,
     TOOL_PROVIDER,
     McpToolConnectorService,
     McpAuthClientService,

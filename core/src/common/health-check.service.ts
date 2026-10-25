@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { CachedService } from '@agent/core/infrastructure/redis';
-import { DatabaseHealthService } from '@agent/core/infrastructure/database';
+import { DatabaseHealthService } from '../infrastructure/database/database-health.service';
 import { QueueService, EQueueName } from '@agent/core/infrastructure/queue';
 import { HealthCheckResponseDto } from '../contracts/dtos/orchestration.dto';
 import { CircuitBreakerService } from './circuit-breaker.service';

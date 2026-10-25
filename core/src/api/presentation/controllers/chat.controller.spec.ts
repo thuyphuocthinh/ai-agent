@@ -20,7 +20,12 @@ const finishedTurn = (chunks: UIMessageChunk[]): TurnStream => ({
 });
 
 describe('ChatController', () => {
-  const service = { chat: jest.fn(), approve: jest.fn(), history: jest.fn() };
+  const service = {
+    chat: jest.fn(),
+    approve: jest.fn(),
+    history: jest.fn(),
+    listConversations: jest.fn(),
+  };
   let app: INestApplication;
   let base: string;
 
@@ -104,7 +109,10 @@ describe('ChatController', () => {
       await response.body!.getReader().read();
 
       abort.abort();
-      await new Promise((r) => setTimeout(r, 20));
+      for (let i = 0; i < 20; i++) {
+        if ((turn.cancel as jest.Mock).mock.calls.length > 0) break;
+        await new Promise((r) => setTimeout(r, 25));
+      }
       expect(turn.cancel).toHaveBeenCalled();
     });
   });
@@ -164,6 +172,40 @@ describe('ChatController', () => {
 
       const bad = await fetch(`${base}/api/history?sessionId=bad`);
       expect(bad.status).toBe(400);
+    });
+  });
+
+  describe('GET /api/conversations', () => {
+    it('trả về danh sách cuộc trò chuyện với cursor pagination', async () => {
+      service.listConversations.mockResolvedValue({
+        data: [
+          {
+            id: '01a171ed-5764-75bb-b455-73f7e34aed2b',
+            title: 'Hỏi về đơn hàng',
+            state: 'AI_ACTIVE',
+            lastSeenAt: new Date('2026-10-25T07:19:00Z'),
+            createdAt: new Date('2026-10-25T07:19:00Z'),
+          },
+        ],
+        meta: {
+          limit: 20,
+          nextCursor: undefined,
+          hasMore: false,
+        },
+      });
+
+      const response = await fetch(`${base}/api/conversations?limit=20`);
+      const body = (await response.json()) as { data: any[]; meta: any };
+
+      expect(response.status).toBe(200);
+      expect(body.data).toHaveLength(1);
+      expect(body.data[0].id).toBe('01a171ed-5764-75bb-b455-73f7e34aed2b');
+      expect(body.data[0].title).toBe('Hỏi về đơn hàng');
+      expect(body.meta.limit).toBe(20);
+      expect(body.meta.hasMore).toBe(false);
+      expect(service.listConversations).toHaveBeenCalledWith(
+        expect.objectContaining({ limit: 20 }),
+      );
     });
   });
 });
