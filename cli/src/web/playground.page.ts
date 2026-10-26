@@ -301,6 +301,7 @@ export const PLAYGROUND_HTML = /* html */ `<!doctype html>
   }
   summary.tool-summary:hover { background: var(--panel); }
   .tool-title { font-weight: 500; }
+  .tool-provider-badge { font-family: var(--font-mono); font-size: 10px; font-weight: 600; text-transform: uppercase; background: rgba(99, 102, 241, 0.15); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.3); padding: 1px 6px; border-radius: 4px; margin-right: 6px; letter-spacing: 0.5px; }
   .tool-name-tag { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); margin-left: auto; padding-left: 8px; }
   details.tool.done .tool-title::after { content: " • done"; color: var(--ok); font-family: var(--font-mono); font-size: 11px; font-weight: normal; }
   details.tool.error { border-color: var(--err); }
@@ -1235,10 +1236,34 @@ export const PLAYGROUND_HTML = /* html */ `<!doctype html>
       return bubble.lastAgent.body;
     }
     if (!bubble.step) {
-      bubble.step = el('div', 'agent-card');
+      bubble.step = el('div', 'agent-card single-agent-card');
+      var header = el('div', 'agent-header');
+      var left = el('div', 'agent-info');
+      var badge = el('span', 'agent-badge');
+      badge.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2 2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"/><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M2 14h2M20 14h2M9 13v2M15 13v2"/></svg>';
+      left.appendChild(badge);
+
+      var titles = el('div', 'agent-titles');
+      titles.appendChild(el('div', 'agent-role', 'Multi-Provider Single Agent'));
+      titles.appendChild(el('div', 'agent-goal', 'Thực thi trực tiếp trong 1 phiên hội thoại đa công cụ'));
+      left.appendChild(titles);
+      header.appendChild(left);
+
+      var statusTag = el('span', 'agent-status', 'Đang thực thi');
+      header.appendChild(statusTag);
+      bubble.step.appendChild(header);
+
       bubble.stepBody = el('div', 'agent-body');
       bubble.step.appendChild(bubble.stepBody);
       bubble.box.appendChild(bubble.step);
+      bubble.singleAgentStatusTag = statusTag;
+
+      if (bubble.supervisor && !bubble.supervisor.done) {
+        bubble.supervisor.done = true;
+        bubble.supervisor.status.textContent = 'Bỏ qua';
+        bubble.supervisor.status.classList.add('done');
+        bubble.supervisor.goal.textContent = 'Đã định tuyến trực tiếp vào Multi-Provider Single Agent (bỏ qua 4 bước Supervisor)';
+      }
     }
     return bubble.stepBody || bubble.box;
   }
@@ -1365,6 +1390,10 @@ export const PLAYGROUND_HTML = /* html */ `<!doctype html>
         bubble.step = null;
         bubble.stepBody = null;
         bubble.currentAgentHeader = null;
+        if (bubble.singleAgentStatusTag) {
+          bubble.singleAgentStatusTag.textContent = 'Hoàn thành';
+          bubble.singleAgentStatusTag.classList.add('done');
+        }
         bubble.stepText = null;
         recalcProgress(bubble, 'Tất cả Agent đã xong, đang tổng hợp câu trả lời cuối...');
         break;
@@ -1426,7 +1455,10 @@ export const PLAYGROUND_HTML = /* html */ `<!doctype html>
         var d = el('details', 'tool');
         var summaryText = chunk.title || (chunk.toolMetadata && chunk.toolMetadata.friendlySummary) || chunk.toolName;
         var sum = el('summary', 'tool-summary');
-        sum.innerHTML = '<svg class="chevron" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><polyline points="9 18 15 12 9 6"></polyline></svg><span class="tool-title">' + escapeHtml(summaryText) + '</span><span class="tool-name-tag">' + escapeHtml(chunk.toolName) + '</span>';
+        var dotIdx = (chunk.toolName || '').indexOf('.');
+        var provider = dotIdx !== -1 ? chunk.toolName.slice(0, dotIdx) : '';
+        var providerBadge = provider ? '<span class="tool-provider-badge">' + escapeHtml(provider) + '</span>' : '';
+        sum.innerHTML = '<svg class="chevron" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><polyline points="9 18 15 12 9 6"></polyline></svg>' + providerBadge + '<span class="tool-title">' + escapeHtml(summaryText) + '</span><span class="tool-name-tag">' + escapeHtml(chunk.toolName) + '</span>';
         d.appendChild(sum);
 
         var body = el('div', 'tool-body');
@@ -1708,7 +1740,10 @@ export const PLAYGROUND_HTML = /* html */ `<!doctype html>
     var isError = tc.status === 'error' || tc.status === 'failed';
     var d = el('details', 'tool ' + (isError ? 'error' : 'done'));
     var sum = el('summary', 'tool-summary');
-    sum.innerHTML = '<svg class="chevron" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><polyline points="9 18 15 12 9 6"></polyline></svg><span class="tool-title">' + escapeHtml(tc.tool) + '</span><span class="tool-name-tag">' + escapeHtml(tc.status || 'success') + '</span>';
+    var dotIdx = (tc.tool || '').indexOf('.');
+    var provider = dotIdx !== -1 ? tc.tool.slice(0, dotIdx) : '';
+    var providerBadge = provider ? '<span class="tool-provider-badge">' + escapeHtml(provider) + '</span>' : '';
+    sum.innerHTML = '<svg class="chevron" viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none"><polyline points="9 18 15 12 9 6"></polyline></svg>' + providerBadge + '<span class="tool-title">' + escapeHtml(tc.tool) + '</span><span class="tool-name-tag">' + escapeHtml(tc.status || 'success') + '</span>';
     d.appendChild(sum);
 
     var b = el('div', 'tool-body');
@@ -1742,17 +1777,29 @@ export const PLAYGROUND_HTML = /* html */ `<!doctype html>
     });
 
     var personaList = Array.isArray(personas) ? personas.slice() : [];
-    return providerOrder.map(function (prov, idx) {
-      var p = personaList[idx] || null;
-      var friendlyRole = p && p.role ? p.role : (prov.charAt(0).toUpperCase() + prov.slice(1).replace(/_/g, ' ') + ' Agent');
-      var friendlyGoal = p && p.goal ? p.goal : ('Xử lý các tác vụ liên quan đến ' + prov);
-      return {
-        agent: prov,
-        task: friendlyGoal,
-        persona: { role: friendlyRole, goal: friendlyGoal },
-        toolCalls: providerMap[prov]
-      };
-    });
+    if (personaList.length > 1) {
+      return providerOrder.map(function (prov, idx) {
+        var p = personaList[idx] || null;
+        var friendlyRole = p && p.role ? p.role : (prov.charAt(0).toUpperCase() + prov.slice(1).replace(/_/g, ' ') + ' Agent');
+        var friendlyGoal = p && p.goal ? p.goal : ('Xử lý các tác vụ liên quan đến ' + prov);
+        return {
+          agent: prov,
+          task: friendlyGoal,
+          persona: { role: friendlyRole, goal: friendlyGoal },
+          toolCalls: providerMap[prov]
+        };
+      });
+    }
+
+    var p0 = personaList[0];
+    var singleRole = p0 && p0.role ? p0.role : 'Multi-Provider Single Agent';
+    var singleGoal = p0 && p0.goal ? p0.goal : ('Thực thi trực tiếp đa công cụ (' + providerOrder.join(', ') + ')');
+    return [{
+      agent: 'single_agent',
+      task: singleGoal,
+      persona: { role: singleRole, goal: singleGoal },
+      toolCalls: toolCalls
+    }];
   }
 
   function loadHistory(sid) {
@@ -1773,6 +1820,14 @@ export const PLAYGROUND_HTML = /* html */ `<!doctype html>
             else if (Array.isArray(res.data)) turns = res.data;
           }
         }
+        turns = turns.filter(function (turn, idx, arr) {
+          if (turn.role === 'model' && turn.text && (turn.text.indexOf('⏸️ Cần bạn duyệt') !== -1 || turn.text.indexOf('Cần bạn duyệt 1 hành động') !== -1)) {
+            var hasLaterModelMsg = arr.slice(idx + 1).some(function (later) { return later.role === 'model'; });
+            return !hasLaterModelMsg;
+          }
+          return true;
+        });
+
         log.innerHTML = '';
         if (turns.length === 0) {
           log.appendChild(el('div', 'hint-empty', 'Cuộc trò chuyện chưa có tin nhắn. Gõ câu hỏi bên dưới để bắt đầu.'));

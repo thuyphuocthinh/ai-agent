@@ -23,6 +23,7 @@ export interface ReactLoopRunOptions {
   session: LlmChatSession;
   signal: AbortSignal;
   repeatGuard?: ToolRepeatGuard;
+  toolToProviderMap?: Map<string, string>;
 }
 
 export interface ReactLoopRunDeps {

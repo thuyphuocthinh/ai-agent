@@ -21,6 +21,7 @@ export interface ToolCallExecutorOptions {
   mcpTools: McpToolDto[];
   reactModelId: string;
   signal: AbortSignal;
+  toolToProviderMap?: Map<string, string>;
 }
 
 export interface ToolCallExecutorDeps {
@@ -49,4 +50,5 @@ export interface ToolRiskGateOptions {
   policyEngine?: BusinessPolicyEngine;
   semanticPolicyEvaluator?: SemanticPolicyEvaluatorService;
   idempotencyManager?: IdempotencyManager;
+  toolToProviderMap?: Map<string, string>;
 }

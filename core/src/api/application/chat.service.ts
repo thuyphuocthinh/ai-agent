@@ -141,7 +141,25 @@ export class ChatService {
   ): Promise<TurnStream> {
     const session = await this.sessionManager.get(sessionId);
     if (!session) throw new NotFoundException('Phiên không tồn tại');
-    if (!session.approvalMessageIds.has(messageId)) {
+
+    let hasApproval = session.approvalMessageIds.has(messageId);
+    if (!hasApproval && this.sessionManager.hasApproval) {
+      hasApproval = await this.sessionManager.hasApproval(sessionId, messageId);
+    }
+    if (!hasApproval) {
+      const checkpoint = await this.approvals.findPendingCheckpoint?.(messageId);
+      if (
+        checkpoint &&
+        (checkpoint.conversationId === sessionId ||
+          checkpoint.conversationId === session.conversationId)
+      ) {
+        hasApproval = true;
+        session.approvalMessageIds.add(messageId);
+        await this.sessionManager.trackApproval?.(sessionId, messageId);
+      }
+    }
+
+    if (!hasApproval) {
       throw new NotFoundException('Không có yêu cầu duyệt này trong phiên');
     }
 

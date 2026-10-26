@@ -25,6 +25,8 @@ describe('PrismaCheckpointService', () => {
       },
       conversation: {
         upsert: jest.fn().mockResolvedValue({ id: 'conv-123' }),
+        findUnique: jest.fn().mockResolvedValue({ approvalMessageIds: [] }),
+        update: jest.fn().mockResolvedValue({ id: 'conv-123' }),
       },
       checkpoint: {
         create: jest.fn(),

@@ -139,6 +139,18 @@ export class PrismaMessageSink implements IMessageSink {
 
       return eligible
         .filter((m) => Boolean(m.text && m.text.trim()))
+        .filter((m, idx, arr) => {
+          if (
+            m.text.includes('⏸️ Cần bạn duyệt') ||
+            m.text.includes('Cần bạn duyệt 1 hành động')
+          ) {
+            const hasLaterModelMsg = arr
+              .slice(idx + 1)
+              .some((later) => later.role === MessageRole.ASSISTANT);
+            return !hasLaterModelMsg;
+          }
+          return true;
+        })
         .map((m) => ({
           id: m.id,
           role: m.role === MessageRole.USER ? EMessageRole.USER : EMessageRole.MODEL,

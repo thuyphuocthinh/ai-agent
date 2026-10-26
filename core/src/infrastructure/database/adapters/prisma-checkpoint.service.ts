@@ -120,6 +120,23 @@ export class PrismaCheckpointService {
         },
       });
 
+      if (replyMessageId && checkpointKind === CheckpointKind.APPROVAL && this.prisma.conversation?.findUnique) {
+        const conv = await this.prisma.conversation.findUnique({
+          where: { id: conversationId },
+          select: { approvalMessageIds: true },
+        });
+        const current = conv?.approvalMessageIds || [];
+        if (!current.includes(replyMessageId) && this.prisma.conversation?.update) {
+          await this.prisma.conversation.update({
+            where: { id: conversationId },
+            data: {
+              approvalMessageIds: [...current, replyMessageId],
+              lastSeenAt: new Date(),
+            },
+          });
+        }
+      }
+
       return this.toResponseDto(created);
     } catch (error) {
       throw sanitizePrismaError(error, 'PrismaCheckpointService.create');

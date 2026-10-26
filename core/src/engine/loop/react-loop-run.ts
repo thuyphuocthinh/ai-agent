@@ -75,6 +75,7 @@ export class ReactLoopRun {
       policyEngine: deps.policyEngine,
       semanticPolicyEvaluator: deps.semanticPolicyEvaluator,
       idempotencyManager: deps.idempotencyManager,
+      toolToProviderMap: options.toolToProviderMap,
     });
     this.toolExecutor = new ToolCallExecutor(
       {
@@ -82,6 +83,7 @@ export class ReactLoopRun {
         mcpTools: options.mcpTools,
         reactModelId: options.reactModelId,
         signal: options.signal,
+        toolToProviderMap: options.toolToProviderMap,
       },
       {
         toolProvider: deps.toolProvider ?? deps.mcpClient,

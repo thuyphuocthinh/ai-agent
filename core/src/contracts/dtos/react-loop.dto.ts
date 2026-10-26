@@ -4,7 +4,10 @@ import { PersonaDto } from './supervisor.dto';
 
 export class RunReactLoopRequestDto {
   prompt: string;
+  // Provider định danh (khi chạy multi-provider có thể là 'multi' hoặc provider chính)
   provider: string;
+  // Danh sách nhiều providers (dành cho chế độ Multi-Provider Single Agent)
+  providers?: string[];
   userId: string;
   channelId: string;
   conversationId?: string;

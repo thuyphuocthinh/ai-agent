@@ -8,6 +8,7 @@ import {
   RunReactLoopRequestDto,
   RunReactLoopResponseDto,
 } from '../../contracts/dtos/react-loop.dto';
+import { McpToolDto } from '../../contracts/dtos/mcp.dto';
 import { LlmStrategyFactory } from '../strategy/llm-strategy.factory';
 import {
   IToolProvider,
@@ -102,23 +103,30 @@ export class ReactLoopService {
           process.env.DEFAULT_REACT_MODEL ??
           ORCHESTRATION_CONSTANTS.DEFAULT_REACT_MODEL;
 
-        const [mcpTools, systemInstruction] = await Promise.all([
-          this.toolProvider.getTools(
-            dto.provider,
-            dto.prompt,
-            signal,
-            dto.workspaceId,
-          ),
-          this.buildSystemInstruction(
-            dto.provider,
-            dto.userId,
-            reactModelId,
-            signal,
-            dto.workspaceId,
-            dto.persona,
-            dto.prompt,
-          ),
-        ]);
+        const targetProviders =
+          dto.providers && dto.providers.length > 0
+            ? dto.providers
+            : [dto.provider];
+        const primaryProvider = targetProviders[0];
+
+        const [{ mcpTools, toolToProviderMap }, systemInstruction] =
+          await Promise.all([
+            this.loadToolsForProviders(
+              targetProviders,
+              dto.prompt,
+              signal,
+              dto.workspaceId,
+            ),
+            this.buildSystemInstruction(
+              primaryProvider,
+              dto.userId,
+              reactModelId,
+              signal,
+              dto.workspaceId,
+              dto.persona,
+              dto.prompt,
+            ),
+          ]);
 
         if (signal.aborted) {
           throw new TurnCancelledError(undefined);
@@ -131,7 +139,7 @@ export class ReactLoopService {
             : mcpTools;
 
         this.logger.log(
-          `run() userId=${dto.userId} provider=${dto.provider} model=${model} toolsAvailable=${effectiveTools.length}/${mcpTools.length}`,
+          `run() userId=${dto.userId} provider=${dto.provider} providers=${targetProviders.join(',')} model=${model} toolsAvailable=${effectiveTools.length}/${mcpTools.length}`,
         );
 
         const session = strategy.startChat({
@@ -156,6 +164,7 @@ export class ReactLoopService {
             session,
             signal,
             repeatGuard,
+            toolToProviderMap,
           },
           {
             toolProvider: this.toolProvider,
@@ -178,6 +187,66 @@ export class ReactLoopService {
       () => new TurnCancelledError(confirmedText || undefined),
       parentSignal,
     );
+  }
+
+  private async loadToolsForProviders(
+    providers: string[],
+    prompt: string,
+    signal?: AbortSignal,
+    workspaceId?: string,
+  ): Promise<{
+    mcpTools: McpToolDto[];
+    toolToProviderMap: Map<string, string>;
+  }> {
+    const toolToProviderMap = new Map<string, string>();
+    if (providers.length === 1) {
+      const tools = await this.toolProvider.getTools(
+        providers[0],
+        prompt,
+        signal,
+        workspaceId,
+      );
+      tools.forEach((t) => toolToProviderMap.set(t.name, providers[0]));
+      return { mcpTools: tools, toolToProviderMap };
+    }
+
+    const results = await Promise.allSettled(
+      providers.map((p) =>
+        this.toolProvider.getTools(p, prompt, signal, workspaceId),
+      ),
+    );
+
+    const toolCounts = new Map<string, number>();
+    const toolsByProvider: { provider: string; tools: McpToolDto[] }[] = [];
+
+    results.forEach((res, i) => {
+      const p = providers[i];
+      if (res.status === 'fulfilled') {
+        toolsByProvider.push({ provider: p, tools: res.value });
+        res.value.forEach((t) => {
+          toolCounts.set(t.name, (toolCounts.get(t.name) ?? 0) + 1);
+        });
+      } else {
+        this.logger.warn(
+          `Không thể nạp công cụ cho provider "${p}": ${(res.reason as Error)?.message}`,
+        );
+      }
+    });
+
+    const mcpTools: McpToolDto[] = [];
+    toolsByProvider.forEach(({ provider: p, tools }) => {
+      tools.forEach((t) => {
+        const isCollision = (toolCounts.get(t.name) ?? 0) > 1;
+        const resolvedName = isCollision ? `${p}__${t.name}` : t.name;
+        toolToProviderMap.set(resolvedName, p);
+        mcpTools.push({
+          ...t,
+          name: resolvedName,
+        });
+      });
+    });
+
+    return { mcpTools, toolToProviderMap };
   }
 
   private async buildSystemInstruction(

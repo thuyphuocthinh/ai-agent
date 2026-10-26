@@ -89,6 +89,7 @@ export class ToolCallExecutor {
   private readonly actionAudit?: ActionAuditService;
 
   private readonly toolCalls: ToolCallTraceDto[] = [];
+  private readonly toolToProviderMap?: Map<string, string>;
 
   // handleToolCall() bind + traceable() 1 LẦN ở constructor — gọi trực tiếp
   // this.handleToolCall(...) trong run() sẽ KHÔNG lên trace LangSmith.
@@ -102,6 +103,7 @@ export class ToolCallExecutor {
     this.mcpTools = options.mcpTools;
     this.reactModelId = options.reactModelId;
     this.signal = options.signal;
+    this.toolToProviderMap = options.toolToProviderMap;
 
     this.toolProvider = (deps.toolProvider ?? deps.mcpClient)!;
     this.streamSink = (deps.streamSink ?? deps.agentStream)!;
@@ -125,6 +127,15 @@ export class ToolCallExecutor {
 
   hasAnySuccessfulToolCall(): boolean {
     return this.toolCalls.some((tc) => tc.status === 'success');
+  }
+
+  private resolveToolCall(name: string): { provider: string; rawName: string } {
+    const provider = this.toolToProviderMap?.get(name) ?? this.dto.provider;
+    let rawName = name;
+    if (name.startsWith(`${provider}__`)) {
+      rawName = name.slice(provider.length + 2);
+    }
+    return { provider, rawName };
   }
 
   async run(toolCalls: LlmToolCall[]): Promise<LlmToolResult[]> {
@@ -186,7 +197,10 @@ export class ToolCallExecutor {
   }
 
   private prepareToolCalls(toolCalls: LlmToolCall[]): PreparedToolCall[] {
-    if (this.dto.provider !== 'sql_server') {
+    const hasSqlServer =
+      this.dto.provider === 'sql_server' ||
+      toolCalls.some((c) => this.resolveToolCall(c.name).provider === 'sql_server');
+    if (!hasSqlServer) {
       return toolCalls.map((call, index) => ({ call, sourceIndexes: [index] }));
     }
 
@@ -195,8 +209,10 @@ export class ToolCallExecutor {
 
     toolCalls.forEach((call, sourceIndex) => {
       let query: string | undefined;
+      const { provider: callProvider, rawName } = this.resolveToolCall(call.name);
       if (
-        call.name === 'execute_write_query' &&
+        callProvider === 'sql_server' &&
+        rawName === 'execute_write_query' &&
         typeof call.args.query === 'string'
       ) {
         query = call.args.query;
@@ -236,9 +252,10 @@ export class ToolCallExecutor {
   }
 
   private resolveInsertTableKey(call: LlmToolCall): string | null {
+    const { provider, rawName } = this.resolveToolCall(call.name);
     if (
-      this.dto.provider !== 'sql_server' ||
-      call.name !== 'execute_write_query'
+      provider !== 'sql_server' ||
+      rawName !== 'execute_write_query'
     ) {
       return null;
     }
@@ -252,15 +269,16 @@ export class ToolCallExecutor {
     name: string,
     args: Record<string, unknown>,
   ): Promise<string> {
-    const displayName = `${this.dto.provider}.${name}`;
+    const { provider, rawName } = this.resolveToolCall(name);
+    const displayName = `${provider}.${rawName}`;
     const argsPreview = formatArgsPreview(args);
     // 1 id cho MỖI lời gọi tool của model — gắn vào cả tool_call lẫn tool_result
     // để client ghép đúng cặp khi cùng 1 tool bị gọi nhiều lần trong 1 turn.
     const toolCallId = `call_${randomUUID()}`;
     const toolDef = this.mcpTools.find((t) => t.name === name);
     const friendlySummary = formatActionSummary({
-      provider: this.dto.provider,
-      toolName: name,
+      provider,
+      toolName: rawName,
       args,
       toolDescription: toolDef?.description,
     });
@@ -320,7 +338,7 @@ export class ToolCallExecutor {
           `tool_call ${displayName} cần người dùng xác nhận theo chính sách`,
         );
         throw new ApprovalRequiredError(
-          { provider: this.dto.provider, name, args },
+          { provider, name: rawName, args },
           this.toolCalls,
         );
       }
@@ -485,11 +503,12 @@ export class ToolCallExecutor {
       return result;
     }
 
+    const { provider, rawName } = this.resolveToolCall(name);
     this.logger.log(
       `tool_call ${displayName} requires approval — blocked before execution`,
     );
     throw new ApprovalRequiredError(
-      { provider: this.dto.provider, name, args },
+      { provider, name: rawName, args },
       this.toolCalls,
     );
   }
@@ -569,10 +588,11 @@ export class ToolCallExecutor {
     while (true) {
       transientAttempt++;
       try {
+        const { provider, rawName } = this.resolveToolCall(name);
         result = await this.toolProvider.callTool(
           {
-            provider: this.dto.provider,
-            name,
+            provider,
+            name: rawName,
             args,
             ownerId: this.dto.userId,
             workspaceId: this.dto.workspaceId,

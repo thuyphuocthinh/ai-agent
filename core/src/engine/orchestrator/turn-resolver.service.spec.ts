@@ -67,6 +67,7 @@ describe('TurnResolverService (Plan-and-Execute, xem accuracy.md)', () => {
   ];
 
   beforeEach(async () => {
+    process.env.DEFAULT_ORCHESTRATION_MODE = 'supervisor';
     mockMessageClient.getMessageText.mockResolvedValue('có bao nhiêu bảng?');
     mockMessageClient.getRecentHistory.mockResolvedValue([]);
     mockSupervisor.getAvailableAgents.mockResolvedValue(availableAgents);
@@ -96,6 +97,7 @@ describe('TurnResolverService (Plan-and-Execute, xem accuracy.md)', () => {
   });
 
   afterEach(() => {
+    delete process.env.DEFAULT_ORCHESTRATION_MODE;
     jest.clearAllMocks();
     mockSupervisor.evaluate.mockReset();
     mockSupervisor.evaluate.mockResolvedValue({ verdict: 'done' });

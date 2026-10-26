@@ -40,6 +40,7 @@ export class ToolRiskGate {
   private readonly policyEngine?: BusinessPolicyEngine;
   private readonly semanticPolicyEvaluator?: SemanticPolicyEvaluatorService;
   private readonly idempotencyManager?: IdempotencyManager;
+  private readonly toolToProviderMap?: Map<string, string>;
 
   // Lazy + memoized — chỉ tốn 1 LLM call DUY NHẤT cho cả lượt chạy, và chỉ
   // khi thật sự cần (tool ghi dạng create bị chặn approval), không tốn cho
@@ -59,6 +60,11 @@ export class ToolRiskGate {
     this.policyEngine = options.policyEngine;
     this.semanticPolicyEvaluator = options.semanticPolicyEvaluator;
     this.idempotencyManager = options.idempotencyManager;
+    this.toolToProviderMap = options.toolToProviderMap;
+  }
+
+  private resolveProvider(name: string): string {
+    return this.toolToProviderMap?.get(name) ?? this.dto.provider;
   }
 
   isDestructive(name: string): boolean {
@@ -80,7 +86,7 @@ export class ToolRiskGate {
 
     const check = await this.preflightGuard.check(
       this.dto.userId,
-      this.dto.provider,
+      this.resolveProvider(name),
       requiredScopes,
       authType,
     );
@@ -99,7 +105,7 @@ export class ToolRiskGate {
       const semantic = await this.semanticPolicyEvaluator.evaluate(
         {
           userId: this.dto.userId,
-          provider: this.dto.provider,
+          provider: this.resolveProvider(name),
           toolName: name,
           args,
           userIntent: this.dto.prompt,
@@ -153,7 +159,7 @@ export class ToolRiskGate {
 
     const res = await this.idempotencyManager.acquireForTool({
       userId: this.dto.userId,
-      provider: this.dto.provider,
+      provider: this.resolveProvider(name),
       toolName: name,
       args,
     });
@@ -184,7 +190,7 @@ export class ToolRiskGate {
   // Risk Gate như cũ.
   isAutoApprovableInsert(name: string, args: Record<string, unknown>): boolean {
     if (
-      this.dto.provider !== 'sql_server' ||
+      this.resolveProvider(name) !== 'sql_server' ||
       name !== 'execute_write_query'
     ) {
       return false;

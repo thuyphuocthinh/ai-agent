@@ -74,6 +74,18 @@ export class MessageClientService implements IMessageSink {
     return ids
       .map((id) => this.messages.get(id))
       .filter((m): m is StoredMessage => Boolean(m?.isText && m.text))
+      .filter((m, idx, arr) => {
+        if (
+          m.text.includes('⏸️ Cần bạn duyệt') ||
+          m.text.includes('Cần bạn duyệt 1 hành động')
+        ) {
+          const hasLaterModelMsg = arr
+            .slice(idx + 1)
+            .some((later) => later.role === EMessageRole.MODEL);
+          return !hasLaterModelMsg;
+        }
+        return true;
+      })
       .map((m) => ({ role: m.role, text: m.text }))
       .slice(-limit);
   }
