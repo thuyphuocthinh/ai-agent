@@ -9,7 +9,7 @@ import {
 } from '@nestjs/common';
 import { RpcException } from '@nestjs/microservices';
 import type { UIMessageChunk } from 'ai';
-import { EApprovalAction } from '@agent/core/constants';
+import { EApprovalAction, EMessageRole } from '@agent/core/constants';
 import {
   EJobName,
   EQueueName,
@@ -35,6 +35,8 @@ import {
 } from '../presentation/dtos/pagination.dto';
 import { TurnStreamFactory } from './turn-stream.factory';
 import { OrchestrationRpcExceptionFilter } from '../presentation/filters/orchestration-exception.filter';
+import { formatActionSummary } from '../../common/action-summary';
+import { IPendingApprovalDto } from '../presentation/dtos/history-response.dto';
 import {
   PromptInjectionGuard,
   SemanticPolicyEvaluatorService,
@@ -177,15 +179,66 @@ export class ChatService {
     return { sessionId: session.id, stream: turn.stream, cancel: turn.cancel };
   }
 
+  async getPendingApproval(conversationId: string): Promise<IPendingApprovalDto | null> {
+    try {
+      if (typeof this.approvals?.findPendingByConversationId !== 'function') {
+        return null;
+      }
+      const checkpoint = await this.approvals.findPendingByConversationId(conversationId);
+      if (!checkpoint) return null;
+      const pendingTool = (checkpoint.pendingTool as { provider?: string; name?: string; args?: Record<string, unknown> } | null) ?? undefined;
+      const friendlySummary = pendingTool && pendingTool.provider && pendingTool.name
+        ? formatActionSummary({
+            provider: pendingTool.provider,
+            toolName: pendingTool.name,
+            args: pendingTool.args ?? {},
+          })
+        : 'Cần bạn duyệt hành động này trước khi tiếp tục';
+
+      return {
+        messageId: checkpoint.replyMessageId,
+        tool: (checkpoint.pendingTool as unknown as Record<string, unknown>) || {},
+        preview: checkpoint.pendingTask || checkpoint.originalPrompt,
+        friendlySummary,
+      };
+    } catch (err) {
+      this.logger.warn(`Lỗi khi truy vấn pending checkpoint cho conversation ${conversationId}: ${(err as Error)?.message}`);
+      return null;
+    }
+  }
+
   async history(sessionId?: string): Promise<ChatHistoryTurnDto[]> {
     const session = sessionId ? await this.sessionManager.get(sessionId) : undefined;
     if (!session) return [];
-    return this.messages.getRecentHistory({
+    const turns = await this.messages.getRecentHistory({
       conversationId: session.conversationId,
       userId: session.userId,
       beforeMessageId: '',
       limit: HISTORY_LIMIT,
     });
+
+    const pending = await this.getPendingApproval(session.conversationId);
+    if (pending) {
+      session.approvalMessageIds.add(pending.messageId);
+      if (this.sessionManager.trackApproval) {
+        try {
+          await this.sessionManager.trackApproval(session.id, pending.messageId);
+        } catch {
+          // ignore
+        }
+      }
+      if (turns.length > 0) {
+        const lastTurn = turns[turns.length - 1];
+        if (lastTurn && lastTurn.role === EMessageRole.MODEL) {
+          lastTurn.metadata = {
+            ...(lastTurn.metadata || {}),
+            approval: pending,
+          };
+        }
+      }
+    }
+
+    return turns;
   }
 
   async listConversations(

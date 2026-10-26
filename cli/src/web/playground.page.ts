@@ -1530,7 +1530,7 @@ export const PLAYGROUND_HTML = /* html */ `<!doctype html>
     scroll();
   }
 
-  function renderApproval(bubble, data) {
+  function renderApproval(bubble, data, targetContainer) {
     clearStatus(bubble);
     var tool = data.tool || {};
     var box = el('div', 'approval');
@@ -1573,7 +1573,11 @@ export const PLAYGROUND_HTML = /* html */ `<!doctype html>
     actions.appendChild(reject);
     box.appendChild(actions);
 
-    stepHost(bubble).appendChild(box);
+    if (targetContainer) {
+      targetContainer.appendChild(box);
+    } else {
+      stepHost(bubble).appendChild(box);
+    }
   }
 
   async function run(url, body, targetBubble) {
@@ -1833,7 +1837,7 @@ export const PLAYGROUND_HTML = /* html */ `<!doctype html>
           log.appendChild(el('div', 'hint-empty', 'Cuộc trò chuyện chưa có tin nhắn. Gõ câu hỏi bên dưới để bắt đầu.'));
           return;
         }
-        turns.forEach(function (turn) {
+        turns.forEach(function (turn, idx) {
           if (turn.role === 'user') {
             log.appendChild(el('div', 'msg user', turn.text));
           } else {
@@ -1882,7 +1886,29 @@ export const PLAYGROUND_HTML = /* html */ `<!doctype html>
               botBox.appendChild(gridEl);
             }
 
-            var wrap = el('div', 'final-wrapper');
+            var approvalData = meta.approval || (idx === turns.length - 1 ? res.pendingApproval : null);
+            if (approvalData) {
+              var bubble = {
+                box: botBox,
+                isWorkflow: false,
+                texts: {},
+                tools: {},
+                reply: null,
+                replyEl: null,
+                step: null,
+                stepBody: null,
+                currentAgentHeader: null,
+                stepText: null,
+                statusEl: null,
+                agents: {},
+                gridEl: botBox.querySelector('.agents-grid'),
+                lastAgent: null,
+                supervisor: null,
+                hasApproval: true
+              };
+              renderApproval(bubble, approvalData, botBox);
+            } else {
+              var wrap = el('div', 'final-wrapper');
             var head = el('div', 'final-header');
             head.appendChild(el('span', 'final-title', '✨ Câu trả lời'));
             wrap.appendChild(head);
@@ -1890,6 +1916,7 @@ export const PLAYGROUND_HTML = /* html */ `<!doctype html>
             body.innerHTML = renderMarkdown(turn.text);
             wrap.appendChild(body);
             botBox.appendChild(wrap);
+            }
             msgWrap.appendChild(botBox);
             log.appendChild(msgWrap);
           }

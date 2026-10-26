@@ -13,6 +13,7 @@ import {
   ClaimCheckpointResponseDto,
   CreateCheckpointRequestDto,
   FindCheckpointByIdRequestDto,
+  FindPendingByConversationRequestDto,
   FindPendingCheckpointRequestDto,
   MarkStalledAsRejectedRequestDto,
   MarkToolExecutedRequestDto,
@@ -69,6 +70,21 @@ export class CheckpointService {
       where: {
         replyMessageId: dto.replyMessageId,
         status: OrchestrationCheckpointStatus.PENDING,
+      },
+    });
+    return entity ? this.toResponseDto(entity) : null;
+  }
+
+  async findPendingByConversationId(
+    dto: FindPendingByConversationRequestDto,
+  ): Promise<CheckpointResponseDto | null> {
+    const entity = await this.repo.findOne({
+      where: {
+        conversationId: dto.conversationId,
+        status: OrchestrationCheckpointStatus.PENDING,
+      },
+      order: {
+        createdAt: 'DESC',
       },
     });
     return entity ? this.toResponseDto(entity) : null;

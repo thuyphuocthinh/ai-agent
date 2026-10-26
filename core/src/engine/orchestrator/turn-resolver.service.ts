@@ -9,6 +9,11 @@ import {
   IWorkflowRegistry,
   WORKFLOW_REGISTRY,
   WORKFLOW_RUNNER,
+  EXECUTION_ENGINE_REGISTRY,
+  EXECUTION_ROUTER,
+  EExecutionEngineMode,
+  IExecutionEngineRegistry,
+  IExecutionRouter,
 } from '../../contracts';
 import { ReactLoopService } from '../loop/react-loop.service';
 import { SupervisorService } from '../supervisor/supervisor.service';
@@ -18,31 +23,16 @@ import {
   DelegationDto,
   SupervisorRoundDto,
 } from '../../contracts/dtos/supervisor.dto';
-import {
-  ToolCallTraceDto,
-  RunReactLoopRequestDto,
-} from '../../contracts/dtos/react-loop.dto';
-import {
-  ChatHistoryTurnDto,
-  ExecutedStepDto,
-} from '../../contracts/dtos/message-client.dto';
+import { ToolCallTraceDto } from '../../contracts/dtos/react-loop.dto';
+import { ChatHistoryTurnDto } from '../../contracts/dtos/message-client.dto';
 import { AgentCancellationService } from '../cancellation/agent-cancellation.service';
 import { runCancellable } from '../../common/cancellable-run.util';
 import { TurnCancelledError } from '../loop/turn-cancelled.error';
-import { ApprovalRequiredError } from '../loop/approval-required.error';
 import { CheckpointPauseService } from '../hitl/checkpoint-pause.service';
 import { MetricsRegistryService } from '../../common/metrics-registry.service';
-import {
-  AnswerResult,
-  ApprovalRequiredDelegateResult,
-  buildAnswer,
-} from './orchestration-answer.types';
+import { AnswerResult } from './orchestration-answer.types';
 import { TurnResolverRun } from './turn-resolver-run';
 import { MemoryManagerService } from '../../memory/memory-manager.service';
-import {
-  decideExecutionMode,
-  EExecutionMode,
-} from './hybrid-execution-router.util';
 
 // Ghi chú thiết kế đầy đủ (WHY): docs/orchestration/code-notes/turn-resolver.service.md
 // Logic chi tiết 1 turn (plan/delegate/evaluate/synthesize) nằm ở
@@ -64,6 +54,10 @@ export class TurnResolverService {
     private readonly checkpointPause: CheckpointPauseService,
     private readonly metrics: MetricsRegistryService,
     private readonly memoryManager: MemoryManagerService,
+    @Inject(EXECUTION_ENGINE_REGISTRY)
+    private readonly engineRegistry: IExecutionEngineRegistry,
+    @Inject(EXECUTION_ROUTER)
+    private readonly router: IExecutionRouter,
     @Optional()
     @Inject(WORKFLOW_REGISTRY)
     private readonly workflowRegistry?: IWorkflowRegistry,
@@ -100,7 +94,19 @@ export class TurnResolverService {
       }),
     ]);
 
-    if (workflowId && this.workflowRegistry && this.workflowRunner) {
+    const isPipelineWorkflow =
+      workflowId &&
+      this.engineRegistry
+        .get(EExecutionEngineMode.PIPELINE_CHAINING)
+        ?.canHandle({
+          userId: data.userId,
+          workspaceId: data.workspaceId,
+          channelId: data.channelId,
+          workflowId,
+          prompt: '',
+        });
+
+    if (!isPipelineWorkflow && workflowId && this.workflowRegistry && this.workflowRunner) {
       const workflow = this.workflowRegistry.get(workflowId);
       if (workflow) {
         this.logger.log(
@@ -119,29 +125,24 @@ export class TurnResolverService {
       );
     }
 
-    // Hybrid Orchestration: Định tuyến thông minh giữa Single Agent & Multi-Agent Supervisor
-    const orchestrationMode =
-      process.env.DEFAULT_ORCHESTRATION_MODE ?? 'hybrid';
+    const decision = await this.router.route({
+      prompt,
+      userId: data.userId,
+      workspaceId: data.workspaceId,
+      channelId: data.channelId,
+      messageId: replyMessageId,
+      workflowId,
+      history,
+      availableAgents: agents,
+      forcedMode: this.forcedModeFromEnv(),
+    });
 
-    if (orchestrationMode !== 'supervisor') {
-      const decision = decideExecutionMode({
-        prompt,
-        forcedMode: orchestrationMode === 'single' ? 'single' : 'auto',
-      });
-      this.logger.log(
-        `[Hybrid Router] turn=${replyMessageId} mode=${decision.mode} reason="${decision.reason}" agentsConnected=${agents.length}`,
-      );
-
-      // Mặc định (85-90% yêu cầu): Chạy qua Multi-Provider Single Agent (1 context duy nhất, nhanh & rẻ)
-      if (decision.mode === EExecutionMode.SINGLE_AGENT && agents.length > 0) {
-        return this.runSingleAgentTurn({
-          data,
-          replyMessageId,
-          prompt,
-          agents,
-          history,
-        });
-      }
+    const engine =
+      decision.mode !== EExecutionEngineMode.DYNAMIC_SUPERVISOR && decision.engineId
+        ? this.engineRegistry.get(decision.engineId)
+        : undefined;
+    if (engine) {
+      return engine.execute({ data, replyMessageId, prompt, agents, history });
     }
 
     return this.continueRounds(
@@ -155,103 +156,9 @@ export class TurnResolverService {
     );
   }
 
-  private async runSingleAgentTurn(options: {
-    data: IProcessAiTriggerJobData;
-    replyMessageId: string;
-    prompt: string;
-    agents: AvailableAgentDto[];
-    history: ChatHistoryTurnDto[];
-    signal?: AbortSignal;
-  }): Promise<AnswerResult> {
-    const { data, replyMessageId, prompt, agents, history, signal } = options;
-    const connectedProviders = agents.map((a) => a.provider);
-    const primaryProvider = connectedProviders[0] ?? 'compute';
-
-    this.logger.log(
-      `Thực thi Multi-Provider Single Agent cho turn ${replyMessageId} (providers: ${connectedProviders.join(', ')})`,
-    );
-
-    const isCancelled = await this.cancellation.isCancelled(replyMessageId);
-    if (signal?.aborted || isCancelled) {
-      throw new TurnCancelledError(undefined);
-    }
-
-    const requestDto: RunReactLoopRequestDto = {
-      prompt,
-      provider: primaryProvider,
-      providers: connectedProviders,
-      userId: data.userId,
-      channelId: data.conversationId ?? data.channelId,
-      conversationId: data.conversationId,
-      workspaceId: data.tenantId ?? data.workspaceId,
-      tenantId: data.tenantId,
-      messageId: replyMessageId,
-      channelType: data.sessionType ?? data.channelType ?? 'web',
-      sessionType: data.sessionType,
-      history,
-      model:
-        process.env.DEFAULT_REACT_MODEL ??
-        ORCHESTRATION_CONSTANTS.DEFAULT_REACT_MODEL,
-    };
-
-    try {
-      const result = await this.reactLoop.run(requestDto, signal);
-      this.logger.log(
-        `Hoàn tất Multi-Provider Single Agent cho messageId=${replyMessageId}`,
-      );
-
-      const singleAgentStep: ExecutedStepDto = {
-        agent: 'single_agent',
-        task: prompt,
-        persona: {
-          role: 'Multi-Provider Single Agent',
-          goal: `Thực thi trực tiếp đa công cụ (${connectedProviders.join(', ')})`,
-        },
-        toolCalls: result.toolCalls,
-        result: result.answer,
-      };
-
-      return buildAnswer(result.answer, result.toolCalls, [singleAgentStep]);
-    } catch (error) {
-      if (error instanceof TurnCancelledError) {
-        throw error;
-      }
-
-      if (error instanceof ApprovalRequiredError) {
-        this.logger.warn(
-          `Single Agent tạm dừng chờ HITL approval cho tool "${error.pendingTool.name}" (provider=${error.pendingTool.provider})`,
-        );
-        this.metrics.incrementBehaviorSignal('approval_required');
-
-        const approvalNeeded: ApprovalRequiredDelegateResult = {
-          approvalRequired: error.pendingTool,
-          task: prompt,
-          toolCalls: error.toolCalls,
-        };
-
-        return this.checkpointPause.pauseForApproval(
-          data,
-          prompt,
-          [
-            {
-              agent: error.pendingTool.provider,
-              task: prompt,
-              result: `Đang chờ người dùng phê duyệt thao tác ${error.pendingTool.name}`,
-            },
-          ],
-          error.toolCalls,
-          history,
-          approvalNeeded,
-          [],
-        );
-      }
-
-      this.logger.error(
-        `Lỗi khi thực thi Single Agent cho turn ${replyMessageId}: ${(error as Error)?.message}`,
-        (error as Error)?.stack,
-      );
-      throw error;
-    }
+  private forcedModeFromEnv(): 'single' | 'supervisor' | 'auto' {
+    const mode = process.env.DEFAULT_ORCHESTRATION_MODE;
+    return mode === 'single' || mode === 'supervisor' ? mode : 'auto';
   }
 
   async continueRounds(

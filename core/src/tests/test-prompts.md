@@ -13,6 +13,7 @@ Bộ prompt mẫu được thiết kế sẵn theo dữ liệu mock (`MOCK_TOOLS
 6. [Cấp độ 6: Security Guardrails & Policy Enforcement (Bảo Mật, Chính Sách & Bàn Giao Con Người)](#cấp-độ-6-security-guardrails--policy-enforcement-bảo-mật-chính-sách--bàn-giao-con-người)
 7. [Cấp độ 7: Prompt Thực Tế Dài Dòng, Đa Kiểu Ngụy Trang & Xã Hội Hóa (Real-World Long-Form & Social Engineering)](#cấp-độ-7-prompt-thực-tế-dài-dòng-đa-kiểu-ngụy-trang--xã-hội-hóa-real-world-long-form--social-engineering)
 8. [Cấp độ 8: Hybrid Orchestration & Multi-Provider Single Agent (Đo Lường & Rẽ Nhánh Tự Động)](#cấp-độ-8-hybrid-orchestration--multi-provider-single-agent-đo-lường--rẽ-nhánh-tự-động)
+9. [Cấp độ 9: Pluggable Execution Engines (Single Agent, Pipeline Chaining, Parallel Fan-Out & Dynamic Supervisor)](#cấp-độ-9-pluggable-execution-engines-single-agent-pipeline-chaining-parallel-fan-out--dynamic-supervisor)
 
 ---
 

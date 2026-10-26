@@ -95,6 +95,14 @@ export class WorkflowRegistryService implements IWorkflowRegistry, OnModuleInit 
     });
 
     this.register({
+      id: 'default-two-step-pipeline',
+      name: 'Pipeline: Phân Tích & Báo Cáo 2 Bước (SamuraiAI)',
+      description: 'Quy trình cố định 2 bước: Step 1 Bóc tách dữ liệu -> Step 2 Định dạng & Báo cáo tổng kết.',
+      systemPrompt: 'Pipeline 2 bước tuần tự SamuraiAI',
+      tools: [],
+    });
+
+    this.register({
       id: 'team-announcement',
       name: 'Internal Communications Bot',
       description:

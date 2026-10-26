@@ -16,6 +16,7 @@ import { createMockSheetsProvider } from './mock/mock-sheets.provider';
 import { createMockMailProvider } from './mock/mock-mail.provider';
 import { createMockSlackProvider } from './mock/mock-slack.provider';
 import { createMockGithubProvider } from './mock/mock-github.provider';
+import { createMockComputeProvider } from './mock/mock-compute.provider';
 
 const createMockProviders = (): MockProvider[] => [
   createMockSqlProvider(),
@@ -23,6 +24,7 @@ const createMockProviders = (): MockProvider[] => [
   createMockMailProvider(),
   createMockSlackProvider(),
   createMockGithubProvider(),
+  createMockComputeProvider(),
 ];
 
 /**

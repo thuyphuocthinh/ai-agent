@@ -60,6 +60,17 @@ import { ProviderSummaryService } from './engine/orchestrator/provider-summary.s
 import { QueueService, EJobName } from './infrastructure/queue';
 import { AgentCancellationService } from './engine/cancellation/agent-cancellation.service';
 import { TurnResolverService } from './engine/orchestrator/turn-resolver.service';
+import { ExecutionEngineRegistryService } from './engine/orchestrator/execution-engine-registry.service';
+import { SingleAgentEngine } from './engine/orchestrator/single-agent.engine';
+import { PipelineChainingEngine } from './engine/orchestrator/pipeline-chaining.engine';
+import { ParallelFanoutEngine } from './engine/orchestrator/parallel-fanout.engine';
+import { SubAgentSpawnerService } from './engine/orchestrator/sub-agent-spawner.service';
+import { SmartExecutionRouter } from './engine/orchestrator/smart-execution-router.service';
+import {
+  EXECUTION_ENGINE_REGISTRY,
+  EXECUTION_ROUTER,
+  IExecutionEngine,
+} from './contracts/execution-engine.interface';
 import { WorkflowRegistryService } from './engine/workflow/workflow-registry.service';
 import { WorkflowRunnerService } from './engine/workflow/workflow-runner.service';
 import { CheckpointPauseService } from './engine/hitl/checkpoint-pause.service';
@@ -157,6 +168,21 @@ import { SecurityModule } from './security';
     ProviderConcurrencyLimiterService,
     AgentCancellationService,
     TurnResolverService,
+    SubAgentSpawnerService,
+    SingleAgentEngine,
+    PipelineChainingEngine,
+    ParallelFanoutEngine,
+    {
+      provide: EXECUTION_ENGINE_REGISTRY,
+      useFactory: (...engines: IExecutionEngine[]) => {
+        const registry = new ExecutionEngineRegistryService();
+        engines.forEach((engine) => registry.register(engine));
+        return registry;
+      },
+      inject: [SingleAgentEngine, PipelineChainingEngine, ParallelFanoutEngine],
+    },
+    SmartExecutionRouter,
+    { provide: EXECUTION_ROUTER, useExisting: SmartExecutionRouter },
     PrismaWorkflowStore,
     WorkflowRegistryService,
     WorkflowRunnerService,

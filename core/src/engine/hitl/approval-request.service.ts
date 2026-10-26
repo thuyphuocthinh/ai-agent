@@ -32,6 +32,12 @@ export class ApprovalRequestService {
     return this.checkpoint.findPendingByReplyMessageId({ replyMessageId });
   }
 
+  async findPendingByConversationId(
+    conversationId: string,
+  ): Promise<CheckpointResponseDto | null> {
+    return this.checkpoint.findPendingByConversationId({ conversationId });
+  }
+
   async resolveApproval(dto: ResolveApprovalRequestDto): Promise<void> {
     const checkpoint = await this.loadOwnedCheckpoint(dto);
     this.validateActionAndKind(dto, checkpoint);

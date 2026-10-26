@@ -78,6 +78,10 @@ export class FindPendingCheckpointRequestDto {
   replyMessageId: string;
 }
 
+export class FindPendingByConversationRequestDto {
+  conversationId: string;
+}
+
 // Giai đoạn 3 (HITL) — dùng trong job PROCESS_APPROVAL để fetch lại checkpoint
 // SAU khi đã claim() (status không còn 'pending' nữa nên findPendingBy... không tìm ra).
 export class FindCheckpointByIdRequestDto {

@@ -1,0 +1,91 @@
+[
+  {
+    "id": "single-1",
+    "prompt": "Kiểm tra số dư tài khoản của khách hàng Nguyễn Văn A",
+    "expectedMode": "single_agent",
+    "category": "cskh_tra_cuu"
+  },
+  {
+    "id": "single-2",
+    "prompt": "Tra cứu mã đơn hàng #ORD-9821 trong cơ sở dữ liệu",
+    "expectedMode": "single_agent",
+    "category": "database_query"
+  },
+  {
+    "id": "single-3",
+    "prompt": "Gửi tin nhắn Slack thông báo cho team dev về lỗi server",
+    "expectedMode": "single_agent",
+    "category": "notification_tool"
+  },
+  {
+    "id": "single-4",
+    "prompt": "Tìm tài liệu hướng dẫn sử dụng API trên Jira Confluence",
+    "expectedMode": "single_agent",
+    "category": "knowledge_retrieval"
+  },
+  {
+    "id": "single-5",
+    "prompt": "Cập nhật email liên hệ của user id 450",
+    "expectedMode": "single_agent",
+    "category": "crud_operation"
+  },
+  {
+    "id": "pipeline-1",
+    "prompt": "Quy trình đối soát công nợ tháng 10",
+    "metadata": { "pipeline": { "id": "debt-reconcile", "name": "Đối soát công nợ", "steps": [] } },
+    "expectedMode": "pipeline_chaining",
+    "category": "explicit_pipeline"
+  },
+  {
+    "id": "pipeline-2",
+    "prompt": "Báo cáo tài chính ban giám đốc",
+    "workflowId": "default-two-step-pipeline",
+    "expectedMode": "pipeline_chaining",
+    "category": "registered_workflow_pipeline"
+  },
+  {
+    "id": "fanout-1",
+    "prompt": "So sánh giá iPhone 16 trên Shopee, Lazada và Tiki",
+    "metadata": { "fanout": { "id": "price-cmp", "name": "So sánh giá", "workers": [] } },
+    "expectedMode": "parallel_fanout",
+    "category": "explicit_fanout"
+  },
+  {
+    "id": "fanout-2",
+    "prompt": "Quét đồng thời thông tin tuyển dụng từ 3 nguồn",
+    "metadata": { "fanout": { "id": "job-crawl", "name": "Cào việc làm", "workers": [] } },
+    "expectedMode": "parallel_fanout",
+    "category": "explicit_fanout"
+  },
+  {
+    "id": "supervisor-1",
+    "prompt": "Chạy script python để vẽ đồ thị phân bổ doanh thu theo quý",
+    "expectedMode": "dynamic_supervisor",
+    "category": "python_sandbox"
+  },
+  {
+    "id": "supervisor-2",
+    "prompt": "Thực thi lệnh bash trong sandbox compute để nén thư mục logs",
+    "expectedMode": "dynamic_supervisor",
+    "category": "bash_sandbox"
+  },
+  {
+    "id": "supervisor-3",
+    "prompt": "Đóng vai 2 bên tranh luận đối kháng red-team và blue-team về lỗ hổng bảo mật",
+    "expectedMode": "dynamic_supervisor",
+    "category": "adversarial_debate"
+  },
+  {
+    "id": "supervisor-4",
+    "prompt": "Phản biện chéo 2 chiều giữa chuyên gia tài chính và chuyên gia marketing",
+    "expectedMode": "dynamic_supervisor",
+    "category": "adversarial_debate"
+  },
+  {
+    "id": "supervisor-5",
+    "prompt": "Tóm tắt tài liệu báo cáo thường niên dài 500 trang này",
+    "contextCharBudgetEstimate": 45000,
+    "expectedMode": "dynamic_supervisor",
+    "category": "context_overflow"
+  }
+]

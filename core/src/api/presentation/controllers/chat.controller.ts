@@ -22,6 +22,7 @@ import {
   ChatRequestDto,
   HistoryQueryDto,
   HistoryResponseDto,
+  IPendingApprovalDto,
   CursorPaginationQueryDto,
   CursorPageMetaDto,
   PaginatedResult,
@@ -91,7 +92,11 @@ export class ChatController {
   @ApiBadRequestResponse({ description: 'sessionId không phải là định dạng UUID' })
   async history(@Query() query: HistoryQueryDto): Promise<HistoryResponseDto> {
     const turns = await this.chatService.history(query.sessionId);
-    return new HistoryResponseDto(turns);
+    const lastTurnApproval =
+      turns.length > 0
+        ? (turns[turns.length - 1].metadata?.approval as IPendingApprovalDto | undefined)
+        : undefined;
+    return new HistoryResponseDto(turns, lastTurnApproval);
   }
 
   @Get('conversations')

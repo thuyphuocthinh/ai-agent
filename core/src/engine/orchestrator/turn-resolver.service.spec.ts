@@ -2,6 +2,10 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { IProcessAiTriggerJobData } from '@agent/core/infrastructure/queue';
 import { ORCHESTRATION_CONSTANTS } from '@agent/core/constants';
 import { TurnResolverService } from './turn-resolver.service';
+import { SingleAgentEngine } from './single-agent.engine';
+import { SmartExecutionRouter } from './smart-execution-router.service';
+import { ExecutionEngineRegistryService } from './execution-engine-registry.service';
+import { EXECUTION_ENGINE_REGISTRY, EXECUTION_ROUTER } from '../../contracts';
 import { MessageClientService } from '../../contracts/message-client.service';
 import { MESSAGE_SINK, STREAM_SINK } from '../../contracts';
 import { ReactLoopService } from '../loop/react-loop.service';
@@ -80,6 +84,18 @@ describe('TurnResolverService (Plan-and-Execute, xem accuracy.md)', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TurnResolverService,
+        SingleAgentEngine,
+        SmartExecutionRouter,
+        {
+          provide: EXECUTION_ENGINE_REGISTRY,
+          useFactory: (single: SingleAgentEngine) => {
+            const registry = new ExecutionEngineRegistryService();
+            registry.register(single);
+            return registry;
+          },
+          inject: [SingleAgentEngine],
+        },
+        { provide: EXECUTION_ROUTER, useExisting: SmartExecutionRouter },
         { provide: MESSAGE_SINK, useValue: mockMessageClient },
         { provide: MessageClientService, useValue: mockMessageClient },
         { provide: ReactLoopService, useValue: mockReactLoop },

@@ -11,12 +11,13 @@ export class OpenAiEmbeddingProvider implements EmbeddingProvider {
   private readonly client?: OpenAI;
 
   constructor() {
-    const apiKey = process.env.OPENAI_EMBEDDING_API_KEY;
+    const apiKey =
+      process.env.OPENAI_EMBEDDING_API_KEY ?? process.env.OPENAI_API_KEY;
     if (apiKey) {
       this.client = new OpenAI({ apiKey });
     } else {
       this.logger.warn(
-        'OPENAI_EMBEDDING_API_KEY is not defined in environment variables — semantic tool search is unavailable.',
+        'Neither OPENAI_EMBEDDING_API_KEY nor OPENAI_API_KEY is defined — semantic tool search is unavailable.',
       );
     }
   }

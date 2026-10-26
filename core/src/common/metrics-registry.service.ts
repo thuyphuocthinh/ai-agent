@@ -63,7 +63,8 @@ export class MetricsRegistryService {
       | 'non_convergence'
       | 'approval_required'
       | 'clarification_required'
-      | 'model_escalation',
+      | 'model_escalation'
+      | 'parallel_fanout_completed',
   ): void {
     this.behaviorSignalCounter.inc({ type });
   }

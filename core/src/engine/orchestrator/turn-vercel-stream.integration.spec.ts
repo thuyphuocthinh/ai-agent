@@ -4,6 +4,10 @@ import type { UIMessage, UIMessageChunk } from 'ai';
 import { IProcessAiTriggerJobData } from '@agent/core/infrastructure/queue';
 import { McpToolConnectorService } from '../../infrastructure/tools/mcp-tool-connector.service';
 import { TurnResolverService } from './turn-resolver.service';
+import { SingleAgentEngine } from './single-agent.engine';
+import { SmartExecutionRouter } from './smart-execution-router.service';
+import { ExecutionEngineRegistryService } from './execution-engine-registry.service';
+import { EXECUTION_ENGINE_REGISTRY, EXECUTION_ROUTER } from '../../contracts';
 import { MessageClientService } from '../../contracts/message-client.service';
 import { ReactLoopService } from '../loop/react-loop.service';
 import { SupervisorService } from '../supervisor/supervisor.service';
@@ -76,7 +80,11 @@ describe('1 turn thật → AgentStreamService → VercelUiStreamAdapter → ai@
   let agentStream: AgentStreamService;
   let turnResolver: TurnResolverService;
 
+  const originalMode = process.env.DEFAULT_ORCHESTRATION_MODE;
+
   beforeEach(async () => {
+    // Spec này kiểm chứng đường Supervisor + persona, nên ép bỏ qua hybrid router.
+    process.env.DEFAULT_ORCHESTRATION_MODE = 'supervisor';
     jest.clearAllMocks();
     mockSession.sendMessage.mockReset();
     mockStrategy.startChat.mockReturnValue(mockSession);
@@ -112,6 +120,18 @@ describe('1 turn thật → AgentStreamService → VercelUiStreamAdapter → ai@
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TurnResolverService,
+        SingleAgentEngine,
+        SmartExecutionRouter,
+        {
+          provide: EXECUTION_ENGINE_REGISTRY,
+          useFactory: (single: SingleAgentEngine) => {
+            const registry = new ExecutionEngineRegistryService();
+            registry.register(single);
+            return registry;
+          },
+          inject: [SingleAgentEngine],
+        },
+        { provide: EXECUTION_ROUTER, useExisting: SmartExecutionRouter },
         ReactLoopService,
         AgentStreamService,
         { provide: STREAM_SINK, useExisting: AgentStreamService },
@@ -175,6 +195,8 @@ describe('1 turn thật → AgentStreamService → VercelUiStreamAdapter → ai@
   });
 
   afterEach(async () => {
+    if (originalMode === undefined) delete process.env.DEFAULT_ORCHESTRATION_MODE;
+    else process.env.DEFAULT_ORCHESTRATION_MODE = originalMode;
     await agentStream.onModuleDestroy();
   });
 

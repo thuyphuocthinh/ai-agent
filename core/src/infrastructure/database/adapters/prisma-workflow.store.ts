@@ -49,7 +49,7 @@ export class PrismaWorkflowStore implements IWorkflowRegistry, OnModuleInit {
           name: wf.name,
           description: wf.description ?? null,
           systemPrompt: wf.systemPrompt,
-          model: wf.model ?? 'gemini-2.0-flash',
+          model: wf.model ?? 'gpt-4o-mini',
           tools: wf.tools ? [...wf.tools] : [],
           requireApprovalFor: wf.requireHumanApprovalFor ? [...wf.requireHumanApprovalFor] : [],
           maxLoops: wf.maxLoops ?? 5,
@@ -64,7 +64,7 @@ export class PrismaWorkflowStore implements IWorkflowRegistry, OnModuleInit {
           name: wf.name,
           description: wf.description ?? null,
           systemPrompt: wf.systemPrompt,
-          model: wf.model ?? 'gemini-2.0-flash',
+          model: wf.model ?? 'gpt-4o-mini',
           tools: wf.tools ? [...wf.tools] : [],
           requireApprovalFor: wf.requireHumanApprovalFor ? [...wf.requireHumanApprovalFor] : [],
           maxLoops: wf.maxLoops ?? 5,
@@ -152,6 +152,15 @@ export class PrismaWorkflowStore implements IWorkflowRegistry, OnModuleInit {
         provider: 'google_sheets',
         requireHumanApprovalFor: ['append_rows', 'update_cells'],
         maxLoops: 4,
+      },
+      {
+        id: 'default-two-step-pipeline',
+        name: 'Pipeline: Phân Tích & Báo Cáo 2 Bước (SamuraiAI)',
+        description:
+          'Quy trình cố định 2 bước: Step 1 Bóc tách dữ liệu doanh thu -> Step 2 Định dạng & Báo cáo tổng kết.',
+        systemPrompt:
+          'Bạn là chuyên viên tài chính trong quy trình Pipeline 2 bước tuần tự SamuraiAI.',
+        tools: [],
       },
       {
         id: 'team-announcement',

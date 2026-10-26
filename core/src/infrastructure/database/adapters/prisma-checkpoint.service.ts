@@ -12,6 +12,7 @@ import {
   ClaimCheckpointResponseDto,
   CreateCheckpointRequestDto,
   FindCheckpointByIdRequestDto,
+  FindPendingByConversationRequestDto,
   FindPendingCheckpointRequestDto,
   MarkStalledAsRejectedRequestDto,
   MarkToolExecutedRequestDto,
@@ -157,6 +158,29 @@ export class PrismaCheckpointService {
       return record ? this.toResponseDto(record) : null;
     } catch (error) {
       throw sanitizePrismaError(error, 'PrismaCheckpointService.findPendingByReplyMessageId');
+    }
+  }
+
+  async findPendingByConversationId(
+    dto: FindPendingByConversationRequestDto,
+  ): Promise<CheckpointResponseDto | null> {
+    try {
+      const record = await this.prisma.checkpoint.findFirst({
+        where: {
+          conversationId: dto.conversationId,
+          status: CheckpointStatus.PENDING,
+          expiresAt: {
+            gt: new Date(),
+          },
+        },
+        orderBy: {
+          createdAt: 'desc',
+        },
+      });
+
+      return record ? this.toResponseDto(record) : null;
+    } catch (error) {
+      throw sanitizePrismaError(error, 'PrismaCheckpointService.findPendingByConversationId');
     }
   }
 
