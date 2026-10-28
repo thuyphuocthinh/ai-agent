@@ -1,6 +1,4 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { LessThan, Repository } from 'typeorm';
 import { traceable } from 'langsmith/traceable';
 import { buildTTL } from '@agent/core/common';
 import { ORCHESTRATION_CONSTANTS } from '@agent/core/constants';
@@ -10,6 +8,7 @@ import {
   OpenAiEmbeddingProvider,
   CHARS_PER_TOKEN_ESTIMATE,
 } from './embedding/openai-embedding.provider';
+import { PrismaService } from '../infrastructure/database/prisma.service';
 import { ConversationMemoryEntity } from '../infrastructure/database/entities/conversation-memory.entity';
 import { ToolCallTraceDto } from '../contracts/dtos/react-loop.dto';
 import { isLikelyCreateToolCall } from './create-tool-heuristic.util';
@@ -33,8 +32,7 @@ export class ConversationMemoryService {
   private readonly logger = new Logger(ConversationMemoryService.name);
 
   constructor(
-    @InjectRepository(ConversationMemoryEntity)
-    private readonly repo: Repository<ConversationMemoryEntity>,
+    private readonly prisma: PrismaService,
     private readonly embeddingProvider: OpenAiEmbeddingProvider,
   ) {}
 
@@ -48,14 +46,13 @@ export class ConversationMemoryService {
       .filter(
         (tc) =>
           tc.status === 'success' &&
-          !!tc.resultPreview &&
+          Boolean(tc.resultPreview) &&
           isLikelyCreateToolCall(tc),
       )
       .map((tc) => {
-        const joined = `${tc.tool}: ${tc.resultPreview}`;
+        const joined = `${tc.tool}: ${tc.resultPreview ?? ''}`;
         return {
           conversationId: channelId,
-          channelId,
           sourceMessageId,
           tool: tc.tool,
           content:
@@ -75,13 +72,10 @@ export class ConversationMemoryService {
     if (rows.length === 0) return;
 
     try {
-      await this.repo
-        .createQueryBuilder()
-        .insert()
-        .into(ConversationMemoryEntity)
-        .values(rows)
-        .orIgnore()
-        .execute();
+      await this.prisma.conversationMemory.createMany({
+        data: rows,
+        skipDuplicates: true,
+      });
     } catch (error) {
       this.logger.warn(
         `recordSuccessfulCreateCalls() failed for channel ${channelId}: ${(error as Error).message}`,
@@ -109,23 +103,18 @@ export class ConversationMemoryService {
 
     try {
       if (supersededId) {
-        await this.repo.delete({ id: supersededId });
+        await this.prisma.conversationMemory.delete({
+          where: { id: supersededId },
+        });
       }
-      await this.repo
-        .createQueryBuilder()
-        .insert()
-        .into(ConversationMemoryEntity)
-        .values([
-          {
-            conversationId: channelId,
-            channelId,
-            sourceMessageId,
-            tool: 'user_declared_fact',
-            content,
-          },
-        ])
-        .orIgnore()
-        .execute();
+      await this.prisma.conversationMemory.create({
+        data: {
+          conversationId: channelId,
+          sourceMessageId,
+          tool: 'user_declared_fact',
+          content,
+        },
+      });
     } catch (error) {
       this.logger.warn(
         `recordUserDeclaredFact() failed for channel ${channelId}: ${(error as Error).message}`,
@@ -138,8 +127,8 @@ export class ConversationMemoryService {
     content: string,
   ): Promise<string | null> {
     try {
-      const existing = await this.repo.find({
-        where: { channelId, tool: 'user_declared_fact' },
+      const existing = await this.prisma.conversationMemory.findMany({
+        where: { conversationId: channelId, tool: 'user_declared_fact' },
       });
       if (existing.length === 0) return null;
 
@@ -186,8 +175,10 @@ export class ConversationMemoryService {
   // cột expiresAt riêng.
   async deleteExpired(ttlHours: number): Promise<number> {
     const cutoff = new Date(Date.now() - buildTTL('HOUR', ttlHours));
-    const result = await this.repo.delete({ createdAt: LessThan(cutoff) });
-    return result.affected ?? 0;
+    const result = await this.prisma.conversationMemory.deleteMany({
+      where: { createdAt: { lt: cutoff } },
+    });
+    return result.count;
   }
 
   // queryText (thường là prompt hiện tại) xếp hạng theo ngữ nghĩa thay vì chỉ
@@ -199,14 +190,24 @@ export class ConversationMemoryService {
     queryText?: string,
   ): Promise<ConversationMemoryEntity[]> {
     try {
-      const rows = await this.repo.find({
-        where: { channelId },
-        order: { createdAt: 'DESC' },
+      const rows = await this.prisma.conversationMemory.findMany({
+        where: { conversationId: channelId },
+        orderBy: { createdAt: 'desc' },
         take: ORCHESTRATION_CONSTANTS.CHANNEL_MEMORY_READ_LIMIT,
       });
+      const entities: ConversationMemoryEntity[] = rows.map((r) => {
+        const entity = new ConversationMemoryEntity();
+        entity.id = r.id;
+        entity.conversationId = r.conversationId;
+        entity.sourceMessageId = r.sourceMessageId;
+        entity.tool = r.tool;
+        entity.content = r.content;
+        entity.createdAt = r.createdAt;
+        return entity;
+      });
       const ranked = queryText
-        ? await this.rankBySimilarity(rows, queryText)
-        : rows;
+        ? await this.rankBySimilarity(entities, queryText)
+        : entities;
       return this.capToCharBudget(ranked, charBudget);
     } catch (error) {
       this.logger.warn(
@@ -222,10 +223,6 @@ export class ConversationMemoryService {
   ): Promise<ConversationMemoryEntity[]> {
     if (rows.length === 0) return rows;
 
-    // Ước lượng token thô từ tổng ký tự (rows + query) TRƯỚC khi gọi embedding
-    // — không đọc usage thật từ response vì OpenAiEmbeddingProvider là 1
-    // singleton dùng chung cho nhiều request đồng thời, lưu usage tạm trên
-    // instance sẽ dễ lẫn số giữa các lượt gọi song song.
     const estimatedChars =
       rows.reduce((sum, row) => sum + (row.content?.length ?? 0), 0) +
       queryText.length;
@@ -253,7 +250,7 @@ export class ConversationMemoryService {
       const byId = new Map(rows.map((row) => [row.id, row]));
       const result = ranked
         .map((item) => byId.get(item.name))
-        .filter((row): row is ConversationMemoryEntity => !!row);
+        .filter((row): row is ConversationMemoryEntity => Boolean(row));
       return result.length > 0 ? result : rows;
     } catch (error) {
       this.logger.warn(
@@ -263,9 +260,6 @@ export class ConversationMemoryService {
     }
   }
 
-  // Luôn giữ ít nhất dòng MỚI NHẤT (đầu mảng, đã ORDER BY createdAt DESC) dù
-  // riêng nó đã vượt budget — tránh trả về rỗng chỉ vì 1 model có context
-  // window quá nhỏ, giống tinh thần safety net ở capToolResultSize().
   private capToCharBudget(
     rows: ConversationMemoryEntity[],
     charBudget: number,

@@ -8,9 +8,25 @@ import { readUIMessageStream } from 'ai';
 import type { UIMessage, UIMessageChunk } from 'ai';
 import { EMessageRole, ORCHESTRATION_ERROR } from '@agent/core/constants';
 import { EJobName, EQueueName, IQueueDispatcher } from '@agent/core/infrastructure/queue';
-import { TurnStream, EConversationState } from '../../contracts';
+import {
+  AgentStreamContext,
+  AgentStreamStep,
+  EConversationState,
+  ETurnLogEntryKind,
+  ETurnLogStatus,
+  ITurnEventLog,
+  TurnLogEntry,
+  TurnLogMeta,
+  TurnLogStartDto,
+  TurnStream,
+  VercelUiStreamAdapter,
+} from '../../contracts';
 import { AgentStreamService } from '../../contracts/agent-stream.service';
 import { MessageClientService } from '../../contracts/message-client.service';
+import {
+  ChatSessionNotFoundException,
+  StreamReconnectInvalidException,
+} from '../../common/errors';
 import { ChatService } from './chat.service';
 import { ChatSessionManager } from './chat-session.manager';
 import { TurnStreamFactory, TURN_TIMEOUT_MS } from './turn-stream.factory';
@@ -22,6 +38,111 @@ import {
   PolicyCorpusService,
   SemanticPolicyEvaluatorService,
 } from '../../security';
+
+// Event log giả trong bộ nhớ, cùng hợp đồng với RedisTurnEventLogService (đã test trên
+// Redis thật ở redis-turn-event-log.service.spec.ts): đọc từ đầu rồi bám đuôi.
+class FakeTurnEventLog implements ITurnEventLog {
+  private readonly metas = new Map<string, TurnLogMeta>();
+  private readonly entries = new Map<string, TurnLogEntry[]>();
+  private readonly waiters = new Map<string, Array<() => void>>();
+  private seq = 0;
+  private readonly alive = new Set<string>();
+  activeReaders = 0;
+
+  async start(dto: TurnLogStartDto): Promise<void> {
+    this.metas.set(dto.messageId, {
+      ...dto,
+      status: ETurnLogStatus.ACTIVE,
+      startedAt: 1,
+      updatedAt: 1,
+    });
+    this.alive.add(dto.messageId);
+  }
+
+  startHeartbeat(): () => void {
+    return () => undefined;
+  }
+
+  async isAlive(messageId: string): Promise<boolean> {
+    return this.alive.has(messageId);
+  }
+
+  /** Mô phỏng worker chết: hết nhịp tim mà turn vẫn ACTIVE. */
+  killWorker(messageId: string): void {
+    this.alive.delete(messageId);
+  }
+
+  async appendStep(
+    messageId: string,
+    context: AgentStreamContext,
+    step: AgentStreamStep,
+  ): Promise<void> {
+    this.push(messageId, { id: `${++this.seq}-0`, kind: ETurnLogEntryKind.STEP, context, step });
+  }
+
+  async appendChunk(messageId: string, chunk: UIMessageChunk): Promise<void> {
+    this.push(messageId, { id: `${++this.seq}-0`, kind: ETurnLogEntryKind.CHUNK, chunk });
+  }
+
+  async finish(messageId: string, status: ETurnLogStatus): Promise<void> {
+    const meta = this.metas.get(messageId);
+    if (meta) meta.status = status;
+    this.alive.delete(messageId);
+    this.wake(messageId);
+  }
+
+  async getMeta(messageId: string): Promise<TurnLogMeta | null> {
+    return this.metas.get(messageId) ?? null;
+  }
+
+  async findActiveTurnId(conversationId: string): Promise<string | null> {
+    for (const meta of this.metas.values()) {
+      if (meta.conversationId === conversationId && meta.status === ETurnLogStatus.ACTIVE) {
+        return meta.messageId;
+      }
+    }
+    return null;
+  }
+
+  async snapshot(messageId: string): Promise<TurnLogEntry[]> {
+    return [...(this.entries.get(messageId) ?? [])];
+  }
+
+  async *read(
+    messageId: string,
+    signal?: AbortSignal,
+  ): AsyncGenerator<TurnLogEntry, void, undefined> {
+    this.activeReaders++;
+    try {
+      let index = 0;
+      for (;;) {
+        if (signal?.aborted) return;
+        const list = this.entries.get(messageId) ?? [];
+        while (index < list.length) yield list[index++];
+        if (this.metas.get(messageId)?.status !== ETurnLogStatus.ACTIVE) return;
+        await new Promise<void>((resolve) => {
+          const waiting = this.waiters.get(messageId) ?? [];
+          waiting.push(resolve);
+          this.waiters.set(messageId, waiting);
+          signal?.addEventListener('abort', () => resolve(), { once: true });
+        });
+      }
+    } finally {
+      this.activeReaders--;
+    }
+  }
+
+  private push(messageId: string, entry: TurnLogEntry): void {
+    const list = this.entries.get(messageId) ?? [];
+    list.push(entry);
+    this.entries.set(messageId, list);
+    this.wake(messageId);
+  }
+
+  private wake(messageId: string): void {
+    this.waiters.get(messageId)?.splice(0).forEach((resolve) => resolve());
+  }
+}
 
 // Dùng MessageClientService, AgentStreamService và `ai@7` THẬT; giả lập queueDispatcher/duyệt/huỷ.
 describe('ChatService', () => {
@@ -55,6 +176,29 @@ describe('ChatService', () => {
     jest.useRealTimers();
     await agentStream.onModuleDestroy();
   });
+
+  const buildWith = (log?: ITurnEventLog) => {
+    const sessionManager = new ChatSessionManager();
+    const streamFactory = new TurnStreamFactory(
+      agentStream,
+      messages,
+      cancellation as never,
+      undefined,
+      log,
+    );
+    const chatService = new ChatService(
+      sessionManager,
+      streamFactory,
+      queueDispatcher,
+      messages,
+      approvals as never,
+      undefined,
+      undefined,
+      undefined,
+      log,
+    );
+    return { sessionManager, chatService };
+  };
 
   const readAll = async (turn: TurnStream) => {
     const chunks: UIMessageChunk[] = [];
@@ -312,6 +456,73 @@ describe('ChatService', () => {
       await expect(service.history('00000000-0000-4000-8000-000000000000')).resolves.toEqual([]);
       await expect(service.history(undefined)).resolves.toEqual([]);
     });
+
+    it('đánh dấu turn cuối đang chạy theo event log (không ghép nội dung dở dang vào history)', async () => {
+      const log = new FakeTurnEventLog();
+      const { sessionManager, chatService } = buildWith(log);
+      const session = await sessionManager.getOrCreate('session-inflight');
+      const replyId = '22222222-3333-4444-5555-666666666666';
+      jest.spyOn(messages, 'getRecentHistory').mockResolvedValue([
+        { role: EMessageRole.USER, text: 'câu 1' },
+        { id: replyId, role: EMessageRole.MODEL, text: '🤖 Đang xử lý...' },
+      ]);
+      await log.start({ messageId: replyId, conversationId: session.conversationId });
+      await log.appendStep(replyId, { userId: 'u', messageId: replyId }, { type: 'token', text: 'dở dang' });
+
+      const history = await chatService.history(session.id);
+
+      expect(history[1].text).toBe('🤖 Đang xử lý...');
+      expect(history[1].metadata).toMatchObject({
+        inFlight: true,
+        status: ETurnLogStatus.ACTIVE,
+        messageId: replyId,
+      });
+      expect(history[0].metadata).toBeUndefined();
+    });
+
+    it('worker đã chết (mất nhịp tim): chốt FAILED, lưu phần đã sinh ra xuống DB, không đánh dấu inFlight', async () => {
+      const log = new FakeTurnEventLog();
+      const { sessionManager, chatService } = buildWith(log);
+      const session = await sessionManager.getOrCreate('session-dead-worker');
+      const replyId = '44444444-5555-6666-7777-888888888888';
+      jest.spyOn(messages, 'getRecentHistory').mockResolvedValue([
+        { role: EMessageRole.USER, text: 'câu 1' },
+        { id: replyId, role: EMessageRole.MODEL, text: '🤖 Đang xử lý...' },
+      ]);
+      const update = jest.spyOn(messages, 'tryUpdateMessage').mockResolvedValue(undefined);
+      await log.start({ messageId: replyId, conversationId: session.conversationId });
+      await log.appendStep(replyId, { userId: 'u', messageId: replyId }, { type: 'token', text: 'Phần đã có' });
+      log.killWorker(replyId);
+
+      const history = await chatService.history(session.id);
+
+      expect(history[1].metadata?.inFlight).toBeUndefined();
+      expect((await log.getMeta(replyId))?.status).toBe(ETurnLogStatus.FAILED);
+      expect(update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: replyId,
+          content: expect.stringContaining('Phần đã có'),
+        }),
+      );
+    });
+
+    it('không đánh dấu inFlight khi turn đã kết thúc', async () => {
+      const log = new FakeTurnEventLog();
+      const { sessionManager, chatService } = buildWith(log);
+      const session = await sessionManager.getOrCreate('session-finished');
+      const replyId = '33333333-4444-5555-6666-777777777777';
+      jest.spyOn(messages, 'getRecentHistory').mockResolvedValue([
+        { role: EMessageRole.USER, text: 'câu 1' },
+        { id: replyId, role: EMessageRole.MODEL, text: 'trả lời hoàn tất' },
+      ]);
+      await log.start({ messageId: replyId, conversationId: session.conversationId });
+      await log.finish(replyId, ETurnLogStatus.DONE);
+
+      const history = await chatService.history(session.id);
+
+      expect(history[1].text).toBe('trả lời hoàn tất');
+      expect(history[1].metadata?.inFlight).toBeUndefined();
+    });
   });
 
   describe('approval', () => {
@@ -496,5 +707,210 @@ describe('ChatService', () => {
       expect(result.data[0].title).toBe('Đây là một câu prompt rất dài vượt quá 4...');
     });
   });
-});
 
+  describe('reconnectStream (phát lại event log)', () => {
+    const messageId = 'reply-replay-1';
+    const stepsOf = (): AgentStreamStep[] =>
+      [
+        { type: 'step_start', label: 'Phân tích', persona: { role: 'Analyst', goal: 'g' } },
+        { type: 'tool_call', tool: 'sql.run', toolCallId: 'tc1', argsPreview: '{"q":1}' },
+        { type: 'tool_result', tool: 'sql.run', toolCallId: 'tc1', resultPreview: 'ok' },
+        { type: 'token', text: 'Xin ' },
+        { type: 'token', text: 'chào ' },
+        { type: 'token', text: 'bạn' },
+        { type: 'done' },
+      ] as AgentStreamStep[];
+
+    // Chunk mà stream live sẽ phát cho đúng dãy step này.
+    const liveChunks = async (
+      ctx: AgentStreamContext,
+      steps: AgentStreamStep[],
+    ): Promise<UIMessageChunk[]> => {
+      const out: UIMessageChunk[] = [];
+      const adapter = new VercelUiStreamAdapter({
+        messageId: ctx.messageId,
+        write: (chunk) => {
+          out.push(chunk);
+        },
+      });
+      steps.forEach((step) => adapter.handle(ctx, step));
+      await adapter.flush();
+      return out;
+    };
+
+    const textOf = (message: UIMessage): string =>
+      message.parts
+        .filter((p) => p.type === 'text')
+        .map((p) => (p as { text: string }).text)
+        .join('');
+
+    it('throws ChatSessionNotFoundException when session does not exist', async () => {
+      await expect(
+        service.reconnectStream('00000000-0000-4000-8000-000000000000'),
+      ).rejects.toBeInstanceOf(ChatSessionNotFoundException);
+    });
+
+    it('từ chối khi không có event log (cần Redis thật)', async () => {
+      const { sessionManager, chatService } = buildWith(undefined);
+      const session = await sessionManager.getOrCreate('s-no-log');
+
+      await expect(chatService.reconnectStream(session.id, messageId)).rejects.toBeInstanceOf(
+        StreamReconnectInvalidException,
+      );
+    });
+
+    it('từ chối khi không chỉ định messageId và không có turn nào đang chạy', async () => {
+      const { sessionManager, chatService } = buildWith(new FakeTurnEventLog());
+      const session = await sessionManager.getOrCreate('s-idle');
+
+      await expect(chatService.reconnectStream(session.id)).rejects.toBeInstanceOf(
+        StreamReconnectInvalidException,
+      );
+    });
+
+    it('không chỉ định messageId: tự tìm turn đang chạy của conversation', async () => {
+      const log = new FakeTurnEventLog();
+      const { sessionManager, chatService } = buildWith(log);
+      const session = await sessionManager.getOrCreate('s-find-active');
+      const ctx = { userId: session.userId, channelId: session.conversationId, messageId };
+      await log.start({ messageId, conversationId: session.conversationId });
+      for (const step of stepsOf()) await log.appendStep(messageId, ctx, step);
+
+      // Turn còn ACTIVE lúc reconnect; event `done` trong log tự kết thúc stream.
+      const chunks = await readAll(await chatService.reconnectStream(session.id));
+
+      expect(types(chunks)).toContain('text-delta');
+      expect(types(chunks).at(-1)).toBe('finish');
+    });
+
+    it('reload giữa chừng: phát lại từ đầu + nhận tiếp phần ghi sau, ra ĐÚNG chuỗi chunk như stream live (không mất, không lặp)', async () => {
+      const log = new FakeTurnEventLog();
+      const { sessionManager, chatService } = buildWith(log);
+      const session = await sessionManager.getOrCreate('s-replay');
+      const ctx = { userId: session.userId, channelId: session.conversationId, messageId };
+      const steps = stepsOf();
+      await log.start({ messageId, conversationId: session.conversationId, userId: session.userId });
+      for (const step of steps.slice(0, 4)) await log.appendStep(messageId, ctx, step);
+
+      const turn = await chatService.reconnectStream(session.id, messageId);
+      const collected = readAll(turn);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      for (const step of steps.slice(4)) await log.appendStep(messageId, ctx, step);
+      await log.finish(messageId, ETurnLogStatus.DONE);
+      const chunks = await collected;
+
+      expect(chunks).toEqual(await liveChunks(ctx, steps));
+      expect(textOf(await toMessage(chunks))).toBe('Xin chào bạn');
+    });
+
+    it('phát lại cả chunk dựng sẵn (câu trả lời cuối, yêu cầu duyệt) đúng thứ tự trước finish', async () => {
+      const log = new FakeTurnEventLog();
+      const { sessionManager, chatService } = buildWith(log);
+      const session = await sessionManager.getOrCreate('s-chunks');
+      const ctx = { userId: session.userId, channelId: session.conversationId, messageId };
+      await log.start({ messageId, conversationId: session.conversationId });
+      await log.appendStep(messageId, ctx, { type: 'token', text: 'a' });
+      await log.appendChunk(messageId, {
+        type: 'data-clarification',
+        data: { messageId: 'clar-1', preview: 'Chọn ai?' },
+      } as UIMessageChunk);
+      await log.appendChunk(messageId, {
+        type: 'data-reply',
+        data: { messageId, text: 'đáp án' },
+      } as UIMessageChunk);
+      await log.appendStep(messageId, ctx, { type: 'done' });
+      await log.finish(messageId, ETurnLogStatus.DONE);
+
+      const chunks = await readAll(await chatService.reconnectStream(session.id, messageId));
+
+      const names = types(chunks);
+      expect(names.indexOf('data-clarification')).toBeGreaterThan(names.indexOf('text-delta'));
+      expect(names.indexOf('data-reply')).toBeGreaterThan(names.indexOf('data-clarification'));
+      expect(names.at(-1)).toBe('finish');
+    });
+
+    it('worker chết (log kết thúc mà không có done): vẫn đóng stream bằng finish, không treo', async () => {
+      const log = new FakeTurnEventLog();
+      const { sessionManager, chatService } = buildWith(log);
+      const session = await sessionManager.getOrCreate('s-dead');
+      const ctx = { userId: session.userId, channelId: session.conversationId, messageId };
+      await log.start({ messageId, conversationId: session.conversationId });
+      await log.appendStep(messageId, ctx, { type: 'token', text: 'dở' });
+      await log.finish(messageId, ETurnLogStatus.FAILED);
+
+      const chunks = await readAll(await chatService.reconnectStream(session.id, messageId));
+
+      expect(types(chunks).at(-1)).toBe('finish');
+      expect(types(chunks)).toContain('text-delta');
+    });
+
+    it('log đã hết hạn: trả đáp án cuối từ DB rồi finish', async () => {
+      const { sessionManager, chatService } = buildWith(new FakeTurnEventLog());
+      const session = await sessionManager.getOrCreate('s-expired');
+      jest.spyOn(messages, 'getRecentHistory').mockResolvedValue([
+        { role: EMessageRole.USER, text: 'câu 1' },
+        { id: messageId, role: EMessageRole.MODEL, text: 'Đáp án cuối' },
+      ]);
+
+      const chunks = await readAll(await chatService.reconnectStream(session.id, messageId));
+
+      expect(chunks).toEqual([
+        { type: 'data-reply', data: { messageId, text: 'Đáp án cuối' } },
+        { type: 'finish', finishReason: 'stop' },
+      ]);
+    });
+
+    it('log hết hạn và message không thuộc phiên này: từ chối', async () => {
+      const { sessionManager, chatService } = buildWith(new FakeTurnEventLog());
+      const session = await sessionManager.getOrCreate('s-foreign');
+      jest.spyOn(messages, 'getRecentHistory').mockResolvedValue([]);
+
+      await expect(chatService.reconnectStream(session.id, 'khong-co')).rejects.toBeInstanceOf(
+        StreamReconnectInvalidException,
+      );
+    });
+
+    it('turn thuộc conversation khác: từ chối', async () => {
+      const log = new FakeTurnEventLog();
+      const { sessionManager, chatService } = buildWith(log);
+      const session = await sessionManager.getOrCreate('s-mine');
+      await log.start({ messageId, conversationId: 'conversation-cua-nguoi-khac' });
+
+      await expect(chatService.reconnectStream(session.id, messageId)).rejects.toBeInstanceOf(
+        StreamReconnectInvalidException,
+      );
+    });
+
+    it('reconnect vào turn mà worker đã chết: chốt FAILED rồi trả stream đã kết thúc (không treo)', async () => {
+      const log = new FakeTurnEventLog();
+      const { sessionManager, chatService } = buildWith(log);
+      const session = await sessionManager.getOrCreate('s-reap-reconnect');
+      const ctx = { userId: session.userId, channelId: session.conversationId, messageId };
+      jest.spyOn(messages, 'tryUpdateMessage').mockResolvedValue(undefined);
+      await log.start({ messageId, conversationId: session.conversationId });
+      await log.appendStep(messageId, ctx, { type: 'token', text: 'dở' });
+      log.killWorker(messageId);
+
+      const chunks = await readAll(await chatService.reconnectStream(session.id, messageId));
+
+      expect((await log.getMeta(messageId))?.status).toBe(ETurnLogStatus.FAILED);
+      expect(types(chunks).at(-1)).toBe('finish');
+    });
+
+    it('đóng kết nối reconnect (F5 tiếp) dừng reader nhưng KHÔNG huỷ engine', async () => {
+      const log = new FakeTurnEventLog();
+      const { sessionManager, chatService } = buildWith(log);
+      const session = await sessionManager.getOrCreate('s-close');
+      await log.start({ messageId, conversationId: session.conversationId });
+
+      const turn = await chatService.reconnectStream(session.id, messageId);
+      const reader = turn.stream.getReader();
+      const pending = reader.read();
+      turn.close?.();
+
+      await expect(pending).resolves.toMatchObject({ done: true });
+      expect(cancellation.requestCancel).not.toHaveBeenCalled();
+      expect(log.activeReaders).toBe(0);
+    });
+  });
+});

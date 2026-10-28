@@ -6,6 +6,8 @@ import { MessageClientService } from '../../contracts/message-client.service';
 import { AgentStreamService } from '../../contracts/agent-stream.service';
 import { CheckpointService } from './checkpoint.service';
 import { OrchestrationCheckpointStatus } from '../../infrastructure/database/entities/orchestration-checkpoint.entity';
+import { ETurnLogStatus, TURN_EVENT_LOG } from '../../contracts';
+import { TurnEventRecorderService } from '../orchestrator/turn-event-recorder.service';
 
 describe('ApprovalRequestService', () => {
   let service: ApprovalRequestService;
@@ -18,6 +20,8 @@ describe('ApprovalRequestService', () => {
     revertApprovedClaim: jest.fn(),
   };
   const mockQueueService = { addJob: jest.fn() };
+  const mockEventLog = { start: jest.fn(), finish: jest.fn() };
+  const mockTurnRecorder = { idle: jest.fn() };
 
   beforeEach(async () => {
     mockMessageClient.updateMessage.mockResolvedValue(undefined);
@@ -25,6 +29,9 @@ describe('ApprovalRequestService', () => {
     mockCheckpoint.claim.mockResolvedValue({ claimed: true });
     mockCheckpoint.revertApprovedClaim.mockResolvedValue(undefined);
     mockQueueService.addJob.mockResolvedValue({ id: 'job-1' });
+    mockEventLog.start.mockResolvedValue(undefined);
+    mockEventLog.finish.mockResolvedValue(undefined);
+    mockTurnRecorder.idle.mockResolvedValue(undefined);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -33,6 +40,8 @@ describe('ApprovalRequestService', () => {
         { provide: AgentStreamService, useValue: mockAgentStream },
         { provide: CheckpointService, useValue: mockCheckpoint },
         { provide: QueueService, useValue: mockQueueService },
+        { provide: TURN_EVENT_LOG, useValue: mockEventLog },
+        { provide: TurnEventRecorderService, useValue: mockTurnRecorder },
       ],
     }).compile();
 
@@ -96,6 +105,71 @@ describe('ApprovalRequestService', () => {
         },
         { type: 'done' },
       );
+    });
+
+    it('reject: turn từ chối có event log — ACTIVE trước khi ghi "Đã huỷ", recorder xong rồi mới phát done, chốt DONE sau cùng', async () => {
+      const order: string[] = [];
+      mockCheckpoint.findPendingByReplyMessageId.mockResolvedValue(checkpoint);
+      mockEventLog.start.mockImplementation(async (dto) => {
+        order.push('start');
+        expect(dto).toEqual({
+          messageId: 'approval-msg-1',
+          conversationId: 'channel-1',
+          userId: 'user-1',
+        });
+      });
+      mockMessageClient.updateMessage.mockImplementation(async () => {
+        order.push('update');
+      });
+      mockTurnRecorder.idle.mockImplementation(async () => {
+        order.push('recorder-idle');
+      });
+      mockAgentStream.emitStep.mockImplementation(async (_ctx, step) => {
+        order.push(`emit-${step.type}`);
+      });
+      mockEventLog.finish.mockImplementation(async (_id, status) => {
+        order.push(`finish-${status}`);
+      });
+
+      await service.resolveApproval({
+        userId: 'user-1',
+        messageId: 'approval-msg-1',
+        action: 'reject',
+      });
+
+      expect(order).toEqual(['start', 'update', 'recorder-idle', 'emit-done', 'finish-done']);
+    });
+
+    it('reject: ghi message lỗi thì vẫn phát done, chốt FAILED và ném lại lỗi (không treo stream)', async () => {
+      mockCheckpoint.findPendingByReplyMessageId.mockResolvedValue(checkpoint);
+      mockMessageClient.updateMessage.mockRejectedValue(new Error('db down'));
+
+      await expect(
+        service.resolveApproval({
+          userId: 'user-1',
+          messageId: 'approval-msg-1',
+          action: 'reject',
+        }),
+      ).rejects.toThrow('db down');
+
+      expect(mockAgentStream.emitStep).toHaveBeenCalledWith(
+        expect.objectContaining({ messageId: 'approval-msg-1' }),
+        { type: 'done' },
+      );
+      expect(mockEventLog.finish).toHaveBeenCalledWith('approval-msg-1', ETurnLogStatus.FAILED);
+    });
+
+    it('approve: không tự tạo log ở đây (log của turn chạy tiếp do ApprovalExecutionService đảm nhiệm)', async () => {
+      mockCheckpoint.findPendingByReplyMessageId.mockResolvedValue(checkpoint);
+
+      await service.resolveApproval({
+        userId: 'user-1',
+        messageId: 'approval-msg-1',
+        action: 'approve',
+      });
+
+      expect(mockEventLog.start).not.toHaveBeenCalled();
+      expect(mockEventLog.finish).not.toHaveBeenCalled();
     });
 
     it('approve: claims the checkpoint then enqueues a background job instead of running the tool inline (fast HTTP response)', async () => {

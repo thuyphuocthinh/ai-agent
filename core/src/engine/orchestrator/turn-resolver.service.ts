@@ -88,13 +88,14 @@ export class TurnResolverService {
         this.logger.log(
           `Routing trực tiếp tới fixed workflow "${workflowId}" (${workflow.name}) cho turn ${replyMessageId}`,
         );
-        return this.workflowRunner.runWorkflow({
+        const answer = await this.workflowRunner.runWorkflow({
           workflow,
           prompt,
           data,
           replyMessageId,
           history,
         });
+        return { ...answer, routing: { mode: EExecutionEngineMode.WORKFLOW, label: workflow.name } };
       }
       this.logger.warn(
         `Không tìm thấy workflowId="${workflowId}" trong registry. Fallback về Dynamic Supervisor.`,
@@ -119,7 +120,8 @@ export class TurnResolverService {
       this.engineRegistry.get(EExecutionEngineMode.DYNAMIC_SUPERVISOR);
 
     if (engine) {
-      return engine.execute({ data, replyMessageId, prompt, agents, history });
+      const answer = await engine.execute({ data, replyMessageId, prompt, agents, history });
+      return { ...answer, routing: { mode: engine.id } };
     }
 
     throw new Error(

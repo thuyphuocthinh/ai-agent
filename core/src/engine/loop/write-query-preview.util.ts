@@ -1,19 +1,35 @@
 import { JsonRepair } from 'agentic-io-parser';
 
+export enum EWriteQueryTargetKind {
+  EXISTING_ROWS = 'existing-rows',
+  INSERT_ROWS = 'insert-rows',
+  WHOLE_TABLE_DESTRUCTIVE = 'whole-table-destructive',
+}
+
+export enum EWriteQueryCountKind {
+  MAXIMUM = 'maximum',
+}
+
+// Giá trị này được in thẳng vào preview hiển thị cho người duyệt.
+export enum EWriteQueryOperation {
+  TRUNCATE = 'TRUNCATE',
+  DROP = 'DROP',
+}
+
 export type WriteQueryPreviewTarget =
-  | { kind: 'existing-rows'; table: string; whereClause: string | null }
+  | { kind: EWriteQueryTargetKind.EXISTING_ROWS; table: string; whereClause: string | null }
   | {
-    kind: 'insert-rows';
+    kind: EWriteQueryTargetKind.INSERT_ROWS;
     table: string;
     rowCount: number;
     // INSERT ... VALUES cho con số chính xác; INSERT ... SELECT TOP N chỉ
     // đảm bảo giới hạn trên vì nguồn SELECT có thể trả về ít hơn N dòng.
-    countKind?: 'maximum';
+    countKind?: EWriteQueryCountKind;
   }
   | {
-    kind: 'whole-table-destructive';
+    kind: EWriteQueryTargetKind.WHOLE_TABLE_DESTRUCTIVE;
     table: string;
-    operation: 'TRUNCATE' | 'DROP';
+    operation: EWriteQueryOperation;
   };
 
 function parseTableList(tableListText: string): string {
@@ -75,9 +91,9 @@ export function extractWriteQueryPreviewTarget(
   const truncateMatch = trimmed.match(/^TRUNCATE\s+TABLE\s+([\s\S]+)$/i);
   if (truncateMatch) {
     return {
-      kind: 'whole-table-destructive',
+      kind: EWriteQueryTargetKind.WHOLE_TABLE_DESTRUCTIVE,
       table: parseTableList(truncateMatch[1]),
-      operation: 'TRUNCATE',
+      operation: EWriteQueryOperation.TRUNCATE,
     };
   }
 
@@ -86,9 +102,9 @@ export function extractWriteQueryPreviewTarget(
   );
   if (dropMatch) {
     return {
-      kind: 'whole-table-destructive',
+      kind: EWriteQueryTargetKind.WHOLE_TABLE_DESTRUCTIVE,
       table: parseTableList(dropMatch[1]),
-      operation: 'DROP',
+      operation: EWriteQueryOperation.DROP,
     };
   }
 
@@ -97,7 +113,7 @@ export function extractWriteQueryPreviewTarget(
   );
   if (updateMatch) {
     return {
-      kind: 'existing-rows',
+      kind: EWriteQueryTargetKind.EXISTING_ROWS,
       table: updateMatch[1],
       whereClause: splitAtWhere(updateMatch[2]),
     };
@@ -106,7 +122,7 @@ export function extractWriteQueryPreviewTarget(
   const deleteMatch = trimmed.match(/^DELETE\s+FROM\s+(\S+)([\s\S]*)$/i);
   if (deleteMatch) {
     return {
-      kind: 'existing-rows',
+      kind: EWriteQueryTargetKind.EXISTING_ROWS,
       table: deleteMatch[1],
       whereClause: splitAtWhere(deleteMatch[2]),
     };
@@ -118,7 +134,7 @@ export function extractWriteQueryPreviewTarget(
   if (insertMatch) {
     const rowCount = countTopLevelTuples(insertMatch[2]);
     if (rowCount !== null) {
-      return { kind: 'insert-rows', table: insertMatch[1], rowCount };
+      return { kind: EWriteQueryTargetKind.INSERT_ROWS, table: insertMatch[1], rowCount };
     }
   }
 
@@ -136,10 +152,10 @@ export function extractWriteQueryPreviewTarget(
       );
       if (Number.isSafeInteger(rowCount) && rowCount > 0) {
         return {
-          kind: 'insert-rows',
+          kind: EWriteQueryTargetKind.INSERT_ROWS,
           table: insertSelectTopMatch[1],
           rowCount,
-          countKind: 'maximum',
+          countKind: EWriteQueryCountKind.MAXIMUM,
         };
       }
     }

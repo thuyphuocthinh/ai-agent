@@ -1,4 +1,4 @@
-import { EMessageRole } from '@agent/core/constants';
+import { EMessageEventType, EMessageRole } from '@agent/core/constants';
 import {
   ChatHistoryTurnDto,
   CreateOrchestrationMessageRequestDto,
@@ -11,7 +11,7 @@ import {
 export const MESSAGE_SINK = Symbol('MESSAGE_SINK');
 
 export interface MessageEvent {
-  type: 'created' | 'updated';
+  type: EMessageEventType;
   id: string;
   conversationId: string;
   role: EMessageRole;

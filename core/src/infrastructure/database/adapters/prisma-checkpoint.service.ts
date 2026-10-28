@@ -21,6 +21,7 @@ import {
 import { DelegationDto, SupervisorRoundDto } from '../../../contracts/dtos/supervisor.dto';
 import { ChatHistoryTurnDto } from '../../../contracts/dtos/message-client.dto';
 import { ToolCallTraceDto } from '../../../contracts/dtos/react-loop.dto';
+import { EExecutionEngineMode } from '../../../contracts/execution-engine.interface';
 import { PrismaService } from '../prisma.service';
 import { sanitizePrismaError } from '../../../common/errors';
 import { CheckpointKind, CheckpointStatus, Prisma } from '@prisma/client';
@@ -405,7 +406,11 @@ export class PrismaCheckpointService {
         const raw = (record.roundsSoFar as unknown as Array<SupervisorRoundDto & { __engineMode?: string; __toolCalls?: ToolCallTraceDto[] }>) || [];
         const meta = raw.find((r) => r && r.__engineMode);
         const tcMeta = raw.find((r) => r && r.__toolCalls);
-        const engineMode = meta?.__engineMode ?? (raw.some((r) => r.agent === 'single_agent') ? 'single_agent' : 'dynamic_supervisor');
+        const engineMode =
+          meta?.__engineMode ??
+          (raw.some((r) => r.agent === EExecutionEngineMode.SINGLE_AGENT)
+            ? EExecutionEngineMode.SINGLE_AGENT
+            : EExecutionEngineMode.DYNAMIC_SUPERVISOR);
         const clean = raw.filter((r) => !r || (!r.__engineMode && !r.__toolCalls));
         return {
           roundsSoFar: clean,

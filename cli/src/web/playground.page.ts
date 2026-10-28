@@ -894,6 +894,14 @@ export const PLAYGROUND_HTML = /* html */ `<!doctype html>
     PLANNING: 'planning',
     SYNTHESIZE: 'synthesize',
   };
+  // Khớp EExecutionEngineMode / ETurnLogStatus ở backend (routing.mode, metadata.status).
+  var ROUTING_MODES = {
+    SINGLE_AGENT: 'single_agent',
+    WORKFLOW: 'workflow',
+  };
+  var TURN_STATUS = {
+    ACTIVE: 'active',
+  };
 
   var log = document.getElementById('log');
   var promptBox = document.getElementById('prompt');
@@ -1171,6 +1179,35 @@ export const PLAYGROUND_HTML = /* html */ `<!doctype html>
     }
   }
 
+  var SUPERVISOR_ICON_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 4.44-2.04z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-4.44-2.04z"/></svg>';
+
+  // Card Supervisor của turn ĐÃ KẾT THÚC (reload / mở lại cuộc trò chuyện), dựng lại từ
+  // metadata.routing. Lúc đang stream thì card do createBubble() + các chunk live dựng.
+  function createSupervisorHistoryCard(routing) {
+    var mode = routing && routing.mode;
+    var skipped = mode === ROUTING_MODES.SINGLE_AGENT;
+    var isWorkflow = mode === ROUTING_MODES.WORKFLOW;
+    var roleText = isWorkflow && routing.label ? routing.label : 'Bộ điều phối (Supervisor)';
+    var goalText = skipped
+      ? 'Đã định tuyến trực tiếp vào Multi-Provider Single Agent (bỏ qua 4 bước Supervisor)'
+      : (isWorkflow ? 'Hoàn tất thực thi workflow' : 'Đã phân chia nhiệm vụ cho các Agent');
+
+    var card = el('div', 'agent-card supervisor-card');
+    var header = el('div', 'agent-header');
+    var left = el('div', 'agent-info');
+    var badge = el('span', 'agent-badge supervisor-badge');
+    badge.innerHTML = SUPERVISOR_ICON_SVG;
+    left.appendChild(badge);
+    var titles = el('div', 'agent-titles');
+    titles.appendChild(el('div', 'agent-role', roleText));
+    titles.appendChild(el('div', 'agent-goal', goalText));
+    left.appendChild(titles);
+    header.appendChild(left);
+    header.appendChild(el('span', 'agent-status done', skipped ? 'Bỏ qua' : 'Hoàn thành'));
+    card.appendChild(header);
+    return card;
+  }
+
   function createBubble() {
     var box = el('div', 'msg bot');
 
@@ -1180,7 +1217,7 @@ export const PLAYGROUND_HTML = /* html */ `<!doctype html>
     var supLeft = el('div', 'agent-info');
 
     var supBadge = el('span', 'agent-badge supervisor-badge');
-    supBadge.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 4.44-2.04z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-4.44-2.04z"/></svg>';
+    supBadge.innerHTML = SUPERVISOR_ICON_SVG;
     supLeft.appendChild(supBadge);
 
     var supTitles = el('div', 'agent-titles');
@@ -1410,6 +1447,46 @@ export const PLAYGROUND_HTML = /* html */ `<!doctype html>
 
   function render(bubble, chunk) {
     switch (chunk.type) {
+      case 'resync':
+      case CHUNK_TYPES.DATA_RESYNC: {
+        clearStatus(bubble);
+        var resyncSteps = chunk.steps || (chunk.data && chunk.data.steps) || [];
+        var resyncToolCalls = chunk.toolCalls || (chunk.data && chunk.data.toolCalls) || [];
+        var resyncText = chunk.partialText || (chunk.data && (chunk.data.partialText || chunk.data.text)) || '';
+        if (Array.isArray(resyncToolCalls) && resyncToolCalls.length > 0) {
+          var defaultAgent = getOrCreateAgent(bubble, 'agent', { role: 'Agent' });
+          resyncToolCalls.forEach(function (tc, idx) {
+            var toolId = tc.toolCallId || tc.id || ('tool-' + (tc.tool || 'call') + '-' + idx);
+            if (toolId && !bubble.tools[toolId]) {
+              var d = createHistoryToolElement(tc);
+              defaultAgent.body.appendChild(d);
+              bubble.tools[toolId] = { details: d, pre: d.querySelector('.tool-output pre') || d.querySelector('pre') };
+            }
+          });
+        }
+        if (Array.isArray(resyncSteps)) {
+          resyncSteps.forEach(function (step) {
+            var agentKey = (step.persona && step.persona.role) || step.agent || 'default';
+            var agent = getOrCreateAgent(bubble, agentKey, step.persona);
+            if (Array.isArray(step.toolCalls)) {
+              step.toolCalls.forEach(function (tc, idx) {
+                var toolId = tc.toolCallId || tc.id || (agentKey + '-' + (tc.tool || 'tool') + '-' + idx);
+                if (toolId && !bubble.tools[toolId]) {
+                  var d = createHistoryToolElement(tc);
+                  agent.body.appendChild(d);
+                  bubble.tools[toolId] = { details: d, pre: d.querySelector('.tool-output pre') || d.querySelector('pre') };
+                }
+              });
+            }
+          });
+        }
+        if (resyncText) {
+          bubble.reply = resyncText;
+          ensureReplyEl(bubble);
+          bubble.replyEl.innerHTML = renderMarkdown(bubble.reply);
+        }
+        break;
+      }
       case CHUNK_TYPES.DATA_STATUS:
         if (chunk.data && chunk.data.label) {
           if (chunk.data.kind === STEP_KINDS.PLANNING || chunk.id === STEP_KINDS.PLANNING) {
@@ -1737,49 +1814,97 @@ export const PLAYGROUND_HTML = /* html */ `<!doctype html>
     }
   }
 
+  function updateSessionFromHeader(response) {
+    var session = response.headers.get('x-playground-session');
+    if (!session) return;
+    var isNewSession = !sessionId || sessionId !== session;
+    sessionId = session;
+    try { localStorage.setItem('agent_playground_session_id', session); } catch (e) {}
+    statusEl.textContent = 'session: ' + session.slice(0, 8);
+    if (isNewSession) loadConversations();
+  }
+
+  async function handleStreamResponseError(response, bubble) {
+    if (response.ok && response.body) return true;
+    if (progressTimer) clearTimeout(progressTimer);
+    if (progressWrap) progressWrap.style.display = 'none';
+    var info = '';
+    try { var j = await response.json(); info = j.error || j.message || JSON.stringify(j); } catch (e) { info = response.statusText; }
+    bubble.box.appendChild(el('div', 'error-msg', 'HTTP ' + response.status + ': ' + info));
+    return false;
+  }
+
+  function handleStreamError(error, bubble) {
+    if (progressTimer) clearTimeout(progressTimer);
+    if (progressWrap) progressWrap.style.display = 'none';
+    bubble.box.appendChild(el('div', 'error-msg', 'Connection error: ' + error.message));
+  }
+
+  async function readSseStream(response, bubble) {
+    var reader = response.body.getReader();
+    var decoder = new TextDecoder();
+    var buffer = '';
+    for (;;) {
+      var step = await reader.read();
+      if (step.done) break;
+      buffer += decoder.decode(step.value, { stream: true });
+      var events = buffer.split(LF + LF);
+      buffer = events.pop();
+      events.forEach(function (raw) {
+        var line = raw.split(LF).filter(function (l) { return l.indexOf('data:') === 0; }).map(function (l) { return l.slice(5).trim(); }).join('');
+        if (!line || line === '[DONE]') return;
+        try { render(bubble, JSON.parse(line)); } catch (e) { /* skip non-json */ }
+      });
+    }
+    showReply(bubble);
+  }
+
   async function run(url, body, targetBubble) {
     setBusy(true);
     var bubble = targetBubble || createBubble();
     try {
       var response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-      var session = response.headers.get('x-playground-session');
-      if (session) {
-        var isNewSession = !sessionId || sessionId !== session;
-        sessionId = session;
-        try { localStorage.setItem('agent_playground_session_id', session); } catch (e) {}
-        statusEl.textContent = 'session: ' + session.slice(0, 8);
-        if (isNewSession) {
-          loadConversations();
-        }
-      }
-      if (!response.ok || !response.body) {
+      updateSessionFromHeader(response);
+      var isOk = await handleStreamResponseError(response, bubble);
+      if (!isOk) return;
+      await readSseStream(response, bubble);
+    } catch (error) {
+      handleStreamError(error, bubble);
+    } finally {
+      setBusy(false);
+      scroll();
+      loadConversations();
+    }
+  }
+
+  var reconnectFallbackMessageId = null;
+
+  async function reconnectActiveStream(sid, messageId, targetBubble) {
+    setBusy(true);
+    var bubble = targetBubble || createBubble();
+    try {
+      showGlobalProgress(50, 'Đang khôi phục dòng phản hồi...', 'Kết nối lại');
+      var url = '/api/stream?sessionId=' + encodeURIComponent(sid) + '&messageId=' + encodeURIComponent(messageId);
+      var response = await fetch(url, { method: 'GET' });
+      updateSessionFromHeader(response);
+      if (response.status === 400) {
         if (progressTimer) clearTimeout(progressTimer);
         if (progressWrap) progressWrap.style.display = 'none';
-        var info = '';
-        try { var j = await response.json(); info = j.error || j.message || JSON.stringify(j); } catch (e) { info = response.statusText; }
-        bubble.box.appendChild(el('div', 'error-msg', 'HTTP ' + response.status + ': ' + info));
+        // Turn đã kết thúc giữa lúc lấy history và gọi reconnect: câu trả lời cuối
+        // đã nằm trong DB, tải lại history (mỗi messageId chỉ thử 1 lần để không lặp).
+        if (reconnectFallbackMessageId !== messageId) {
+          reconnectFallbackMessageId = messageId;
+          loadHistory(sid);
+          return;
+        }
+        showReply(bubble);
         return;
       }
-      var reader = response.body.getReader();
-      var decoder = new TextDecoder();
-      var buffer = '';
-      for (;;) {
-        var step = await reader.read();
-        if (step.done) break;
-        buffer += decoder.decode(step.value, { stream: true });
-        var events = buffer.split(LF + LF);
-        buffer = events.pop();
-        events.forEach(function (raw) {
-          var line = raw.split(LF).filter(function (l) { return l.indexOf('data:') === 0; }).map(function (l) { return l.slice(5).trim(); }).join('');
-          if (!line || line === '[DONE]') return;
-          try { render(bubble, JSON.parse(line)); } catch (e) { /* skip non-json */ }
-        });
-      }
-      showReply(bubble);
+      var isOk = await handleStreamResponseError(response, bubble);
+      if (!isOk) return;
+      await readSseStream(response, bubble);
     } catch (error) {
-      if (progressTimer) clearTimeout(progressTimer);
-      if (progressWrap) progressWrap.style.display = 'none';
-      bubble.box.appendChild(el('div', 'error-msg', 'Connection error: ' + error.message));
+      handleStreamError(error, bubble);
     } finally {
       setBusy(false);
       scroll();
@@ -1899,7 +2024,9 @@ export const PLAYGROUND_HTML = /* html */ `<!doctype html>
 
   function createHistoryToolElement(tc) {
     var isError = tc.status === 'error' || tc.status === 'failed';
-    var d = el('details', 'tool ' + (isError ? 'error' : 'done'));
+    var isRunning = tc.status === 'running';
+    var statusClass = isError ? 'error' : (isRunning ? '' : 'done');
+    var d = el('details', 'tool ' + statusClass);
     var sum = el('summary', 'tool-summary');
     var dotIdx = (tc.tool || '').indexOf('.');
     var provider = dotIdx !== -1 ? tc.tool.slice(0, dotIdx) : '';
@@ -1914,11 +2041,10 @@ export const PLAYGROUND_HTML = /* html */ `<!doctype html>
       tech.appendChild(el('pre', 'code-box', pretty(tc.argsPreview)));
       b.appendChild(tech);
     }
-    if (tc.resultPreview) {
-      var out = el('div', 'tool-output');
-      out.appendChild(el('pre', 'code-box', pretty(tc.resultPreview)));
-      b.appendChild(out);
-    }
+    var out = el('div', 'tool-output');
+    var outPre = el('pre', 'code-box', tc.resultPreview ? pretty(tc.resultPreview) : (isRunning ? 'running...' : ''));
+    out.appendChild(outPre);
+    b.appendChild(out);
     d.appendChild(b);
     return d;
   }
@@ -1997,7 +2123,16 @@ export const PLAYGROUND_HTML = /* html */ `<!doctype html>
           log.appendChild(el('div', 'hint-empty', 'Cuộc trò chuyện chưa có tin nhắn. Gõ câu hỏi bên dưới để bắt đầu.'));
           return;
         }
-        turns.forEach(function (turn, idx) {
+
+        var inFlightTurn = null;
+        var lastTurn = turns[turns.length - 1];
+        if (lastTurn && lastTurn.role === 'model' && lastTurn.metadata && lastTurn.metadata.inFlight && lastTurn.metadata.status === TURN_STATUS.ACTIVE && !lastTurn.metadata.approval) {
+          inFlightTurn = lastTurn;
+        }
+
+        var historyTurns = inFlightTurn ? turns.slice(0, turns.length - 1) : turns;
+
+        historyTurns.forEach(function (turn, idx) {
           if (turn.role === 'user') {
             log.appendChild(el('div', 'msg user', turn.text));
           } else {
@@ -2005,11 +2140,25 @@ export const PLAYGROUND_HTML = /* html */ `<!doctype html>
             var botBox = el('div', 'bot');
             var meta = turn.metadata || {};
 
+            // 0. Card Supervisor (quyết định định tuyến đã lưu trong metadata)
+            if (meta.routing) {
+              botBox.appendChild(createSupervisorHistoryCard(meta.routing));
+            }
+
             // 1. Phục dựng các execution steps (mỗi Persona Card bọc các tool calls của riêng nó)
             var steps = meta.steps;
-            if (!steps && Array.isArray(meta.toolCalls) && meta.toolCalls.length > 0) {
+            if ((!Array.isArray(steps) || steps.length === 0) && Array.isArray(meta.toolCalls) && meta.toolCalls.length > 0) {
               steps = groupToolsByProvider(meta.toolCalls, meta.personas || (meta.persona ? [meta.persona] : []));
             }
+            // Message approval/clarification mang bản sao toolCalls của reply ngay trước nó
+            // (turn bị pause): reply đã vẽ card rồi, không vẽ lặp.
+            var prevTurn = idx > 0 ? historyTurns[idx - 1] : null;
+            var prevMeta = prevTurn && prevTurn.role === 'model' ? (prevTurn.metadata || {}) : null;
+            var prevHasGrid = !!prevMeta && (
+              (Array.isArray(prevMeta.steps) && prevMeta.steps.length > 0) ||
+              (Array.isArray(prevMeta.toolCalls) && prevMeta.toolCalls.length > 0)
+            );
+            if (meta.approval && prevHasGrid) steps = [];
 
             if (Array.isArray(steps) && steps.length > 0) {
               var gridEl = el('div', 'agents-grid');
@@ -2036,7 +2185,7 @@ export const PLAYGROUND_HTML = /* html */ `<!doctype html>
                 // Body của Card chứa trực tiếp các Tool calls thuộc về Agent/Persona này!
                 var cardBody = el('div', 'agent-body');
                 if (Array.isArray(step.toolCalls) && step.toolCalls.length > 0) {
-                  step.toolCalls.forEach(function (tc) {
+                  step.toolCalls.forEach(function (tc, idx) {
                     cardBody.appendChild(createHistoryToolElement(tc));
                   });
                 }
@@ -2046,7 +2195,7 @@ export const PLAYGROUND_HTML = /* html */ `<!doctype html>
               botBox.appendChild(gridEl);
             }
 
-            var approvalData = meta.approval || (idx === turns.length - 1 ? res.pendingApproval : null);
+            var approvalData = meta.approval || (idx === historyTurns.length - 1 ? res.pendingApproval : null);
             if (approvalData) {
               var bubble = {
                 box: botBox,
@@ -2067,7 +2216,7 @@ export const PLAYGROUND_HTML = /* html */ `<!doctype html>
                 hasApproval: true
               };
               renderApproval(bubble, approvalData, botBox);
-            } else {
+            } else if (turn.text && turn.text.trim()) {
               var wrap = el('div', 'final-wrapper');
             var head = el('div', 'final-header');
             head.appendChild(el('span', 'final-title', '✨ Câu trả lời'));
@@ -2081,6 +2230,13 @@ export const PLAYGROUND_HTML = /* html */ `<!doctype html>
             log.appendChild(msgWrap);
           }
         });
+        if (inFlightTurn) {
+          var targetBubble = createBubble();
+          // Nội dung dở dang KHÔNG nằm trong history: phát lại stream của turn từ đầu
+          // vào bubble trống (cùng đường vẽ với stream live nên không mất/lặp gì).
+          var activeMsgId = (inFlightTurn.metadata && inFlightTurn.metadata.messageId) || inFlightTurn.id;
+          reconnectActiveStream(sid, activeMsgId, targetBubble);
+        }
         scroll();
       })
       .catch(function (e) {

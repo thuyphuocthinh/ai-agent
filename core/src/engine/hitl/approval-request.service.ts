@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { RpcException } from '@nestjs/microservices';
 import { EJobName, EQueueName, QueueService } from '@agent/core/infrastructure/queue';
 import {
@@ -16,6 +16,12 @@ import {
 } from '../../infrastructure/database/entities/orchestration-checkpoint.entity';
 import { CheckpointResponseDto } from '../../contracts/dtos/checkpoint.dto';
 import { ResolveApprovalRequestDto } from '../../contracts/dtos/orchestration.dto';
+import {
+  ETurnLogStatus,
+  ITurnEventLog,
+  TURN_EVENT_LOG,
+} from '../../contracts/turn-event-log.interface';
+import { TurnEventRecorderService } from '../orchestrator/turn-event-recorder.service';
 
 @Injectable()
 export class ApprovalRequestService {
@@ -26,6 +32,11 @@ export class ApprovalRequestService {
     private readonly agentStream: AgentStreamService,
     private readonly checkpoint: CheckpointService,
     private readonly queueService: QueueService,
+    @Optional()
+    @Inject(TURN_EVENT_LOG)
+    private readonly eventLog?: ITurnEventLog,
+    @Optional()
+    private readonly turnRecorder?: TurnEventRecorderService,
   ) { }
 
   async findPendingCheckpoint(
@@ -167,20 +178,38 @@ export class ApprovalRequestService {
     userId: string,
   ): Promise<void> {
     const { replyMessageId, botUserId, channelId, channelType } = checkpoint;
-    await this.messageClient.updateMessage({
-      id: replyMessageId,
-      userId: botUserId,
-      content: '❌ Đã huỷ theo yêu cầu.',
-    });
-    await this.agentStream
-      .emitStep(
-        { userId, channelId, messageId: replyMessageId, channelType },
-        { type: EAgentStreamStepType.DONE },
-      )
-      .catch((error) =>
+    // Từ chối cũng là 1 turn có event log: reload đúng lúc này vẫn phát lại được
+    // (câu "Đã huỷ" nằm trong log trước event done).
+    await this.eventLog
+      ?.start({ messageId: replyMessageId, conversationId: channelId, userId })
+      .catch((error: unknown) =>
         this.logger.warn(
-          `emitStep('done') failed: ${(error as Error).message}`,
+          `Không thể khởi tạo turn log cho ${replyMessageId}: ${(error as Error)?.message}`,
         ),
       );
+    let finalStatus = ETurnLogStatus.DONE;
+    try {
+      await this.messageClient.updateMessage({
+        id: replyMessageId,
+        userId: botUserId,
+        content: '❌ Đã huỷ theo yêu cầu.',
+      });
+    } catch (error) {
+      finalStatus = ETurnLogStatus.FAILED;
+      throw error;
+    } finally {
+      await this.turnRecorder?.idle();
+      await this.agentStream
+        .emitStep(
+          { userId, channelId, messageId: replyMessageId, channelType },
+          { type: EAgentStreamStepType.DONE },
+        )
+        .catch((error) =>
+          this.logger.warn(
+            `emitStep('done') failed: ${(error as Error).message}`,
+          ),
+        );
+      await this.eventLog?.finish(replyMessageId, finalStatus);
+    }
   }
 }

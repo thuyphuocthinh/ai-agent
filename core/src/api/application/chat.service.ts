@@ -9,7 +9,12 @@ import {
 } from '@nestjs/common';
 import { RpcException } from '@nestjs/microservices';
 import type { UIMessageChunk } from 'ai';
-import { EApprovalAction, ECheckpointKind, EMessageRole } from '@agent/core/constants';
+import {
+  EApprovalAction,
+  ECheckpointKind,
+  EMessageRole,
+  EVercelStreamChunkType,
+} from '@agent/core/constants';
 import {
   EJobName,
   EQueueName,
@@ -19,6 +24,7 @@ import {
 } from '@agent/core/infrastructure/queue';
 import { ApprovalRequestService } from '../../engine/hitl/approval-request.service';
 import {
+  ActiveTurn,
   CHAT_SESSION_MANAGER,
   IChatSessionManager,
   IMessageSink,
@@ -26,7 +32,12 @@ import {
   TurnStream,
   EConversationState,
   IConversationSummary,
+  ETurnLogStatus,
+  ITurnEventLog,
+  TURN_EVENT_LOG,
+  TurnLogMeta,
 } from '../../contracts';
+import { reduceTurnLog } from '../../contracts/turn-log-reducer';
 import { ChatHistoryTurnDto } from '../../contracts/dtos/message-client.dto';
 import {
   CursorPaginationQueryDto,
@@ -44,6 +55,12 @@ import {
   BusinessPolicyViolationError,
   EPolicyVerdict,
 } from '../../security';
+import {
+  ChatSessionNotFoundException,
+  StreamReconnectInvalidException,
+  ApprovalRequestNotFoundException,
+} from '../../common/errors';
+import { IChatSession } from '../../contracts/chat-session.interface';
 
 const HISTORY_LIMIT = 200;
 
@@ -67,6 +84,9 @@ export class ChatService {
     private readonly semanticPolicyEvaluator?: SemanticPolicyEvaluatorService,
     @Optional()
     private readonly humanEscalation?: HumanEscalationService,
+    @Optional()
+    @Inject(TURN_EVENT_LOG)
+    private readonly eventLog?: ITurnEventLog,
   ) {}
 
   async chat(
@@ -104,7 +124,7 @@ export class ChatService {
       );
       const turn = this.streamFactory.createTurn(session);
       turn.close();
-      return { sessionId: session.id, stream: turn.stream, cancel: turn.cancel };
+      return { sessionId: session.id, stream: turn.stream, cancel: turn.cancel, close: turn.close };
     }
 
     const turn = this.streamFactory.createTurn(session);
@@ -133,7 +153,7 @@ export class ChatService {
         return turn.fail(error);
       });
 
-    return { sessionId: session.id, stream: turn.stream, cancel: turn.cancel };
+    return { sessionId: session.id, stream: turn.stream, cancel: turn.cancel, close: turn.close };
   }
 
   async approve(
@@ -143,7 +163,7 @@ export class ChatService {
     selectedProvider?: string,
   ): Promise<TurnStream> {
     const session = await this.sessionManager.get(sessionId);
-    if (!session) throw new NotFoundException('Phiên không tồn tại');
+    if (!session) throw new ChatSessionNotFoundException(sessionId);
 
     let hasApproval = session.approvalMessageIds.has(messageId);
     if (!hasApproval && this.sessionManager.hasApproval) {
@@ -163,7 +183,7 @@ export class ChatService {
     }
 
     if (!hasApproval) {
-      throw new NotFoundException('Không có yêu cầu duyệt này trong phiên');
+      throw new ApprovalRequestNotFoundException(messageId);
     }
 
     const turn = this.streamFactory.createTurn(session, messageId);
@@ -178,7 +198,7 @@ export class ChatService {
       turn.close();
       throw this.toHttpException(error);
     }
-    return { sessionId: session.id, stream: turn.stream, cancel: turn.cancel };
+    return { sessionId: session.id, stream: turn.stream, cancel: turn.cancel, close: turn.close };
   }
 
   async getPendingApproval(conversationId: string): Promise<IPendingApprovalDto | null> {
@@ -224,28 +244,167 @@ export class ChatService {
       limit: HISTORY_LIMIT,
     });
 
-    const pending = await this.getPendingApproval(session.conversationId);
-    if (pending) {
-      session.approvalMessageIds.add(pending.messageId);
-      if (this.sessionManager.trackApproval) {
-        try {
-          await this.sessionManager.trackApproval(session.id, pending.messageId);
-        } catch {
-          // ignore
-        }
-      }
-      if (turns.length > 0) {
-        const lastTurn = turns[turns.length - 1];
-        if (lastTurn && lastTurn.role === EMessageRole.MODEL) {
-          lastTurn.metadata = {
-            ...(lastTurn.metadata || {}),
-            approval: pending,
-          };
-        }
-      }
-    }
+    await this.attachPendingApproval(session, turns);
+    await this.markInFlightTurn(session, turns);
 
     return turns;
+  }
+
+  private async attachPendingApproval(
+    session: IChatSession,
+    turns: ChatHistoryTurnDto[],
+  ): Promise<void> {
+    const pending = await this.getPendingApproval(session.conversationId);
+    if (!pending) return;
+
+    session.approvalMessageIds.add(pending.messageId);
+    if (this.sessionManager.trackApproval) {
+      try {
+        await this.sessionManager.trackApproval(session.id, pending.messageId);
+      } catch {
+        // ignore
+      }
+    }
+    if (turns.length > 0) {
+      const lastTurn = turns[turns.length - 1];
+      if (lastTurn && lastTurn.role === EMessageRole.MODEL) {
+        lastTurn.metadata = {
+          ...(lastTurn.metadata || {}),
+          approval: pending,
+        };
+      }
+    }
+  }
+
+  // Chỉ đánh dấu turn cuối còn đang chạy (theo event log) để client biết phải
+  // reconnect. Nội dung dở dang KHÔNG được ghép vào history: client lấy nó bằng
+  // cách phát lại stream từ đầu (một đường duy nhất, không lệch với stream live).
+  private async markInFlightTurn(
+    session: IChatSession,
+    turns: ChatHistoryTurnDto[],
+  ): Promise<void> {
+    if (!this.eventLog || turns.length === 0) return;
+    const lastTurn = turns[turns.length - 1];
+    if (!lastTurn || lastTurn.role !== EMessageRole.MODEL || !lastTurn.id) return;
+
+    try {
+      const found = await this.eventLog.getMeta(lastTurn.id);
+      const meta = found ? await this.reapIfDead(session, found) : null;
+      if (!meta || meta.status !== ETurnLogStatus.ACTIVE) return;
+      lastTurn.metadata = {
+        ...(lastTurn.metadata || {}),
+        inFlight: true,
+        status: meta.status,
+        messageId: lastTurn.id,
+      };
+    } catch (err: unknown) {
+      this.logger.warn(
+        `Không đọc được trạng thái turn ${lastTurn.id} từ event log: ${(err as Error)?.message}`,
+      );
+    }
+  }
+
+  /**
+   * Tái kết nối stream của 1 turn: phát lại event log từ đầu rồi bám theo phần đuôi.
+   * Turn đã xong mà log còn → phát lại nguyên văn. Log đã hết hạn → trả đáp án cuối
+   * từ DB. Không tìm thấy → StreamReconnectInvalidException (400).
+   */
+  async reconnectStream(
+    sessionId: string,
+    messageId?: string,
+  ): Promise<TurnStream> {
+    const session = await this.sessionManager.get(sessionId);
+    if (!session) {
+      throw new ChatSessionNotFoundException(sessionId);
+    }
+    if (!this.eventLog) {
+      throw new StreamReconnectInvalidException(
+        'Tái kết nối stream cần Redis (turn event log) nhưng không khả dụng',
+        { sessionId },
+      );
+    }
+
+    const targetId =
+      messageId ?? (await this.eventLog.findActiveTurnId(session.conversationId));
+    if (!targetId) {
+      throw new StreamReconnectInvalidException(
+        'Không có lượt chạy nào đang thực thi để tái kết nối stream',
+        { sessionId },
+      );
+    }
+
+    const found = await this.eventLog.getMeta(targetId);
+    const meta = found ? await this.reapIfDead(session, found) : null;
+    let turn: ActiveTurn;
+    if (meta) {
+      if (meta.conversationId && meta.conversationId !== session.conversationId) {
+        throw new StreamReconnectInvalidException(
+          'Lượt chạy không thuộc phiên làm việc này',
+          { sessionId, messageId: targetId },
+        );
+      }
+      turn = this.streamFactory.createReplayTurn(session, targetId);
+    } else {
+      turn = this.streamFactory.createStaticTurn(
+        await this.buildFinishedTurnChunks(session, targetId),
+      );
+    }
+
+    return {
+      sessionId: session.id,
+      stream: turn.stream,
+      cancel: turn.cancel,
+      close: turn.close,
+    };
+  }
+
+  // Turn ACTIVE mà worker không còn nhịp tim (chết/restart giữa chừng) sẽ không bao
+  // giờ tự kết thúc: chốt thành FAILED và lưu phần đã sinh ra xuống DB để user không
+  // bị kẹt ở "đang xử lý" mãi mỗi lần reload.
+  private async reapIfDead(session: IChatSession, meta: TurnLogMeta): Promise<TurnLogMeta> {
+    const log = this.eventLog;
+    if (!log || meta.status !== ETurnLogStatus.ACTIVE) return meta;
+    if (await log.isAlive(meta.messageId)) return meta;
+
+    this.logger.warn(
+      `Turn ${meta.messageId} mất nhịp tim (worker không còn xử lý) — chốt FAILED`,
+    );
+    const logged = reduceTurnLog(await log.snapshot(meta.messageId));
+    const interrupted = 'Tiến trình xử lý bị gián đoạn, vui lòng thử lại.';
+    const partial = logged.partialText.trim();
+    await this.messages.tryUpdateMessage({
+      id: meta.messageId,
+      userId: meta.userId ?? session.userId,
+      content: partial ? `${partial}\n\n⚠️ *[Đã dừng do sự cố]*: ${interrupted}` : `⚠️ ${interrupted}`,
+      ...(logged.steps.length ? { steps: logged.steps } : {}),
+      ...(logged.toolCalls.length ? { toolCalls: logged.toolCalls } : {}),
+    });
+    await log.finish(meta.messageId, ETurnLogStatus.FAILED);
+    return { ...meta, status: ETurnLogStatus.FAILED };
+  }
+
+  // Log đã hết hạn: dựng lại đáp án cuối từ DB (chỉ trong phạm vi session này).
+  private async buildFinishedTurnChunks(
+    session: IChatSession,
+    messageId: string,
+  ): Promise<UIMessageChunk[]> {
+    const turns = await this.messages.getRecentHistory({
+      conversationId: session.conversationId,
+      userId: session.userId,
+      beforeMessageId: '',
+      limit: HISTORY_LIMIT,
+    });
+    const turn = turns.find((t) => t.id === messageId && t.role === EMessageRole.MODEL);
+    if (!turn) {
+      throw new StreamReconnectInvalidException(
+        'Không tìm thấy lượt chạy cần tái kết nối stream',
+        { sessionId: session.id, messageId },
+      );
+    }
+    return [
+      { type: EVercelStreamChunkType.DATA_REPLY, data: { messageId, text: turn.text } } as UIMessageChunk,
+      { type: EVercelStreamChunkType.FINISH, finishReason: 'stop' },
+    ];
   }
 
   async listConversations(

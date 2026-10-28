@@ -13,6 +13,8 @@ export enum EExecutionEngineMode {
   PIPELINE_CHAINING = 'pipeline_chaining',
   PARALLEL_FANOUT = 'parallel_fanout',
   DYNAMIC_SUPERVISOR = 'dynamic_supervisor',
+  // Chỉ dùng làm routing.mode của turn chạy fixed workflow; không có engine tương ứng trong registry.
+  WORKFLOW = 'workflow',
 }
 
 export interface EngineRoutingContext {

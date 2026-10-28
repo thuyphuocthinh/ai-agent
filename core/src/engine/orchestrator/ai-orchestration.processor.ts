@@ -1,4 +1,4 @@
-import { Inject } from '@nestjs/common';
+import { Inject, Optional } from '@nestjs/common';
 import { Processor } from '@nestjs/bullmq';
 import { Job } from 'bullmq';
 import { RpcException } from '@nestjs/microservices';
@@ -20,7 +20,14 @@ import {
   MESSAGE_SINK,
   IStreamSink,
   STREAM_SINK,
+  UpdateOrchestrationMessageRequestDto,
+  ETurnLogStatus,
+  ITurnEventLog,
+  TURN_EVENT_LOG,
 } from '../../contracts';
+import { AnswerResult } from './orchestration-answer.types';
+import { ReducedTurnLog, reduceTurnLog } from '../../contracts/turn-log-reducer';
+import { TurnEventRecorderService } from './turn-event-recorder.service';
 import { describeExternalServiceError } from '../loop/external-service-error.util';
 import { CancelTurnRequestDto } from '../../contracts/dtos/orchestration.dto';
 import { TriggerClaimService } from '../hitl/trigger-claim.service';
@@ -55,6 +62,11 @@ export class AiOrchestrationProcessor extends BaseProcessor<
     private readonly cancellation: AgentCancellationService,
     private readonly turnResolver: TurnResolverService,
     private readonly approvalExecution: ApprovalExecutionService,
+    @Optional()
+    @Inject(TURN_EVENT_LOG)
+    private readonly eventLog?: ITurnEventLog,
+    @Optional()
+    private readonly turnRecorder?: TurnEventRecorderService,
   ) {
     super();
   }
@@ -151,6 +163,16 @@ export class AiOrchestrationProcessor extends BaseProcessor<
       throw error;
     }
 
+    // Turn phải ACTIVE trong event log NGAY từ đây: reload trang trước event đầu
+    // tiên (LLM đang suy nghĩ) vẫn reconnect được và phát lại từ đầu.
+    await this.eventLog
+      ?.start({ messageId: reply.id, conversationId: channelId, userId })
+      .catch((error: unknown) =>
+        this.logger.warn(
+          `Không thể khởi tạo turn log cho ${reply.id}: ${(error as Error)?.message}`,
+        ),
+      );
+
     // traceable() lồng theo AsyncLocalStorage — 1 root trace/turn, tự nest mọi span con.
     const traced = traceable(
       (d: IProcessAiTriggerJobData, replyId: string) =>
@@ -167,48 +189,36 @@ export class AiOrchestrationProcessor extends BaseProcessor<
       },
     );
 
+    const stopHeartbeat = this.eventLog?.startHeartbeat(reply.id);
     const startTimeMs = Date.now();
+    let finalStatus = ETurnLogStatus.DONE;
     try {
       const result = await traced(data, reply.id);
-      await this.messageClient.updateMessage({
-        id: reply.id,
-        userId: botUserId,
+      await this.batchFlushSuccess(
+        reply.id,
+        botUserId,
         channelId,
-        ...result,
-        executionTimeMs: Date.now() - startTimeMs,
-      });
+        result,
+        Date.now() - startTimeMs,
+      );
     } catch (error) {
-      // Checkpoint/claim đã chốt (không rollback) — reply message đã tồn tại
-      // từ đây trở đi, nên MỌI update báo lỗi bên dưới dùng tryUpdateMessage()
-      // (best-effort, tự nuốt lỗi riêng): nếu NGAY CẢ update báo lỗi này cũng
-      // lỗi, tuyệt đối không để nó văng tiếp ra ngoài — throw ở đây sẽ khiến
-      // BullMQ retry vô ích (claim() đã chặn) và turn đã tốn tiền LLM/tool
-      // thật biến mất không dấu vết.
       if (error instanceof TurnCancelledError) {
         this.logger.log(
           `handleAiTrigger() messageId=${messageId} bị huỷ theo yêu cầu (Stop)`,
         );
-        // Giữ nguyên phần đã stream (nếu có) làm nội dung lưu — giống
-        // ChatGPT/Claude: dừng thì giữ nguyên phần đã có, không xoá sạch
-        // thay bằng 1 câu thông báo. Chỉ dùng câu thông báo khi CHƯA sinh ra
-        // được gì (huỷ gần như ngay lập tức).
-        await this.messageClient.tryUpdateMessage({
-          id: reply.id,
-          userId: botUserId,
-          content: error.partialText || '⏹️ Đã dừng theo yêu cầu.',
-        });
+        finalStatus = ETurnLogStatus.CANCELLED;
+        await this.batchFlushCancelled(reply.id, botUserId, error.partialText);
       } else {
+        finalStatus = ETurnLogStatus.FAILED;
         this.logger.error(
-          `AI orchestration failed for message ${messageId}: ${error.message}`,
-          error.stack,
+          `AI orchestration failed for message ${messageId}: ${(error as Error)?.message}`,
+          (error as Error)?.stack,
         );
-        await this.messageClient.tryUpdateMessage({
-          id: reply.id,
-          userId: botUserId,
-          content: describeExternalServiceError(error),
-        });
+        await this.batchFlushFailed(reply.id, botUserId, error);
       }
     } finally {
+      // Chunk câu trả lời/duyệt/làm rõ phải nằm trong log TRƯỚC event done.
+      await this.turnRecorder?.idle();
       // Luôn báo "done" — FE dựa vào đây để tắt icon "đang chạy tool...".
       await this.agentStream
         .emitStep(
@@ -220,7 +230,97 @@ export class AiOrchestrationProcessor extends BaseProcessor<
             `emitStep('done') failed: ${(error as Error).message}`,
           ),
         );
+      stopHeartbeat?.();
+      await this.eventLog?.finish(reply.id, finalStatus);
     }
+  }
+
+  // Phần dở dang của turn (text/steps/toolCalls) tổng hợp từ event log — dùng khi
+  // engine không trả đủ (huỷ/lỗi). Lỗi đọc log không được làm hỏng việc lưu DB.
+  private async reduceLog(replyId: string): Promise<ReducedTurnLog | undefined> {
+    if (!this.eventLog) return undefined;
+    try {
+      return reduceTurnLog(await this.eventLog.snapshot(replyId));
+    } catch (err: unknown) {
+      this.logger.warn(
+        `Không đọc được turn log của ${replyId}: ${(err as Error)?.message}`,
+      );
+      return undefined;
+    }
+  }
+
+  private async batchFlushSuccess(
+    replyId: string,
+    botUserId: string,
+    channelId?: string,
+    result?: AnswerResult,
+    executionTimeMs?: number,
+  ): Promise<void> {
+    const logged =
+      result?.steps && result?.toolCalls ? undefined : await this.reduceLog(replyId);
+    // Mảng rỗng không phải dữ liệu: ghi [] xuống DB sẽ che mất toolCalls ở FE.
+    const steps = result?.steps ?? (logged?.steps.length ? logged.steps : undefined);
+    const toolCalls =
+      result?.toolCalls ?? (logged?.toolCalls.length ? logged.toolCalls : undefined);
+
+    const payload: UpdateOrchestrationMessageRequestDto = {
+      id: replyId,
+      userId: botUserId,
+      channelId,
+      content: result?.content ?? '',
+      executionTimeMs,
+    };
+    if (steps !== undefined) payload.steps = steps;
+    if (toolCalls !== undefined) payload.toolCalls = toolCalls;
+    if (result?.persona) payload.persona = result.persona;
+    if (result?.personas) payload.personas = result.personas;
+    if (result?.routing) payload.routing = result.routing;
+
+    await this.messageClient.updateMessage(payload);
+  }
+
+  private async batchFlushCancelled(
+    replyId: string,
+    botUserId: string,
+    partialText?: string,
+  ): Promise<void> {
+    const logged = await this.reduceLog(replyId);
+    const content = partialText || logged?.partialText || '⏹️ Đã dừng theo yêu cầu.';
+
+    const payload: UpdateOrchestrationMessageRequestDto = {
+      id: replyId,
+      userId: botUserId,
+      content,
+    };
+    if (logged?.steps.length) payload.steps = logged.steps;
+    if (logged?.toolCalls.length) payload.toolCalls = logged.toolCalls;
+
+    await this.messageClient.tryUpdateMessage(payload);
+  }
+
+  private async batchFlushFailed(
+    replyId: string,
+    botUserId: string,
+    error?: unknown,
+  ): Promise<void> {
+    const logged = await this.reduceLog(replyId);
+    const errorMsg = describeExternalServiceError(error);
+    const content =
+      logged?.partialText && logged.partialText.trim().length > 0
+        ? `${logged.partialText.trim()}
+
+⚠️ *[Đã dừng do sự cố]*: ${errorMsg}`
+        : errorMsg;
+
+    const payload: UpdateOrchestrationMessageRequestDto = {
+      id: replyId,
+      userId: botUserId,
+      content,
+    };
+    if (logged?.steps.length) payload.steps = logged.steps;
+    if (logged?.toolCalls.length) payload.toolCalls = logged.toolCalls;
+
+    await this.messageClient.tryUpdateMessage(payload);
   }
 
   // Chỉ đặt cờ huỷ vào Redis rồi trả về ngay — vòng lặp đang chạy (ReactLoop

@@ -1,5 +1,9 @@
 import { ActionSummaryAdapter, ActionSummaryContext } from '../action-summary.interface';
-import { extractWriteQueryPreviewTarget } from '../../../engine/loop/write-query-preview.util';
+import {
+  EWriteQueryCountKind,
+  EWriteQueryTargetKind,
+  extractWriteQueryPreviewTarget,
+} from '../../../engine/loop/write-query-preview.util';
 
 export class SqlSummaryAdapter implements ActionSummaryAdapter {
   readonly priority = 100;
@@ -31,21 +35,21 @@ export class SqlSummaryAdapter implements ActionSummaryAdapter {
     const writeTarget = extractWriteQueryPreviewTarget(query);
     if (writeTarget) {
       switch (writeTarget.kind) {
-        case 'existing-rows': {
+        case EWriteQueryTargetKind.EXISTING_ROWS: {
           const isUpdate = /^UPDATE\b/i.test(query);
           const action = isUpdate ? 'Cập nhật dữ liệu bảng' : 'Xóa dữ liệu bảng';
           return writeTarget.whereClause
             ? `${action} "${writeTarget.table}" (điều kiện: ${writeTarget.whereClause})`
             : `${action} "${writeTarget.table}"`;
         }
-        case 'insert-rows': {
+        case EWriteQueryTargetKind.INSERT_ROWS: {
           const countStr =
-            writeTarget.countKind === 'maximum'
+            writeTarget.countKind === EWriteQueryCountKind.MAXIMUM
               ? `tối đa ${writeTarget.rowCount}`
               : `${writeTarget.rowCount}`;
           return `Thêm mới ${countStr} dòng vào bảng "${writeTarget.table}"`;
         }
-        case 'whole-table-destructive': {
+        case EWriteQueryTargetKind.WHOLE_TABLE_DESTRUCTIVE: {
           return `${writeTarget.operation} toàn bộ bảng "${writeTarget.table}"`;
         }
       }

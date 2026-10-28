@@ -126,7 +126,7 @@ export class SingleAgentEngine implements IExecutionEngine {
             description: c.description ?? '',
           }));
 
-        return this.checkpointPause.pauseForClarification(
+        const paused = await this.checkpointPause.pauseForClarification(
           data,
           prompt,
           [],
@@ -136,6 +136,12 @@ export class SingleAgentEngine implements IExecutionEngine {
           candidates,
           [],
           EExecutionEngineMode.SINGLE_AGENT,
+        );
+        return this.withSingleAgentStep(
+          paused,
+          prompt,
+          connectedProviders,
+          result.toolCalls,
         );
       }
 
@@ -147,18 +153,9 @@ export class SingleAgentEngine implements IExecutionEngine {
         (context.metadata?.priorToolCalls as ToolCallTraceDto[]) ?? [];
       const allToolCalls = [...priorToolCalls, ...result.toolCalls];
 
-      const singleAgentStep: ExecutedStepDto = {
-        agent: 'single_agent',
-        task: prompt,
-        persona: {
-          role: 'Multi-Provider Single Agent',
-          goal: `Thực thi trực tiếp đa công cụ (${connectedProviders.join(', ')})`,
-        },
-        toolCalls: allToolCalls,
-        result: result.answer,
-      };
-
-      return buildAnswer(result.answer, allToolCalls, [singleAgentStep]);
+      return buildAnswer(result.answer, allToolCalls, [
+        this.buildSingleAgentStep(prompt, connectedProviders, allToolCalls, result.answer),
+      ]);
     } catch (error) {
       if (error instanceof TurnCancelledError) {
         throw error;
@@ -183,7 +180,7 @@ export class SingleAgentEngine implements IExecutionEngine {
           ...(error.toolCalls ?? []),
         ];
 
-        return this.checkpointPause.pauseForClarification(
+        const paused = await this.checkpointPause.pauseForClarification(
           data,
           prompt,
           [],
@@ -193,6 +190,12 @@ export class SingleAgentEngine implements IExecutionEngine {
           candidates,
           [],
           EExecutionEngineMode.SINGLE_AGENT,
+        );
+        return this.withSingleAgentStep(
+          paused,
+          prompt,
+          connectedProviders,
+          toolCalls,
         );
       }
 
@@ -213,7 +216,7 @@ export class SingleAgentEngine implements IExecutionEngine {
           toolCalls,
         };
 
-        return this.checkpointPause.pauseForApproval(
+        const paused = await this.checkpointPause.pauseForApproval(
           data,
           prompt,
           [],
@@ -223,6 +226,12 @@ export class SingleAgentEngine implements IExecutionEngine {
           [],
           EExecutionEngineMode.SINGLE_AGENT,
         );
+        return this.withSingleAgentStep(
+          paused,
+          prompt,
+          connectedProviders,
+          toolCalls,
+        );
       }
 
       this.logger.error(
@@ -231,6 +240,37 @@ export class SingleAgentEngine implements IExecutionEngine {
       );
       throw error;
     }
+  }
+
+  // Turn dừng giữa chừng (HITL) vẫn phải lưu step + persona của Single Agent để
+  // reload trang dựng lại đúng card agent kèm các tool đã chạy.
+  private withSingleAgentStep(
+    paused: AnswerResult,
+    prompt: string,
+    connectedProviders: string[],
+    toolCalls: ToolCallTraceDto[],
+  ): AnswerResult {
+    return buildAnswer(paused.content, toolCalls, [
+      this.buildSingleAgentStep(prompt, connectedProviders, toolCalls),
+    ]);
+  }
+
+  private buildSingleAgentStep(
+    prompt: string,
+    connectedProviders: string[],
+    toolCalls: ToolCallTraceDto[],
+    result?: string,
+  ): ExecutedStepDto {
+    return {
+      agent: this.id,
+      task: prompt,
+      persona: {
+        role: this.name,
+        goal: `Thực thi trực tiếp đa công cụ (${connectedProviders.join(', ')})`,
+      },
+      toolCalls,
+      ...(result !== undefined ? { result } : {}),
+    };
   }
 
   async resume(checkpoint: CheckpointResponseDto): Promise<AnswerResult> {

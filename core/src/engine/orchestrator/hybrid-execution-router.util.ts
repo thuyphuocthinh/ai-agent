@@ -4,20 +4,19 @@
  * Quyết định xem một yêu cầu người dùng nên được điều phối qua:
  * 1. SINGLE_AGENT (Mặc định 85-90%): 1 ReAct session duy nhất tải tools từ tất cả providers kết nối,
  *    không qua 4 bước Supervisor, tiết kiệm 50-70% token, giảm latency và bảo toàn 100% dữ liệu.
- * 2. MULTI_AGENT_SUPERVISOR (10-15%): Kích hoạt Supervisor phân rã subagent khi gặp 4 tình huống đặc thù:
+ * 2. DYNAMIC_SUPERVISOR (10-15%): Kích hoạt Supervisor phân rã subagent khi gặp 4 tình huống đặc thù:
  *    - (1) Fan-out song song độc lập (quét đồng thời nhiều đích để tối ưu thời gian).
  *    - (2) Sandbox cô lập code (Python compute / Bash script) để lỗi không ảnh hưởng phiên chat chính.
  *    - (3) Context / Payload quá tải (> 30.000 ký tự hoặc file log quá lớn) cần worker tóm tắt rồi hủy.
  *    - (4) Mâu thuẫn chỉ dẫn / Đối kháng (Red-Team vs Blue-Team, phản biện chéo).
  */
 
-export enum EExecutionMode {
-  SINGLE_AGENT = 'single_agent',
-  MULTI_AGENT_SUPERVISOR = 'multi_agent_supervisor',
-}
+import { EExecutionEngineMode } from '../../contracts/execution-engine.interface';
+
+// Heuristic chỉ chọn 1 trong 2: SINGLE_AGENT hoặc DYNAMIC_SUPERVISOR (dùng chung enum với engine registry).
 
 export interface HybridRoutingDecision {
-  mode: EExecutionMode;
+  mode: EExecutionEngineMode.SINGLE_AGENT | EExecutionEngineMode.DYNAMIC_SUPERVISOR;
   reason: string;
 }
 
@@ -46,13 +45,13 @@ export function decideExecutionMode(
   // 0. Ghi đè cưỡng bức (nếu có cấu hình)
   if (forcedMode === 'supervisor') {
     return {
-      mode: EExecutionMode.MULTI_AGENT_SUPERVISOR,
+      mode: EExecutionEngineMode.DYNAMIC_SUPERVISOR,
       reason: 'Cưỡng bức chạy qua Supervisor theo cấu hình (forcedMode=supervisor)',
     };
   }
   if (forcedMode === 'single') {
     return {
-      mode: EExecutionMode.SINGLE_AGENT,
+      mode: EExecutionEngineMode.SINGLE_AGENT,
       reason: 'Cưỡng bức chạy qua Single Agent theo cấu hình (forcedMode=single)',
     };
   }
@@ -60,7 +59,7 @@ export function decideExecutionMode(
   // 1. Điều kiện 1: Tác vụ song song độc lập (Parallel Fan-out)
   if (PARALLEL_FANOUT_REGEX.test(prompt)) {
     return {
-      mode: EExecutionMode.MULTI_AGENT_SUPERVISOR,
+      mode: EExecutionEngineMode.DYNAMIC_SUPERVISOR,
       reason: 'Kích hoạt Multi-Agent Supervisor: Yêu cầu chạy song song độc lập (Parallel Fan-out)',
     };
   }
@@ -68,7 +67,7 @@ export function decideExecutionMode(
   // 2. Điều kiện 2: Chạy Code trong môi trường Sandbox (Python / Bash)
   if (PYTHON_SANDBOX_REGEX.test(prompt)) {
     return {
-      mode: EExecutionMode.MULTI_AGENT_SUPERVISOR,
+      mode: EExecutionEngineMode.DYNAMIC_SUPERVISOR,
       reason: 'Kích hoạt Multi-Agent Supervisor: Chạy mã Python/Bash cách ly trong Sandbox compute',
     };
   }
@@ -79,7 +78,7 @@ export function decideExecutionMode(
     contextCharBudgetEstimate > OVERFLOW_CHAR_THRESHOLD
   ) {
     return {
-      mode: EExecutionMode.MULTI_AGENT_SUPERVISOR,
+      mode: EExecutionEngineMode.DYNAMIC_SUPERVISOR,
       reason: 'Kích hoạt Multi-Agent Supervisor: Ngữ cảnh vượt ngưỡng an toàn (>30k ký tự), cần Subagent tóm tắt cô lập',
     };
   }
@@ -87,14 +86,14 @@ export function decideExecutionMode(
   // 4. Điều kiện 4: Vai trò đối kháng / Mâu thuẫn chỉ dẫn
   if (ADVERSARIAL_ROLES_REGEX.test(prompt)) {
     return {
-      mode: EExecutionMode.MULTI_AGENT_SUPERVISOR,
+      mode: EExecutionEngineMode.DYNAMIC_SUPERVISOR,
       reason: 'Kích hoạt Multi-Agent Supervisor: Mâu thuẫn chỉ dẫn hoặc yêu cầu đối kháng (Red-Team vs Blue-Team)',
     };
   }
 
   // MẶC ĐỊNH (85-90%): Single Agent ReAct đa công cụ
   return {
-    mode: EExecutionMode.SINGLE_AGENT,
+    mode: EExecutionEngineMode.SINGLE_AGENT,
     reason: 'Định tuyến mặc định: Multi-Provider Single Agent (chung ngữ cảnh, tối ưu độ trễ và token)',
   };
 }

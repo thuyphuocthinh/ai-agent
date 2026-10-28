@@ -25,6 +25,7 @@ describe('ChatController', () => {
     approve: jest.fn(),
     history: jest.fn(),
     listConversations: jest.fn(),
+    reconnectStream: jest.fn(),
   };
   let app: INestApplication;
   let base: string;
@@ -87,10 +88,12 @@ describe('ChatController', () => {
       expect(service.chat).not.toHaveBeenCalled();
     });
 
-    it('cancels the turn when the client disconnects mid-stream', async () => {
+    it('closes the stream reader without cancelling background turn when the client disconnects mid-stream', async () => {
+      const mockClose = jest.fn();
       const turn: TurnStream = {
         sessionId: SESSION,
         cancel: jest.fn().mockResolvedValue(undefined),
+        close: mockClose,
         stream: new ReadableStream<UIMessageChunk>({
           start(controller) {
             controller.enqueue({ type: 'start', messageId: 'm1' });
@@ -110,10 +113,10 @@ describe('ChatController', () => {
 
       abort.abort();
       for (let i = 0; i < 20; i++) {
-        if ((turn.cancel as jest.Mock).mock.calls.length > 0) break;
+        if (mockClose.mock.calls.length > 0) break;
         await new Promise((r) => setTimeout(r, 25));
       }
-      expect(turn.cancel).toHaveBeenCalled();
+      expect(mockClose).toHaveBeenCalled();
     });
   });
 
@@ -206,6 +209,44 @@ describe('ChatController', () => {
       expect(service.listConversations).toHaveBeenCalledWith(
         expect.objectContaining({ limit: 20 }),
       );
+    });
+  });
+
+  describe('GET /api/stream', () => {
+    it('pipes the reconnected stream with valid sessionId and messageId', async () => {
+      service.reconnectStream.mockResolvedValue(
+        finishedTurn([
+          {
+            type: 'data-resync',
+            data: { steps: [], partialText: 'resynced' },
+          } as unknown as UIMessageChunk,
+          { type: 'finish', finishReason: 'stop' },
+        ]),
+      );
+
+      const messageId = '018f4a12-873b-7a32-9cb1-3a0e1b234567';
+      const response = await fetch(
+        `${base}/api/stream?sessionId=${SESSION}&messageId=${messageId}`,
+      );
+      const text = await response.text();
+
+      expect(response.status).toBe(200);
+      expect(response.headers.get('x-playground-session')).toBe(SESSION);
+      expect(text).toContain('data-resync');
+      expect(text).toContain('resynced');
+      expect(service.reconnectStream).toHaveBeenCalledWith(SESSION, messageId);
+    });
+
+    it('answers 400 for an invalid UUID sessionId', async () => {
+      const response = await fetch(`${base}/api/stream?sessionId=invalid-uuid`);
+      expect(response.status).toBe(400);
+      expect(service.reconnectStream).not.toHaveBeenCalled();
+    });
+
+    it('answers 400 when sessionId is missing', async () => {
+      const response = await fetch(`${base}/api/stream`);
+      expect(response.status).toBe(400);
+      expect(service.reconnectStream).not.toHaveBeenCalled();
     });
   });
 });

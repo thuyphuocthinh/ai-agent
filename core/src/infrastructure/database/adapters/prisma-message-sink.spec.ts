@@ -151,6 +151,53 @@ describe('PrismaMessageSink', () => {
     });
   });
 
+  describe('updateMessage — routing (card Supervisor sau reload)', () => {
+    const existing = {
+      id: 'msg-target',
+      conversationId: 'conv-123',
+      role: MessageRole.ASSISTANT,
+      metadata: { initialKey: 'initialVal' },
+    };
+
+    it('lưu routing vào metadata, giữ nguyên metadata cũ', async () => {
+      mockPrisma.conversationMessage.findUnique.mockResolvedValue(existing);
+
+      await sink.updateMessage({
+        id: 'msg-target',
+        content: 'xong',
+        routing: { mode: 'workflow', label: 'Quy trình nhập hàng' },
+      });
+
+      expect(mockPrisma.conversationMessage.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            metadata: expect.objectContaining({
+              initialKey: 'initialVal',
+              routing: { mode: 'workflow', label: 'Quy trình nhập hàng' },
+            }),
+          }),
+        }),
+      );
+    });
+
+    it('cập nhật không kèm routing (VD turn resume) thì KHÔNG xoá routing đã lưu', async () => {
+      mockPrisma.conversationMessage.findUnique.mockResolvedValue({
+        ...existing,
+        metadata: { routing: { mode: 'single_agent' } },
+      });
+
+      await sink.updateMessage({ id: 'msg-target', content: 'cập nhật tiếp' });
+
+      expect(mockPrisma.conversationMessage.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            metadata: expect.objectContaining({ routing: { mode: 'single_agent' } }),
+          }),
+        }),
+      );
+    });
+  });
+
   describe('getRecentHistory', () => {
     it('lấy lịch sử hội thoại trước beforeMessageId và giới hạn bởi limit', async () => {
       const now = new Date();

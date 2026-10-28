@@ -26,6 +26,18 @@ export enum EMessageRole {
   MODEL = 'model',
 }
 
+// Loại nội dung dạng object của message HITL (message không phải chữ).
+export enum EMessageContentType {
+  APPROVAL_REQUEST = 'approval_request',
+  CLARIFICATION_REQUEST = 'clarification_request',
+}
+
+// Loại event message phát ra từ message sink.
+export enum EMessageEventType {
+  CREATED = 'created',
+  UPDATED = 'updated',
+}
+
 export enum ERefreshFormat {
   FORM = 'form',
   JSON = 'json',
@@ -72,6 +84,7 @@ export enum EVercelStreamChunkType {
   DATA_PERSONA = 'data-persona',
   DATA_RESYNC = 'data-resync',
   DATA_APPROVAL = 'data-approval',
+  DATA_CLARIFICATION = 'data-clarification',
   DATA_REPLY = 'data-reply',
   TOOL_INPUT_AVAILABLE = 'tool-input-available',
   TOOL_OUTPUT_AVAILABLE = 'tool-output-available',

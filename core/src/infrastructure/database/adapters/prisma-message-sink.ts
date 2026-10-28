@@ -12,7 +12,7 @@ import {
   GetRecentHistoryRequestDto,
   UpdateOrchestrationMessageRequestDto,
 } from '../../../contracts/dtos/message-client.dto';
-import { EMessageRole } from '@agent/core/constants';
+import { EMessageEventType, EMessageRole } from '@agent/core/constants';
 import { PrismaService } from '../prisma.service';
 import { sanitizePrismaError } from '../../../common/errors';
 import { ConversationMemoryService } from '../../../memory/conversation-memory.service';
@@ -138,7 +138,17 @@ export class PrismaMessageSink implements IMessageSink {
       }
 
       return eligible
-        .filter((m) => Boolean(m.text && m.text.trim()))
+        .filter((m, idx) => {
+          const hasText = Boolean(m.text && m.text.trim());
+          const hasMetadata = Boolean(
+            m.metadata &&
+              typeof m.metadata === 'object' &&
+              !Array.isArray(m.metadata) &&
+              Object.keys(m.metadata).length > 0,
+          );
+          const isLatest = idx === eligible.length - 1;
+          return hasText || hasMetadata || isLatest;
+        })
         .filter((m) => {
           if (
             m.text.startsWith('⏸️') ||
@@ -211,6 +221,7 @@ export class PrismaMessageSink implements IMessageSink {
         ...(dto.steps ? { steps: JSON.parse(JSON.stringify(dto.steps)) } : {}),
         ...(dto.persona ? { persona: JSON.parse(JSON.stringify(dto.persona)) } : {}),
         ...(dto.personas ? { personas: JSON.parse(JSON.stringify(dto.personas)) } : {}),
+        ...(dto.routing ? { routing: JSON.parse(JSON.stringify(dto.routing)) } : {}),
         ...(dto.executionTimeMs !== undefined ? { executionTimeMs: dto.executionTimeMs } : {}),
       };
 
@@ -233,7 +244,7 @@ export class PrismaMessageSink implements IMessageSink {
       });
 
       this.notify({
-        type: 'updated',
+        type: EMessageEventType.UPDATED,
         id: dto.id,
         conversationId: existing.conversationId,
         role: existing.role === MessageRole.USER ? EMessageRole.USER : EMessageRole.MODEL,
@@ -288,7 +299,7 @@ export class PrismaMessageSink implements IMessageSink {
       });
 
       this.notify({
-        type: 'created',
+        type: EMessageEventType.CREATED,
         id,
         conversationId,
         role,

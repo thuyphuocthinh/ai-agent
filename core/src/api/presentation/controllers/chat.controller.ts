@@ -27,6 +27,7 @@ import {
   CursorPageMetaDto,
   PaginatedResult,
   ConversationItemDto,
+  StreamReconnectQueryDto,
 } from '../dtos';
 import { BypassTransform } from '../decorators/bypass-transform.decorator';
 import { ChatService } from '../../application/chat.service';
@@ -84,6 +85,29 @@ export class ChatController {
           effectiveCandidateId,
         )
       : await this.chatService.approve(dto.sessionId, dto.messageId, dto.action);
+    await this.streamPresenter.pipe(res, turn);
+  }
+
+  @Get('stream')
+  @BypassTransform()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Tái kết nối luồng stream thời gian thực (Stream Reconnection)',
+    description:
+      'Cho phép client re-attach vào SSE stream của một turn đang chạy ngầm sau khi reload trang hoặc rớt mạng.',
+  })
+  @ApiProduces('text/event-stream')
+  @ApiOkResponse({ description: 'UI Message Stream tiếp diễn (SSE)' })
+  @ApiBadRequestResponse({ description: 'sessionId hoặc messageId không hợp lệ' })
+  @ApiNotFoundResponse({ description: 'Không tìm thấy phiên làm việc' })
+  async stream(
+    @Query() query: StreamReconnectQueryDto,
+    @Res() res: ServerResponse,
+  ): Promise<void> {
+    const turn = await this.chatService.reconnectStream(
+      query.sessionId,
+      query.messageId,
+    );
     await this.streamPresenter.pipe(res, turn);
   }
 

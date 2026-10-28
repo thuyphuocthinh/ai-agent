@@ -1,7 +1,5 @@
-import {
-  decideExecutionMode,
-  EExecutionMode,
-} from './hybrid-execution-router.util';
+import { EExecutionEngineMode } from '../../contracts/execution-engine.interface';
+import { decideExecutionMode } from './hybrid-execution-router.util';
 
 describe('HybridExecutionRouter', () => {
   describe('Default routing (Single Agent ReAct)', () => {
@@ -11,7 +9,7 @@ describe('HybridExecutionRouter', () => {
           'Kiểm tra danh sách đơn hàng gần đây trong database SQL và gửi thông báo cập nhật vào kênh Slack #sales',
       });
 
-      expect(decision.mode).toBe(EExecutionMode.SINGLE_AGENT);
+      expect(decision.mode).toBe(EExecutionEngineMode.SINGLE_AGENT);
       expect(decision.reason).toContain('Định tuyến mặc định: Multi-Provider Single Agent');
     });
 
@@ -20,7 +18,7 @@ describe('HybridExecutionRouter', () => {
         prompt: 'Đọc giúp tôi bảng giá nhà cung cấp trong Google Sheets',
       });
 
-      expect(decision.mode).toBe(EExecutionMode.SINGLE_AGENT);
+      expect(decision.mode).toBe(EExecutionEngineMode.SINGLE_AGENT);
     });
 
     it('routes customer inquiry and email check to SINGLE_AGENT', () => {
@@ -29,7 +27,7 @@ describe('HybridExecutionRouter', () => {
           'Khách hàng Bình vừa gửi email khiếu nại, hãy kiểm tra email rồi tra cứu database xem trạng thái đơn',
       });
 
-      expect(decision.mode).toBe(EExecutionMode.SINGLE_AGENT);
+      expect(decision.mode).toBe(EExecutionEngineMode.SINGLE_AGENT);
     });
   });
 
@@ -39,7 +37,7 @@ describe('HybridExecutionRouter', () => {
         prompt: 'Quét đồng thời 5 kênh Slack #dev, #ops, #sales để tìm từ khóa sự cố thanh toán',
       });
 
-      expect(decision.mode).toBe(EExecutionMode.MULTI_AGENT_SUPERVISOR);
+      expect(decision.mode).toBe(EExecutionEngineMode.DYNAMIC_SUPERVISOR);
       expect(decision.reason).toContain('Parallel Fan-out');
     });
 
@@ -48,7 +46,7 @@ describe('HybridExecutionRouter', () => {
         prompt: 'Kiểm tra cùng lúc trên 4 sàn Shopee, Tiki, Lazada xem mặt hàng này bên nào rẻ nhất',
       });
 
-      expect(decision.mode).toBe(EExecutionMode.MULTI_AGENT_SUPERVISOR);
+      expect(decision.mode).toBe(EExecutionEngineMode.DYNAMIC_SUPERVISOR);
       expect(decision.reason).toContain('Parallel Fan-out');
     });
   });
@@ -59,7 +57,7 @@ describe('HybridExecutionRouter', () => {
         prompt: 'Hãy chạy script python sau để vẽ biểu đồ phân phối độ trễ API và lưu ra file ảnh',
       });
 
-      expect(decision.mode).toBe(EExecutionMode.MULTI_AGENT_SUPERVISOR);
+      expect(decision.mode).toBe(EExecutionEngineMode.DYNAMIC_SUPERVISOR);
       expect(decision.reason).toContain('Sandbox compute');
     });
 
@@ -68,7 +66,7 @@ describe('HybridExecutionRouter', () => {
         prompt: 'Thực thi mã bash để kiểm tra dung lượng ổ đĩa của server',
       });
 
-      expect(decision.mode).toBe(EExecutionMode.MULTI_AGENT_SUPERVISOR);
+      expect(decision.mode).toBe(EExecutionEngineMode.DYNAMIC_SUPERVISOR);
       expect(decision.reason).toContain('Sandbox compute');
     });
   });
@@ -80,7 +78,7 @@ describe('HybridExecutionRouter', () => {
         prompt: longPrompt,
       });
 
-      expect(decision.mode).toBe(EExecutionMode.MULTI_AGENT_SUPERVISOR);
+      expect(decision.mode).toBe(EExecutionEngineMode.DYNAMIC_SUPERVISOR);
       expect(decision.reason).toContain('Ngữ cảnh vượt ngưỡng an toàn');
     });
 
@@ -90,7 +88,7 @@ describe('HybridExecutionRouter', () => {
         contextCharBudgetEstimate: 35000,
       });
 
-      expect(decision.mode).toBe(EExecutionMode.MULTI_AGENT_SUPERVISOR);
+      expect(decision.mode).toBe(EExecutionEngineMode.DYNAMIC_SUPERVISOR);
       expect(decision.reason).toContain('Ngữ cảnh vượt ngưỡng an toàn');
     });
   });
@@ -102,7 +100,7 @@ describe('HybridExecutionRouter', () => {
           'Đóng vai 2 bên tranh luận: bên red-team tấn công và bên blue-team phòng thủ để phản biện chéo phương án bảo mật',
       });
 
-      expect(decision.mode).toBe(EExecutionMode.MULTI_AGENT_SUPERVISOR);
+      expect(decision.mode).toBe(EExecutionEngineMode.DYNAMIC_SUPERVISOR);
       expect(decision.reason).toContain('Red-Team vs Blue-Team');
     });
   });
@@ -114,7 +112,7 @@ describe('HybridExecutionRouter', () => {
         forcedMode: 'single',
       });
 
-      expect(decision.mode).toBe(EExecutionMode.SINGLE_AGENT);
+      expect(decision.mode).toBe(EExecutionEngineMode.SINGLE_AGENT);
       expect(decision.reason).toContain('forcedMode=single');
     });
 
@@ -124,7 +122,7 @@ describe('HybridExecutionRouter', () => {
         forcedMode: 'supervisor',
       });
 
-      expect(decision.mode).toBe(EExecutionMode.MULTI_AGENT_SUPERVISOR);
+      expect(decision.mode).toBe(EExecutionEngineMode.DYNAMIC_SUPERVISOR);
       expect(decision.reason).toContain('forcedMode=supervisor');
     });
   });

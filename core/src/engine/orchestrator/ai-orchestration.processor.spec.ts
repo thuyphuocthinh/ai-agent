@@ -8,12 +8,21 @@ import {
 import { AiOrchestrationProcessor } from './ai-orchestration.processor';
 import { MessageClientService } from '../../contracts/message-client.service';
 import { AgentStreamService } from '../../contracts/agent-stream.service';
-import { MESSAGE_SINK, STREAM_SINK } from '../../contracts';
+import {
+  ETurnLogEntryKind,
+  ETurnLogStatus,
+  ITurnEventLog,
+  MESSAGE_SINK,
+  STREAM_SINK,
+  TURN_EVENT_LOG,
+  TurnLogEntry,
+} from '../../contracts';
 import { TriggerClaimService } from '../hitl/trigger-claim.service';
 import { AgentCancellationService } from '../cancellation/agent-cancellation.service';
 import { TurnCancelledError } from '../loop/turn-cancelled.error';
 import { TurnResolverService } from './turn-resolver.service';
 import { ApprovalExecutionService } from '../hitl/approval-execution.service';
+import { TurnEventRecorderService } from './turn-event-recorder.service';
 
 // ai-orchestration.processor.ts import ReactLoopService (dù đã mock qua DI ở
 // dưới) — file thật của nó vẫn import @agent/core/common ở module scope, kéo theo
@@ -56,6 +65,31 @@ describe('AiOrchestrationProcessor', () => {
   };
   const mockTurnResolver = { resolveAnswer: jest.fn() };
   const mockApprovalExecution = { processApprovalJob: jest.fn() };
+  const mockEventLog: jest.Mocked<ITurnEventLog> = {
+    start: jest.fn(),
+    appendStep: jest.fn(),
+    appendChunk: jest.fn(),
+    finish: jest.fn(),
+    startHeartbeat: jest.fn(),
+    isAlive: jest.fn(),
+    getMeta: jest.fn(),
+    findActiveTurnId: jest.fn(),
+    snapshot: jest.fn(),
+    read: jest.fn(),
+  };
+  const mockRecorder = { idle: jest.fn() };
+
+  const stepEntry = (
+    id: string,
+    step: Record<string, unknown>,
+    streamKey?: string,
+  ): TurnLogEntry =>
+    ({
+      id,
+      kind: ETurnLogEntryKind.STEP,
+      context: { userId: 'user-1', messageId: 'reply-1', streamKey },
+      step,
+    }) as TurnLogEntry;
 
   const jobData: IProcessAiTriggerJobData = {
     userId: 'user-1',
@@ -75,6 +109,11 @@ describe('AiOrchestrationProcessor', () => {
     mockTriggerClaim.release.mockResolvedValue(undefined);
     mockCancellation.isCancelled.mockResolvedValue(false);
     mockApprovalExecution.processApprovalJob.mockResolvedValue(undefined);
+    mockEventLog.start.mockResolvedValue(undefined);
+    mockEventLog.finish.mockResolvedValue(undefined);
+    mockEventLog.startHeartbeat.mockReturnValue(jest.fn());
+    mockEventLog.snapshot.mockResolvedValue([]);
+    mockRecorder.idle.mockResolvedValue(undefined);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -87,6 +126,8 @@ describe('AiOrchestrationProcessor', () => {
         { provide: AgentCancellationService, useValue: mockCancellation },
         { provide: TurnResolverService, useValue: mockTurnResolver },
         { provide: ApprovalExecutionService, useValue: mockApprovalExecution },
+        { provide: TURN_EVENT_LOG, useValue: mockEventLog },
+        { provide: TurnEventRecorderService, useValue: mockRecorder },
       ],
     }).compile();
 
@@ -333,6 +374,155 @@ describe('AiOrchestrationProcessor', () => {
       await runJob();
 
       expect(mockTriggerClaim.release).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Turn event log (reload/reconnect)', () => {
+    it('đánh dấu turn ACTIVE ngay sau khi tạo reply, TRƯỚC khi engine chạy', async () => {
+      const order: string[] = [];
+      mockEventLog.start.mockImplementation(async () => {
+        order.push('start');
+      });
+      mockTurnResolver.resolveAnswer.mockImplementation(async () => {
+        order.push('resolve');
+        return { content: 'ok' };
+      });
+
+      await runJob();
+
+      expect(mockEventLog.start).toHaveBeenCalledWith({
+        messageId: 'reply-1',
+        conversationId: jobData.channelId,
+        userId: jobData.userId,
+      });
+      expect(order).toEqual(['start', 'resolve']);
+    });
+
+    it('chờ recorder ghi xong rồi mới phát DONE, và chốt log SAU DONE', async () => {
+      const order: string[] = [];
+      mockTurnResolver.resolveAnswer.mockResolvedValue({ content: 'ok' });
+      mockRecorder.idle.mockImplementation(async () => {
+        order.push('recorder-idle');
+      });
+      mockAgentStream.emitStep.mockImplementation(async (_ctx, step) => {
+        order.push(`emit-${step.type}`);
+      });
+      mockEventLog.finish.mockImplementation(async (_id, status) => {
+        order.push(`finish-${status}`);
+      });
+
+      await runJob();
+
+      expect(order).toEqual(['recorder-idle', 'emit-done', 'finish-done']);
+    });
+
+    it('phát nhịp tim suốt turn và dừng nhịp tim khi turn kết thúc (kể cả lỗi)', async () => {
+      const stop = jest.fn();
+      mockEventLog.startHeartbeat.mockReturnValue(stop);
+      mockTurnResolver.resolveAnswer.mockRejectedValue(new Error('LLM down'));
+
+      await runJob();
+
+      expect(mockEventLog.startHeartbeat).toHaveBeenCalledWith('reply-1');
+      expect(stop).toHaveBeenCalledTimes(1);
+    });
+
+    it('chốt trạng thái CANCELLED / FAILED tương ứng', async () => {
+      mockTurnResolver.resolveAnswer.mockRejectedValueOnce(new TurnCancelledError('x'));
+      await runJob();
+      expect(mockEventLog.finish).toHaveBeenLastCalledWith('reply-1', ETurnLogStatus.CANCELLED);
+
+      mockTurnResolver.resolveAnswer.mockRejectedValueOnce(new Error('LLM down'));
+      await runJob();
+      expect(mockEventLog.finish).toHaveBeenLastCalledWith('reply-1', ETurnLogStatus.FAILED);
+    });
+
+    it('thành công: engine trả đủ steps/toolCalls thì không cần đọc log', async () => {
+      mockTurnResolver.resolveAnswer.mockResolvedValue({
+        content: 'Câu trả lời cuối cùng',
+        steps: [{ agent: 'a', task: 't', toolCalls: [] }],
+        toolCalls: [{ tool: 'x.y', status: 'success' }],
+      });
+
+      await runJob();
+
+      expect(mockEventLog.snapshot).not.toHaveBeenCalled();
+      expect(mockMessageClient.updateMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'reply-1', content: 'Câu trả lời cuối cùng' }),
+      );
+    });
+
+    it('thành công nhưng engine không trả steps/toolCalls: lấy từ log, bỏ qua mảng rỗng', async () => {
+      mockTurnResolver.resolveAnswer.mockResolvedValue({ content: 'xong' });
+      mockEventLog.snapshot.mockResolvedValue([
+        stepEntry('1-0', { type: 'tool_call', tool: 'sql.run', toolCallId: 'tc-1', argsPreview: 'q' }),
+        stepEntry('2-0', { type: 'tool_result', tool: 'sql.run', toolCallId: 'tc-1', resultPreview: 'r' }),
+      ]);
+
+      await runJob();
+
+      const payload = mockMessageClient.updateMessage.mock.calls[0][0];
+      expect(payload.toolCalls).toEqual([
+        expect.objectContaining({ toolCallId: 'tc-1', argsPreview: 'q', resultPreview: 'r' }),
+      ]);
+      expect(payload.steps).toBeUndefined();
+    });
+
+    it('lưu quyết định định tuyến (routing) cùng câu trả lời để dựng lại card Supervisor sau reload', async () => {
+      mockTurnResolver.resolveAnswer.mockResolvedValue({
+        content: 'xong',
+        routing: { mode: 'single_agent' },
+      });
+
+      await runJob();
+
+      expect(mockMessageClient.updateMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'reply-1', routing: { mode: 'single_agent' } }),
+      );
+    });
+
+    it('huỷ giữa chừng: lưu phần text/steps đã sinh ra từ log', async () => {
+      mockTurnResolver.resolveAnswer.mockRejectedValue(new TurnCancelledError(undefined));
+      mockEventLog.snapshot.mockResolvedValue([
+        stepEntry('1-0', { type: 'step_start', label: 'Bước 1' }),
+        stepEntry('2-0', { type: 'token', text: 'Dữ liệu ' }),
+        stepEntry('3-0', { type: 'token', text: 'dở dang' }),
+        stepEntry('4-0', { type: 'token', text: 'của agent phụ' }, 'agent-2'),
+      ]);
+
+      await runJob();
+
+      expect(mockMessageClient.tryUpdateMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'reply-1',
+          content: 'Dữ liệu dở dang',
+          steps: [expect.objectContaining({ task: 'Bước 1' })],
+        }),
+      );
+    });
+
+    it('lỗi: nối thông báo lỗi sau phần text đã stream', async () => {
+      mockTurnResolver.resolveAnswer.mockRejectedValue(new Error('LLM down'));
+      mockEventLog.snapshot.mockResolvedValue([
+        stepEntry('1-0', { type: 'token', text: 'Phần đầu' }),
+      ]);
+
+      await runJob();
+
+      const payload = mockMessageClient.tryUpdateMessage.mock.calls[0][0];
+      expect(payload.content).toContain('Phần đầu');
+      expect(payload.content).toContain('Đã dừng do sự cố');
+    });
+
+    it('không đọc được log vẫn lưu DB bình thường (không làm hỏng turn)', async () => {
+      mockTurnResolver.resolveAnswer.mockResolvedValue({ content: 'xong' });
+      mockEventLog.snapshot.mockRejectedValue(new Error('redis down'));
+
+      await runJob();
+
+      expect(mockMessageClient.updateMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'reply-1', content: 'xong' }),
+      );
     });
   });
 });

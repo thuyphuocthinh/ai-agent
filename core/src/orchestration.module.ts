@@ -11,6 +11,7 @@ import {
   PrismaWorkflowStore,
 } from './infrastructure/database';
 import { CachedModule } from './infrastructure/redis/redis.module';
+import { TurnEventRecorderService } from './engine/orchestrator/turn-event-recorder.service';
 import { QueueModule } from './infrastructure/queue/queue.module';
 import { EQueueName } from './infrastructure/queue';
 import { AiOrchestrationProcessor } from './engine/orchestrator/ai-orchestration.processor';
@@ -202,6 +203,7 @@ import { SecurityModule } from './security';
       useExisting: WorkflowRunnerService,
     },
     CheckpointPauseService,
+    TurnEventRecorderService,
     ApprovalRequestService,
     ApprovalExecutionService,
     ApprovalContinuationPlannerService,

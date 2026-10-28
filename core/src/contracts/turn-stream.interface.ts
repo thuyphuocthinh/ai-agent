@@ -7,6 +7,7 @@ export interface TurnStream {
   sessionId: string;
   stream: ReadableStream<UIMessageChunk>;
   cancel: () => Promise<void>;
+  close?: () => void;
 }
 
 /**

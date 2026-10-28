@@ -7,10 +7,7 @@ import {
   IExecutionEngineRegistry,
   IExecutionRouter,
 } from '../../contracts/execution-engine.interface';
-import {
-  decideExecutionMode,
-  EExecutionMode,
-} from './hybrid-execution-router.util';
+import { decideExecutionMode } from './hybrid-execution-router.util';
 
 const FORCED_MODE_TO_ENGINE: Record<string, EExecutionEngineMode> = {
   single: EExecutionEngineMode.SINGLE_AGENT,
@@ -64,7 +61,7 @@ export class SmartExecutionRouter implements IExecutionRouter {
       forcedMode: 'auto',
       contextCharBudgetEstimate: context.contextCharBudgetEstimate,
     });
-    if (hybrid.mode === EExecutionMode.MULTI_AGENT_SUPERVISOR) {
+    if (hybrid.mode === EExecutionEngineMode.DYNAMIC_SUPERVISOR) {
       return this.supervisor(hybrid.reason);
     }
 

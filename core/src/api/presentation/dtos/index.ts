@@ -6,3 +6,4 @@ export * from './api-response.dto';
 export * from './api-error-response.dto';
 export * from './pagination.dto';
 export * from './conversation.dto';
+export * from './stream-reconnect-query.dto';

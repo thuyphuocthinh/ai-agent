@@ -6,7 +6,13 @@ import { MessageClientService } from '../../contracts/message-client.service';
 import { SupervisorService } from '../supervisor/supervisor.service';
 import { AgentStreamService } from '../../contracts/agent-stream.service';
 import { CheckpointService } from './checkpoint.service';
-import { TOOL_PROVIDER, EXECUTION_ENGINE_REGISTRY } from '../../contracts';
+import {
+  TOOL_PROVIDER,
+  EXECUTION_ENGINE_REGISTRY,
+  ETurnLogStatus,
+  TURN_EVENT_LOG,
+} from '../../contracts';
+import { TurnEventRecorderService } from '../orchestrator/turn-event-recorder.service';
 import { AgentCancellationService } from '../cancellation/agent-cancellation.service';
 import { TurnCancelledError } from '../loop/turn-cancelled.error';
 import { TurnResolverService } from '../orchestrator/turn-resolver.service';
@@ -47,6 +53,12 @@ describe('ApprovalExecutionService', () => {
   };
   const mockContinuationPlanner = { resolveRemainingSteps: jest.fn() };
   const mockSkillRecorder = { record: jest.fn() };
+  const mockEventLog = {
+    start: jest.fn(),
+    finish: jest.fn(),
+    startHeartbeat: jest.fn(),
+  };
+  const mockTurnRecorder = { idle: jest.fn() };
 
   beforeEach(async () => {
     mockMessageClient.updateMessage.mockResolvedValue(undefined);
@@ -60,6 +72,10 @@ describe('ApprovalExecutionService', () => {
       toolCalls: undefined,
     });
     mockSkillRecorder.record.mockResolvedValue(undefined);
+    mockEventLog.start.mockResolvedValue(undefined);
+    mockEventLog.finish.mockResolvedValue(undefined);
+    mockEventLog.startHeartbeat.mockReturnValue(jest.fn());
+    mockTurnRecorder.idle.mockResolvedValue(undefined);
     // Mặc định passthrough — không thiếu số lượng gì (đã có test riêng cho
     // logic quantity-check trong approval-continuation-planner.service.spec.ts).
     mockContinuationPlanner.resolveRemainingSteps.mockImplementation(
@@ -101,6 +117,8 @@ describe('ApprovalExecutionService', () => {
           useValue: mockContinuationPlanner,
         },
         { provide: ApprovalSkillRecorderService, useValue: mockSkillRecorder },
+        { provide: TURN_EVENT_LOG, useValue: mockEventLog },
+        { provide: TurnEventRecorderService, useValue: mockTurnRecorder },
         {
           provide: EXECUTION_ENGINE_REGISTRY,
           useValue: {
@@ -182,12 +200,6 @@ describe('ApprovalExecutionService', () => {
         args: { query: "UPDATE Orders SET Status='Completed' WHERE OrderId=1" },
         ownerId: 'user-1',
         workspaceId: 'workspace-1',
-      });
-      // Chuyển UI sang "Đang tổng hợp..." TRƯỚC khi gọi lại Supervisor.
-      expect(mockMessageClient.updateMessage).toHaveBeenCalledWith({
-        id: 'approval-msg-1',
-        userId: 'bot-1',
-        content: '🤖 Đang tổng hợp kết quả...',
       });
       // Quay lại vòng lặp Supervisor với rounds đã gồm kết quả hành động vừa
       // duyệt — KHÔNG resume thẳng ReactLoop trên agent vừa dùng (bug cũ).
@@ -349,6 +361,7 @@ describe('ApprovalExecutionService', () => {
       expect(mockMessageClient.updateMessage).toHaveBeenCalledWith({
         id: 'approval-msg-1',
         userId: 'bot-1',
+        channelId: 'channel-1',
         content:
           '⚠️ Hành động "execute_write_query" đã được duyệt nhưng thực thi thất bại:\nError [TOOL_EXECUTION_ERROR:append_document_text]: insufficient permission',
       });
@@ -361,7 +374,13 @@ describe('ApprovalExecutionService', () => {
       expect(mockCheckpoint.markToolExecuted).toHaveBeenCalledWith({
         id: 'checkpoint-1',
       });
-      expect(mockSkillRecorder.record).not.toHaveBeenCalled();
+      expect(mockSkillRecorder.record).toHaveBeenCalledWith({
+        checkpointId: 'checkpoint-1',
+        workspaceId: 'workspace-1',
+        pendingTask: 'cập nhật status đơn OrderId=1',
+        pendingTool: checkpoint.pendingTool,
+        riskLevel: undefined,
+      });
     });
 
     it("reports the error via tryUpdateMessage() (not the throwing updateMessage()) — resilience to a double-failure is MessageClientService.tryUpdateMessage()'s own responsibility, see message-client.service.spec.ts", async () => {
@@ -525,11 +544,6 @@ describe('ApprovalExecutionService', () => {
       await runApprovalJob();
 
       expect(mockMcpClient.callTool).not.toHaveBeenCalled();
-      expect(mockMessageClient.updateMessage).toHaveBeenCalledWith({
-        id: 'clarification-msg-1',
-        userId: 'bot-1',
-        content: '🤖 Đang tổng hợp kết quả...',
-      });
       expect(mockTurnResolver.continueRounds).toHaveBeenCalledWith(
         {
           userId: 'user-1',
@@ -615,4 +629,87 @@ describe('ApprovalExecutionService', () => {
       );
     });
   });
+
+  describe('turn event log của turn tiếp tục sau duyệt/làm rõ (reload giữa chừng vẫn reconnect được)', () => {
+    const checkpoint = {
+      id: 'checkpoint-log',
+      replyMessageId: 'approval-msg-log',
+      userId: 'user-1',
+      botUserId: 'bot-1',
+      channelId: 'channel-1',
+      workspaceId: 'workspace-1',
+      channelType: 'direct',
+      originalPrompt: 'cập nhật đơn',
+      pendingTool: { provider: 'sql_server', name: 'execute_write_query', args: {} },
+      pendingTask: 'cập nhật đơn',
+      roundsSoFar: [],
+      history: [],
+      kind: ECheckpointKind.APPROVAL,
+    };
+
+    beforeEach(() => {
+      mockCheckpoint.findById.mockResolvedValue(checkpoint);
+      mockMcpClient.callTool.mockResolvedValue({ content: [{ type: 'text', text: 'x' }] });
+      (extractTextFromMcpResult as jest.Mock).mockReturnValue('ok');
+    });
+
+    const run = () =>
+      service.processApprovalJob({ checkpointId: 'checkpoint-log', userId: 'user-1' });
+
+    it('ACTIVE trước khi chạy tiếp, phát nhịp tim, rồi chốt DONE SAU event done', async () => {
+      const order: string[] = [];
+      const stop = jest.fn(() => order.push('stop-heartbeat'));
+      mockEventLog.start.mockImplementation(async (dto) => {
+        order.push('start');
+        expect(dto).toEqual({
+          messageId: 'approval-msg-log',
+          conversationId: 'channel-1',
+          userId: 'user-1',
+        });
+      });
+      mockEventLog.startHeartbeat.mockReturnValue(stop);
+      mockTurnResolver.continueRounds.mockImplementation(async () => {
+        order.push('engine');
+        return { content: 'xong' };
+      });
+      mockAgentStream.emitStep.mockImplementation(async (_ctx, step) => {
+        order.push(`emit-${step.type}`);
+      });
+      mockEventLog.finish.mockImplementation(async (_id, status) => {
+        order.push(`finish-${status}`);
+      });
+
+      await run();
+
+      expect(order).toEqual([
+        'start',
+        'engine',
+        'emit-done',
+        'stop-heartbeat',
+        'finish-done',
+      ]);
+      expect(mockEventLog.startHeartbeat).toHaveBeenCalledWith('approval-msg-log');
+    });
+
+    it('chốt CANCELLED khi bị huỷ và FAILED khi lỗi (nhịp tim luôn được dừng)', async () => {
+      const stop = jest.fn();
+      mockEventLog.startHeartbeat.mockReturnValue(stop);
+
+      mockTurnResolver.continueRounds.mockRejectedValueOnce(new TurnCancelledError('dở'));
+      await run();
+      expect(mockEventLog.finish).toHaveBeenLastCalledWith(
+        'approval-msg-log',
+        ETurnLogStatus.CANCELLED,
+      );
+
+      mockTurnResolver.continueRounds.mockRejectedValueOnce(new Error('LLM down'));
+      await run();
+      expect(mockEventLog.finish).toHaveBeenLastCalledWith(
+        'approval-msg-log',
+        ETurnLogStatus.FAILED,
+      );
+      expect(stop).toHaveBeenCalledTimes(2);
+    });
+  });
+
 });

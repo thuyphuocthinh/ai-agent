@@ -3,6 +3,7 @@ import { IProcessAiTriggerJobData } from '@agent/core/infrastructure/queue';
 import {
   ECheckpointKind,
   ECheckpointRiskLevel,
+  EMessageContentType,
   EStepExecutionStatus,
 } from '@agent/core/constants';
 import { extractTextFromMcpResult } from '@agent/core/common';
@@ -22,6 +23,9 @@ import {
 import { ChatHistoryTurnDto } from '../../contracts/dtos/message-client.dto';
 import { ToolCallTraceDto } from '../../contracts/dtos/react-loop.dto';
 import {
+  EWriteQueryCountKind,
+  EWriteQueryOperation,
+  EWriteQueryTargetKind,
   extractWriteQueryPreviewTarget,
   parseSingleCountResult,
   WriteQueryPreviewTarget,
@@ -79,7 +83,7 @@ export class CheckpointPauseService {
       args: pendingTool.args,
     });
     const approvalContent = {
-      type: 'approval_request',
+      type: EMessageContentType.APPROVAL_REQUEST,
       tool: pendingTool,
       status: 'pending',
       preview,
@@ -183,7 +187,7 @@ export class CheckpointPauseService {
     const { userId, channelId, botUserId } = data;
     const question = this.buildClarificationQuestion(task, candidates);
     const clarificationContent = {
-      type: 'clarification_request',
+      type: EMessageContentType.CLARIFICATION_REQUEST,
       question,
       candidates: candidates.map(
         (c): AmbiguousAgentCandidate => ({
@@ -316,27 +320,27 @@ export class CheckpointPauseService {
       const target = extractWriteQueryPreviewTarget(
         String(pendingTool.args?.query ?? ''),
       );
-      if (target?.kind === 'whole-table-destructive') {
+      if (target?.kind === EWriteQueryTargetKind.WHOLE_TABLE_DESTRUCTIVE) {
         const verb =
-          target.operation === 'TRUNCATE' ? 'XOÁ TOÀN BỘ DỮ LIỆU' : 'XOÁ HẲN';
+          target.operation === EWriteQueryOperation.TRUNCATE ? 'XOÁ TOÀN BỘ DỮ LIỆU' : 'XOÁ HẲN';
         return {
           preview: `⚠️ Sẽ ${verb} bảng "${target.table}" (${target.operation} — KHÔNG THỂ khôi phục).`,
           riskLevel: ECheckpointRiskLevel.HIGH,
         };
       }
-      if (target?.kind === 'insert-rows') {
+      if (target?.kind === EWriteQueryTargetKind.INSERT_ROWS) {
         // Không bao giờ tới đây trong luồng thật — INSERT tự chạy thẳng ở
         // Risk Gate (react-loop-run.ts), không tạo checkpoint. Giữ nhánh này
         // phòng trường hợp pendingTool bị sửa tay qua edit_and_approve.
         return {
           preview:
-            target.countKind === 'maximum'
+            target.countKind === EWriteQueryCountKind.MAXIMUM
               ? `Sẽ thêm tối đa ~${target.rowCount} dòng mới vào bảng "${target.table}".`
               : `Sẽ thêm ~${target.rowCount} dòng mới vào bảng "${target.table}".`,
           riskLevel: ECheckpointRiskLevel.MEDIUM,
         };
       }
-      if (target?.kind === 'existing-rows') {
+      if (target?.kind === EWriteQueryTargetKind.EXISTING_ROWS) {
         const count = await this.countAffectedRows(target, userId, workspaceId);
         if (count !== null) {
           return {
@@ -366,7 +370,7 @@ export class CheckpointPauseService {
   }
 
   private async countAffectedRows(
-    target: Extract<WriteQueryPreviewTarget, { kind: 'existing-rows' }>,
+    target: Extract<WriteQueryPreviewTarget, { kind: EWriteQueryTargetKind.EXISTING_ROWS }>,
     userId: string,
     workspaceId: string | undefined,
   ): Promise<number | null> {

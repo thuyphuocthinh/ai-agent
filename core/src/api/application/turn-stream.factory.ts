@@ -1,14 +1,24 @@
-import { Injectable, Optional } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import type { UIMessageChunk } from 'ai';
-import { EMessageRole, CACHE, ECheckpointKind } from '@agent/core/constants';
+import {
+  EAgentStreamStepType,
+  EMessageEventType,
+  EMessageRole,
+  EVercelStreamChunkType,
+  CACHE,
+} from '@agent/core/constants';
 import {
   ActiveTurn,
   AgentStreamService,
   IChatSession,
+  ETurnLogEntryKind,
+  ITurnEventLog,
   MessageClientService,
   MessageEvent,
+  TURN_EVENT_LOG,
   VercelUiStreamAdapter,
 } from '../../contracts';
+import { messageEventToChunk } from '../../contracts/message-event-chunk';
 import { AgentCancellationService } from '../../engine/cancellation/agent-cancellation.service';
 import { RedisPubSubStreamService } from '../../infrastructure/redis/redis-pubsub-stream.service';
 
@@ -22,6 +32,9 @@ export class TurnStreamFactory {
     private readonly cancellation: AgentCancellationService,
     @Optional()
     private readonly pubSub?: RedisPubSubStreamService,
+    @Optional()
+    @Inject(TURN_EVENT_LOG)
+    private readonly eventLog?: ITurnEventLog,
   ) {}
 
   createTurn(session: IChatSession, boundMessageId?: string): ActiveTurn {
@@ -50,7 +63,7 @@ export class TurnStreamFactory {
       write: (chunk) => {
         if (closed) return;
         controller.enqueue(chunk);
-        if (chunk.type === 'finish') close();
+        if (chunk.type === EVercelStreamChunkType.FINISH) close();
       },
     });
 
@@ -97,10 +110,10 @@ export class TurnStreamFactory {
       if (closed) return;
       if (!adapter.finished) {
         controller.enqueue({
-          type: 'error',
+          type: EVercelStreamChunkType.ERROR,
           errorText: String((error as Error)?.message ?? error),
         });
-        controller.enqueue({ type: 'finish', finishReason: 'error' });
+        controller.enqueue({ type: EVercelStreamChunkType.FINISH, finishReason: 'error' });
       }
       close();
     };
@@ -125,6 +138,129 @@ export class TurnStreamFactory {
     return { stream, close, fail, cancel };
   }
 
+  /**
+   * Stream tái kết nối: phát lại event log của turn TỪ ĐẦU qua 1 adapter mới (adapter
+   * tất định nên ra đúng chuỗi chunk như lúc stream live) rồi bám theo phần đuôi cho
+   * đến khi turn kết thúc. Không có snapshot/pub-sub nên không có khoảng hở: không
+   * mất và không lặp event. Client chỉ cần vẽ lại turn từ stream như bình thường.
+   */
+  createReplayTurn(session: IChatSession, messageId: string): ActiveTurn {
+    const log = this.eventLog;
+    if (!log) {
+      throw new Error('Turn event log không khả dụng (cần Redis thật)');
+    }
+
+    let controller!: ReadableStreamDefaultController<UIMessageChunk>;
+    let closed = false;
+    const abort = new AbortController();
+
+    const close = () => {
+      if (closed) return;
+      closed = true;
+      abort.abort();
+      clearTimeout(timer);
+      try {
+        controller.close();
+      } catch {
+        // stream đã đóng
+      }
+    };
+
+    const adapter = new VercelUiStreamAdapter({
+      messageId,
+      write: (chunk) => {
+        if (closed) return;
+        controller.enqueue(chunk);
+        if (chunk.type === EVercelStreamChunkType.FINISH) close();
+      },
+    });
+
+    // Kết thúc stream cho client: lỗi → error + finish; log hết mà chưa có `done`
+    // (VD worker chết) → tự đóng bằng `done` để client không treo.
+    const end = async (error?: unknown) => {
+      await adapter.flush();
+      if (closed) return;
+      if (error) {
+        if (!adapter.finished) {
+          controller.enqueue({
+            type: EVercelStreamChunkType.ERROR,
+            errorText: String((error as Error)?.message ?? error),
+          });
+          controller.enqueue({ type: EVercelStreamChunkType.FINISH, finishReason: 'error' });
+        }
+      } else if (!adapter.finished) {
+        adapter.handle(
+          { userId: session.userId, messageId },
+          { type: EAgentStreamStepType.DONE },
+        );
+        await adapter.flush();
+      }
+      close();
+    };
+
+    const pump = async () => {
+      try {
+        for await (const entry of log.read(messageId, abort.signal)) {
+          if (closed) return;
+          if (entry.kind === ETurnLogEntryKind.STEP) {
+            adapter.handle(entry.context, entry.step);
+          } else {
+            adapter.send(entry.chunk);
+          }
+          if (adapter.finished) break;
+        }
+        await end();
+      } catch (error) {
+        await end(error);
+      }
+    };
+
+    const timer = setTimeout(
+      () => void end(new Error('Quá thời gian chờ phản hồi của engine')),
+      TURN_TIMEOUT_MS,
+    );
+    timer.unref?.();
+
+    const stream = new ReadableStream<UIMessageChunk>({
+      start: (c) => {
+        controller = c;
+        void pump();
+      },
+      cancel: () => {
+        closed = true;
+        abort.abort();
+        clearTimeout(timer);
+      },
+    });
+
+    const cancel = async () => {
+      if (closed) return;
+      const alreadyFinished = adapter.finished;
+      close();
+      if (!alreadyFinished) {
+        await this.cancellation.requestCancel(messageId).catch(() => undefined);
+      }
+    };
+
+    return { stream, close, fail: end, cancel };
+  }
+
+  /** Stream đóng sẵn gồm đúng các chunk cho trước (turn đã xong, log đã hết hạn). */
+  createStaticTurn(chunks: UIMessageChunk[]): ActiveTurn {
+    const stream = new ReadableStream<UIMessageChunk>({
+      start: (controller) => {
+        chunks.forEach((chunk) => controller.enqueue(chunk));
+        controller.close();
+      },
+    });
+    return {
+      stream,
+      close: () => undefined,
+      fail: async () => undefined,
+      cancel: async () => undefined,
+    };
+  }
+
   private handleMessage(
     event: MessageEvent,
     session: IChatSession,
@@ -138,40 +274,12 @@ export class TurnStreamFactory {
       return;
     }
 
-    if (event.type === 'created') {
-      if (
-        typeof event.content === 'object' &&
-        event.content.type === 'approval_request'
-      ) {
+    if (event.type === EMessageEventType.CREATED) {
+      const chunk = messageEventToChunk(event);
+      if (chunk) {
+        // Yêu cầu duyệt / làm rõ: ghi nhớ để endpoint approve nhận message này.
         session.approvalMessageIds.add(event.id);
-        adapter.send({
-          type: 'data-approval',
-          data: {
-            messageId: event.id,
-            tool: event.content.tool,
-            preview: event.content.preview,
-            friendlySummary: (event.content as Record<string, unknown>)
-              .friendlySummary,
-          },
-        });
-        return;
-      }
-      if (
-        typeof event.content === 'object' &&
-        event.content.type === 'clarification_request'
-      ) {
-        session.approvalMessageIds.add(event.id);
-        const content = event.content as Record<string, unknown>;
-        adapter.send({
-          type: 'data-clarification',
-          data: {
-            messageId: event.id,
-            kind: ECheckpointKind.CLARIFICATION,
-            preview: content.question,
-            friendlySummary: content.question,
-            candidates: content.candidates,
-          },
-        });
+        adapter.send(chunk);
         return;
       }
       // Message đầu tiên engine tạo cho turn là reply: từ đây mới biết id để lọc event.
@@ -183,14 +291,9 @@ export class TurnStreamFactory {
     }
 
     // Câu trả lời cuối và lỗi của engine chỉ đi qua updateMessage, không đi qua stream.
-    if (
-      event.id === adapter.boundMessageId &&
-      typeof event.content === 'string'
-    ) {
-      adapter.send({
-        type: 'data-reply',
-        data: { messageId: event.id, text: event.content },
-      });
+    const chunk = messageEventToChunk(event, adapter.boundMessageId);
+    if (chunk) {
+      adapter.send(chunk);
     }
   }
 }

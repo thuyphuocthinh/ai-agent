@@ -12,7 +12,7 @@ import {
   GetRecentHistoryRequestDto,
   UpdateOrchestrationMessageRequestDto,
 } from './dtos/message-client.dto';
-import { EMessageRole } from '@agent/core/constants';
+import { EMessageEventType, EMessageRole } from '@agent/core/constants';
 import { ConversationMemoryService } from '../memory/conversation-memory.service';
 
 const DEFAULT_CONVERSATION = 'default';
@@ -120,7 +120,7 @@ export class MessageClientService implements IMessageSink {
     }
 
     this.notify({
-      type: 'updated',
+      type: EMessageEventType.UPDATED,
       id: dto.id,
       conversationId: existing?.conversationId ?? convId,
       role: existing?.role ?? EMessageRole.MODEL,
@@ -161,7 +161,7 @@ export class MessageClientService implements IMessageSink {
       text: typeof content === 'string' ? content : JSON.stringify(content),
       isText: typeof content === 'string',
     });
-    this.notify({ type: 'created', id, conversationId, role, content });
+    this.notify({ type: EMessageEventType.CREATED, id, conversationId, role, content });
     return { id };
   }
 

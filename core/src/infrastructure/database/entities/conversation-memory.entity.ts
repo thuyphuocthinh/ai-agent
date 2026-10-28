@@ -8,7 +8,7 @@ import {
 
 // Lưu trữ các thực thể / fact ổn định vừa được tạo thành công
 // trong 1 cuộc hội thoại (conversationId), đọc lại làm gợi ý ngữ cảnh cho SupervisorService.plan().
-@Entity('conversation_memory')
+@Entity('conversation_memories')
 export class ConversationMemoryEntity {
   @PrimaryGeneratedColumn('uuid')
   id: string;

@@ -14,6 +14,15 @@ export const CACHE = {
     _VER: 'v1',
     SETTINGS: {
       TURN_TTL: 900,
+      // Event log theo turn (Redis Streams): sống 2h khi đang chạy, 1h sau khi xong
+      // (DB mới là nơi lưu bền vững). MAXLEN là ngưỡng an toàn (xấp xỉ), đủ lớn để
+      // replay từ đầu không bị cắt với 1 turn bình thường.
+      TURN_LOG_ACTIVE_TTL: 7200,
+      TURN_LOG_FINISHED_TTL: 3600,
+      TURN_LOG_MAXLEN: 100000,
+      // Nhịp tim của worker đang chạy turn: hết hạn = worker đã chết, turn không còn tiến triển.
+      TURN_HEARTBEAT_TTL: 45,
+      TURN_HEARTBEAT_INTERVAL_MS: 15000,
     },
     KEYS: {
       TURN_OWNER: (messageId: string): string =>
@@ -24,6 +33,14 @@ export const CACHE = {
         `${GLOBAL_PREFIX}:${GLOBAL_VER}:orchestration:v1:stream:${messageId}`,
       CANCEL_CHANNEL: (messageId: string): string =>
         `${GLOBAL_PREFIX}:${GLOBAL_VER}:orchestration:v1:cancel:${messageId}`,
+      TURN_LOG: (messageId: string): string =>
+        `${GLOBAL_PREFIX}:${GLOBAL_VER}:orchestration:v1:turn_log:${messageId}`,
+      TURN_META: (messageId: string): string =>
+        `${GLOBAL_PREFIX}:${GLOBAL_VER}:orchestration:v1:turn_meta:${messageId}`,
+      TURN_HEARTBEAT: (messageId: string): string =>
+        `${GLOBAL_PREFIX}:${GLOBAL_VER}:orchestration:v1:turn_hb:${messageId}`,
+      TURN_ACTIVE: (conversationId: string): string =>
+        `${GLOBAL_PREFIX}:${GLOBAL_VER}:orchestration:v1:turn_active:${conversationId}`,
       WORKSPACE_TRIGGER_COUNT: (workspaceId: string): string =>
         `${GLOBAL_PREFIX}:${GLOBAL_VER}:orchestration:v1:trigger_count:${workspaceId}`,
       CIRCUIT_BREAKER_STATE: (key: string): string =>

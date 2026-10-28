@@ -13,10 +13,11 @@ export class UiStreamPresenter {
    * Chuyển tiếp stream sang response và huỷ turn nếu client ngắt kết nối giữa chừng.
    */
   async pipe(res: ServerResponse, turn: TurnStream): Promise<void> {
-    // Client ngắt giữa chừng (đóng tab/terminal) thì tự động huỷ turn của engine
+    // Client ngắt socket (F5 reload / network blip): chỉ đóng reader của response HTTP hiện tại,
+    // KHÔNG huỷ lượt chạy của engine trong hàng đợi nền để giữ nguyên buffer cho client kết nối lại.
     res.on('close', () => {
-      if (!res.writableFinished) {
-        void turn.cancel();
+      if (!res.writableFinished && turn.close) {
+        turn.close();
       }
     });
 

@@ -1,5 +1,6 @@
 export * from './tool-provider.interface';
 export * from './message-sink.interface';
+export * from './turn-event-log.interface';
 export * from './stream-sink.interface';
 export * from './chat-session.interface';
 export type * from './turn-stream.interface';

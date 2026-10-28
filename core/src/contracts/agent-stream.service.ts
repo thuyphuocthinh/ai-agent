@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleDestroy, Optional } from '@nestjs/common';
+import { Inject, Injectable, Logger, OnModuleDestroy, Optional } from '@nestjs/common';
 import { EAgentStreamStepType, CACHE } from '@agent/core/constants';
 import {
   AgentStreamContext,
@@ -7,9 +7,7 @@ import {
   IStreamSink,
 } from './stream-sink.interface';
 import { RedisPubSubStreamService } from '../infrastructure/redis/redis-pubsub-stream.service';
-
-export type { AgentStreamContext, AgentStreamStep, IStreamSink };
-export { DEFAULT_STREAM_KEY };
+import { ITurnEventLog, TURN_EVENT_LOG } from './turn-event-log.interface';
 
 const TOKEN_BATCH_FLUSH_MS = 50;
 
@@ -31,7 +29,10 @@ export class AgentStreamService implements IStreamSink, OnModuleDestroy {
   constructor(
     @Optional()
     private readonly pubSub?: RedisPubSubStreamService,
-  ) {}
+    @Optional()
+    @Inject(TURN_EVENT_LOG)
+    private readonly eventLog?: ITurnEventLog,
+  ) { }
 
   onStep(
     listener: (context: AgentStreamContext, step: AgentStreamStep) => void,
@@ -58,8 +59,8 @@ export class AgentStreamService implements IStreamSink, OnModuleDestroy {
     for (const listener of this.listeners) {
       try {
         listener(context, step);
-      } catch (err: any) {
-        this.logger.warn(`Listener error: ${err?.message}`);
+      } catch (err: unknown) {
+        this.logger.warn(`Listener error: ${(err as Error)?.message}`);
       }
     }
 
@@ -67,6 +68,8 @@ export class AgentStreamService implements IStreamSink, OnModuleDestroy {
       const channel = CACHE.ORCHESTRATION.KEYS.STREAM_CHANNEL(context.messageId);
       void this.pubSub.publish(channel, { context, step });
     }
+
+    this.appendToLog(context, step);
   }
 
   async emitToken(context: AgentStreamContext, token: string): Promise<void> {
@@ -111,12 +114,12 @@ export class AgentStreamService implements IStreamSink, OnModuleDestroy {
     if (!batch) return;
     clearTimeout(batch.timer);
     this.pendingTokenBatches.delete(key);
-    const step: AgentStreamStep = { type: 'token', text: batch.text };
+    const step: AgentStreamStep = { type: EAgentStreamStepType.TOKEN, text: batch.text };
     for (const listener of this.listeners) {
       try {
         listener(batch.context, step);
-      } catch (err: any) {
-        this.logger.warn(`Listener error: ${err?.message}`);
+      } catch (err: unknown) {
+        this.logger.warn(`Listener error: ${(err as Error)?.message}`);
       }
     }
 
@@ -126,5 +129,14 @@ export class AgentStreamService implements IStreamSink, OnModuleDestroy {
       );
       void this.pubSub.publish(channel, { context: batch.context, step });
     }
+
+    this.appendToLog(batch.context, step);
+  }
+
+  // Ghi vào event log theo turn để reload/reconnect phát lại được. Fire-and-forget:
+  // lệnh Redis được gửi đồng bộ ngay đây nên thứ tự gọi = thứ tự trong log.
+  private appendToLog(context: AgentStreamContext, step: AgentStreamStep): void {
+    if (!this.eventLog || !context.messageId) return;
+    void this.eventLog.appendStep(context.messageId, context, step);
   }
 }

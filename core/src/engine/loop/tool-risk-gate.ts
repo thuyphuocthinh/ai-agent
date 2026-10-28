@@ -5,7 +5,10 @@ import { LlmStrategy } from '../strategy/llm-strategy.interface';
 import { CircuitBreakerService } from '../../common/circuit-breaker.service';
 import { extractRequiredCount } from './quantity-check.util';
 import { isLikelyCreateToolCall } from '../../memory/create-tool-heuristic.util';
-import { extractWriteQueryPreviewTarget } from './write-query-preview.util';
+import {
+  EWriteQueryTargetKind,
+  extractWriteQueryPreviewTarget,
+} from './write-query-preview.util';
 import { InsertAccumulator } from './insert-accumulator';
 import { ToolRiskGateOptions } from './tool-executor.interface';
 import {
@@ -201,7 +204,7 @@ export class ToolRiskGate {
     }
     const query = typeof args.query === 'string' ? args.query : undefined;
     if (!query) return false;
-    return extractWriteQueryPreviewTarget(query)?.kind === 'insert-rows';
+    return extractWriteQueryPreviewTarget(query)?.kind === EWriteQueryTargetKind.INSERT_ROWS;
   }
 
   /**

@@ -36,20 +36,23 @@ describe('UiStreamPresenter', () => {
     });
   });
 
-  it('cancels turn when client disconnects before finished', async () => {
+  it('closes stream reader without cancelling background turn when client disconnects before finished', async () => {
     const mockRes = new EventEmitter() as unknown as ServerResponse & { writableFinished: boolean };
     mockRes.writableFinished = false;
 
     const mockCancel = jest.fn().mockResolvedValue(undefined);
+    const mockClose = jest.fn();
     const mockTurn: TurnStream = {
       sessionId: 'sess-123',
       stream: new ReadableStream<UIMessageChunk>(),
       cancel: mockCancel,
+      close: mockClose,
     };
 
     await presenter.pipe(mockRes as unknown as ServerResponse, mockTurn);
 
     mockRes.emit('close');
-    expect(mockCancel).toHaveBeenCalled();
+    expect(mockClose).toHaveBeenCalled();
+    expect(mockCancel).not.toHaveBeenCalled();
   });
 });

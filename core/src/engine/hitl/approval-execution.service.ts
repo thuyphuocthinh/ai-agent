@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { IProcessApprovalJobData } from '@agent/core/infrastructure/queue';
 import {
   EAgentStreamStepType,
@@ -13,6 +13,12 @@ import { AgentCancellationService } from '../cancellation/agent-cancellation.ser
 import { TurnCancelledError } from '../loop/turn-cancelled.error';
 import { ApprovalSkillRecorderService } from './approval-skill-recorder.service';
 import { AnswerResult } from '../orchestrator/orchestration-answer.types';
+import { TurnEventRecorderService } from '../orchestrator/turn-event-recorder.service';
+import {
+  ETurnLogStatus,
+  ITurnEventLog,
+  TURN_EVENT_LOG,
+} from '../../contracts/turn-event-log.interface';
 import {
   EXECUTION_ENGINE_REGISTRY,
   IExecutionEngineRegistry,
@@ -41,6 +47,11 @@ export class ApprovalExecutionService {
     private readonly skillRecorder: ApprovalSkillRecorderService,
     @Inject(EXECUTION_ENGINE_REGISTRY)
     private readonly engineRegistry: IExecutionEngineRegistry,
+    @Optional()
+    @Inject(TURN_EVENT_LOG)
+    private readonly eventLog?: ITurnEventLog,
+    @Optional()
+    private readonly turnRecorder?: TurnEventRecorderService,
   ) {}
 
   async processApprovalJob(data: IProcessApprovalJobData): Promise<void> {
@@ -119,10 +130,22 @@ export class ApprovalExecutionService {
     const { id, replyMessageId, botUserId, channelId, channelType } =
       checkpoint;
     await this.cancellation.startTurn(replyMessageId, userId);
+    // Turn tiếp tục sau duyệt/làm rõ cũng có event log riêng (khoá theo replyMessageId)
+    // để reload giữa lúc đang chạy tiếp vẫn phát lại + reconnect được.
+    await this.eventLog
+      ?.start({ messageId: replyMessageId, conversationId: channelId, userId })
+      .catch((error: unknown) =>
+        this.logger.warn(
+          `Không thể khởi tạo turn log cho ${replyMessageId}: ${(error as Error)?.message}`,
+        ),
+      );
+    const stopHeartbeat = this.eventLog?.startHeartbeat(replyMessageId);
+    let finalStatus = ETurnLogStatus.DONE;
     try {
       await work();
     } catch (error) {
       if (error instanceof TurnCancelledError) {
+        finalStatus = ETurnLogStatus.CANCELLED;
         this.logger.log(
           `${label}() checkpoint=${id} bị huỷ theo yêu cầu (Stop)`,
         );
@@ -132,6 +155,7 @@ export class ApprovalExecutionService {
           content: error.partialText || '⏹️ Đã dừng theo yêu cầu.',
         });
       } else {
+        finalStatus = ETurnLogStatus.FAILED;
         this.logger.error(
           `${label}() failed for checkpoint ${id}: ${(error as Error).message}`,
           (error as Error).stack,
@@ -143,12 +167,15 @@ export class ApprovalExecutionService {
         });
       }
     } finally {
+      await this.turnRecorder?.idle();
       await this.emitDone({
         userId,
         channelId,
         messageId: replyMessageId,
         channelType,
       });
+      stopHeartbeat?.();
+      await this.eventLog?.finish(replyMessageId, finalStatus);
     }
   }
 

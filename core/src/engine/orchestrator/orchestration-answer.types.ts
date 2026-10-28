@@ -1,6 +1,6 @@
 import { ToolCallTraceDto } from '../../contracts/dtos/react-loop.dto';
 import { PersonaDto, SupervisorRoundDto } from '../../contracts/dtos/supervisor.dto';
-import { ExecutedStepDto } from '../../contracts/dtos/message-client.dto';
+import { ExecutedStepDto, TurnRoutingDto } from '../../contracts/dtos/message-client.dto';
 import { PendingToolCall } from '../../infrastructure/database/entities/orchestration-checkpoint.entity';
 
 // Object content (approval_request) đi qua createMessage() riêng, không qua đây.
@@ -10,6 +10,7 @@ export interface AnswerResult {
   steps?: ExecutedStepDto[];
   persona?: PersonaDto;
   personas?: PersonaDto[];
+  routing?: TurnRoutingDto;
 }
 
 export interface DelegateRoundResult {
