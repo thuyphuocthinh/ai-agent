@@ -1,4 +1,3 @@
-export * from './database.config';
 export * from './database.module';
 export * from './database.service';
 export * from './database-health.service';
@@ -8,4 +7,3 @@ export * from './adapters/prisma-message-sink';
 export * from './adapters/prisma-checkpoint.service';
 export * from './adapters/prisma-trigger-claim.service';
 export * from './adapters/prisma-workflow.store';
-export * from './entities';

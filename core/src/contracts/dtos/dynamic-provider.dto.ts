@@ -21,3 +21,21 @@ export interface DynamicProviderAuthConfig {
   defaultExpiresInSecs?: number;
   [key: string]: unknown;
 }
+
+export interface DynamicProviderEntityRecord {
+  id: string;
+  userId: string;
+  name: string;
+  specUrl: string;
+  description?: string;
+  accessToken?: string;
+  authType: EDynamicProviderAuthType;
+  refreshToken?: string;
+  tokenExpiresAt?: Date;
+  authConfig?: DynamicProviderAuthConfig;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export type DynamicProviderRecord = DynamicProviderEntityRecord;

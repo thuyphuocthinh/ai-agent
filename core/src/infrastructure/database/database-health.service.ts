@@ -1,14 +1,11 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
-import { InjectDataSource } from '@nestjs/typeorm';
-import { DataSource } from 'typeorm';
+import { PrismaService } from './prisma.service';
+
 const isError = (error: unknown): error is Error => error instanceof Error;
 
 @Injectable()
 export class DatabaseHealthService implements OnModuleInit {
-  constructor(
-    @InjectDataSource()
-    private readonly dataSource: DataSource,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   async onModuleInit() {
     const dbType =
@@ -32,7 +29,7 @@ export class DatabaseHealthService implements OnModuleInit {
 
   async isAlive(): Promise<boolean> {
     try {
-      await this.dataSource.query('SELECT 1 as test');
+      await this.prisma.$queryRawUnsafe('SELECT 1 as test');
       return true;
     } catch (error: unknown) {
       if (isError(error)) {

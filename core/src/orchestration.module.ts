@@ -1,7 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
-import { TypeOrmModule } from '@nestjs/typeorm';
 import { DatabaseModule } from './infrastructure/database/database.module';
 import {
   PrismaChatSessionManager,
@@ -25,11 +24,6 @@ import { GeminiStrategy } from './engine/strategy/gemini.strategy';
 import { OpenAiStrategy } from './engine/strategy/openai.strategy';
 import { AnthropicStrategy } from './engine/strategy/anthropic.strategy';
 import { MockStrategy } from './engine/strategy/mock.strategy';
-import { OrchestrationCheckpointEntity } from './infrastructure/database/entities/orchestration-checkpoint.entity';
-import { OrchestrationTriggerClaimEntity } from './infrastructure/database/entities/orchestration-trigger-claim.entity';
-import { DynamicProviderEntity } from './infrastructure/database/entities/dynamic-provider.entity';
-import { ConversationMemoryEntity } from './infrastructure/database/entities/conversation-memory.entity';
-import { SkillEntity } from './infrastructure/database/entities/skill.entity';
 import { ConversationMemoryService } from './memory/conversation-memory.service';
 import { ConversationMemoryCleanupService } from './memory/conversation-memory-cleanup.service';
 import { MemoryManagerService } from './memory/memory-manager.service';
@@ -107,13 +101,6 @@ import { SecurityModule } from './security';
     // REDIS_CLIENT và BullMQ inject ConfigService (trước đây host Slack cấp).
     ConfigModule.forRoot({ isGlobal: true, envFilePath: ['.env', '../.env'] }),
     DatabaseModule,
-    TypeOrmModule.forFeature([
-      OrchestrationCheckpointEntity,
-      OrchestrationTriggerClaimEntity,
-      DynamicProviderEntity,
-      ConversationMemoryEntity,
-      SkillEntity,
-    ]),
     ScheduleModule.forRoot(),
     CachedModule.forRoot(),
     QueueModule.forRoot(),

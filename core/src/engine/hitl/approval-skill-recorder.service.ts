@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { PendingToolCall } from '../../infrastructure/database/entities/orchestration-checkpoint.entity';
+import { PendingToolCall } from '../../contracts';
 import { CheckpointResponseDto } from '../../contracts/dtos/checkpoint.dto';
 import { SkillService } from '../../memory/skill.service';
 import { SkillRetrievalService } from '../../memory/skill-retrieval.service';

@@ -29,3 +29,42 @@ export interface CreateSkillInput {
   sourceCheckpointId: string;
   riskLevel: ECheckpointRiskLevel | null;
 }
+
+/**
+ * Bản ghi Skill hoàn chỉnh dùng trong runtime và memory retrieval.
+ */
+export interface SkillRecord {
+  id: string;
+  tenantId: string;
+  workspaceId: string;
+  taskDescription: string;
+  summaryMarkdown: string;
+  steps: SkillStep[];
+  sourceCheckpointIds: string[];
+  approvedRunCount: number;
+  riskLevel: ECheckpointRiskLevel | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/**
+ * Bản ghi ký ức hội thoại (thực thể / fact ổn định vừa tạo thành công).
+ */
+export class ConversationMemoryRecord {
+  id: string;
+  conversationId: string;
+  sourceMessageId: string;
+  tool: string;
+  content: string;
+  createdAt: Date;
+
+  get channelId(): string {
+    return this.conversationId;
+  }
+  set channelId(value: string) {
+    this.conversationId = value;
+  }
+}
+
+export type ConversationMemoryEntity = ConversationMemoryRecord;
+export { ConversationMemoryRecord as ChannelMemoryEntity };

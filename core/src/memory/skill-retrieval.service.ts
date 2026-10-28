@@ -7,7 +7,7 @@ import {
   CHARS_PER_TOKEN_ESTIMATE,
 } from './embedding/openai-embedding.provider';
 import { SkillService } from './skill.service';
-import { SkillEntity } from '../infrastructure/database/entities/skill.entity';
+import { SkillRecord } from './memory.interface';
 import { cosineSimilarity } from './skill-cosine-similarity.util';
 import { attachEmbeddingCostMetadata } from '../engine/loop/llm-cost.util';
 
@@ -36,7 +36,7 @@ export class SkillRetrievalService {
   async findMatching(
     taskDescription: string,
     workspaceId: string,
-  ): Promise<SkillEntity | null> {
+  ): Promise<SkillRecord | null> {
     const skills = await this.safeFindByWorkspace(workspaceId);
     const eligible = skills.filter(
       (s) => s.approvedRunCount >= minApprovedRunCount(s.riskLevel),
@@ -50,14 +50,14 @@ export class SkillRetrievalService {
   async findSimilarForAcquisition(
     taskDescription: string,
     workspaceId: string,
-  ): Promise<SkillEntity | null> {
+  ): Promise<SkillRecord | null> {
     const skills = await this.safeFindByWorkspace(workspaceId);
     return this.findBestMatch(taskDescription, skills);
   }
 
   private async safeFindByWorkspace(
     workspaceId: string,
-  ): Promise<SkillEntity[]> {
+  ): Promise<SkillRecord[]> {
     try {
       return await this.skillService.findByWorkspace(workspaceId);
     } catch (error) {
@@ -70,15 +70,15 @@ export class SkillRetrievalService {
 
   private async findBestMatch(
     taskDescription: string,
-    candidates: SkillEntity[],
-  ): Promise<SkillEntity | null> {
+    candidates: SkillRecord[],
+  ): Promise<SkillRecord | null> {
     if (candidates.length === 0) return null;
 
     try {
       const vectors = await this.embedAll(taskDescription, candidates);
       const [queryVector, ...candidateVectors] = vectors;
 
-      let bestSkill: SkillEntity | null = null;
+      let bestSkill: SkillRecord | null = null;
       let bestScore = -Infinity;
       for (let i = 0; i < candidates.length; i++) {
         const score = cosineSimilarity(queryVector, candidateVectors[i]);
@@ -98,7 +98,7 @@ export class SkillRetrievalService {
 
   private embedAll(
     taskDescription: string,
-    candidates: SkillEntity[],
+    candidates: SkillRecord[],
   ): Promise<number[][]> {
     const estimatedChars =
       taskDescription.length +

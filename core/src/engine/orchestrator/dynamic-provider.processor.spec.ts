@@ -1,26 +1,33 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { DynamicProviderProcessor } from './dynamic-provider.processor';
-import { getRepositoryToken } from '@nestjs/typeorm';
-import { DynamicProviderEntity } from '../../infrastructure/database/entities/dynamic-provider.entity';
+import { PrismaService } from '../../infrastructure/database/prisma.service';
 import { EJobName } from '@agent/core/infrastructure/queue';
 import { Job } from 'bullmq';
 import { Logger } from '@nestjs/common';
 
 describe('DynamicProviderProcessor', () => {
   let processor: DynamicProviderProcessor;
-  let mockRepo: { update: jest.Mock };
+  let mockPrisma: {
+    dynamicProvider: {
+      update: jest.Mock;
+      updateMany: jest.Mock;
+    };
+  };
 
   beforeEach(async () => {
-    mockRepo = {
-      update: jest.fn(),
+    mockPrisma = {
+      dynamicProvider: {
+        update: jest.fn(),
+        updateMany: jest.fn(),
+      },
     };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         DynamicProviderProcessor,
         {
-          provide: getRepositoryToken(DynamicProviderEntity),
-          useValue: mockRepo,
+          provide: PrismaService,
+          useValue: mockPrisma,
         },
       ],
     }).compile();
@@ -54,14 +61,17 @@ describe('DynamicProviderProcessor', () => {
         data: jobData,
       } as Job;
 
-      mockRepo.update.mockResolvedValue({ affected: 1 });
+      mockPrisma.dynamicProvider.update.mockResolvedValue({});
 
       await expect(processor.process(job)).resolves.not.toThrow();
 
-      expect(mockRepo.update).toHaveBeenCalledWith('test-provider-id', {
-        accessToken: 'new-access-token',
-        refreshToken: 'new-refresh-token',
-        tokenExpiresAt: jobData.tokenExpiresAt,
+      expect(mockPrisma.dynamicProvider.update).toHaveBeenCalledWith({
+        where: { id: 'test-provider-id' },
+        data: {
+          accessToken: 'new-access-token',
+          refreshToken: 'new-refresh-token',
+          tokenExpiresAt: jobData.tokenExpiresAt,
+        },
       });
       expect(processor.logger.log).toHaveBeenCalledWith(
         'Successfully persisted token for provider test-provider-id via Queue.',
@@ -82,18 +92,18 @@ describe('DynamicProviderProcessor', () => {
         data: jobData,
       } as Job;
 
-      mockRepo.update.mockResolvedValue({ affected: 1 });
+      mockPrisma.dynamicProvider.updateMany.mockResolvedValue({ count: 1 });
 
       await processor.process(job);
 
-      expect(mockRepo.update).toHaveBeenCalledWith(
-        { id: 'test-provider-id', refreshToken: 'old-refresh-token' },
-        {
+      expect(mockPrisma.dynamicProvider.updateMany).toHaveBeenCalledWith({
+        where: { id: 'test-provider-id', refreshToken: 'old-refresh-token' },
+        data: {
           accessToken: 'new-access-token',
           refreshToken: 'new-refresh-token',
           tokenExpiresAt: jobData.tokenExpiresAt,
         },
-      );
+      });
     });
 
     it('should skip (not throw) when previousRefreshToken no longer matches — token already rotated by a newer job', async () => {
@@ -109,7 +119,7 @@ describe('DynamicProviderProcessor', () => {
         data: jobData,
       } as Job;
 
-      mockRepo.update.mockResolvedValue({ affected: 0 });
+      mockPrisma.dynamicProvider.updateMany.mockResolvedValue({ count: 0 });
 
       await expect(processor.process(job)).resolves.not.toThrow();
 
@@ -131,16 +141,19 @@ describe('DynamicProviderProcessor', () => {
       } as Job;
 
       const dbError = new Error('Database connection failed');
-      mockRepo.update.mockRejectedValue(dbError);
+      mockPrisma.dynamicProvider.update.mockRejectedValue(dbError);
 
       await expect(processor.process(job)).rejects.toThrow(
         'Database connection failed',
       );
 
-      expect(mockRepo.update).toHaveBeenCalledWith('test-provider-id', {
-        accessToken: 'new-access-token',
-        refreshToken: undefined,
-        tokenExpiresAt: undefined,
+      expect(mockPrisma.dynamicProvider.update).toHaveBeenCalledWith({
+        where: { id: 'test-provider-id' },
+        data: {
+          accessToken: 'new-access-token',
+          refreshToken: undefined,
+          tokenExpiresAt: undefined,
+        },
       });
       expect(processor.logger.error).toHaveBeenCalledWith(
         'Failed to persist token for provider test-provider-id via Queue: Database connection failed',
@@ -159,7 +172,7 @@ describe('DynamicProviderProcessor', () => {
       expect(processor.logger.warn).toHaveBeenCalledWith(
         'Unknown job name: UNKNOWN_JOB_NAME',
       );
-      expect(mockRepo.update).not.toHaveBeenCalled();
+      expect(mockPrisma.dynamicProvider.update).not.toHaveBeenCalled();
     });
   });
 });

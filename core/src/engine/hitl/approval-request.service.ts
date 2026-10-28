@@ -13,7 +13,7 @@ import { CheckpointService } from './checkpoint.service';
 import {
   OrchestrationCheckpointStatus,
   PendingToolCall,
-} from '../../infrastructure/database/entities/orchestration-checkpoint.entity';
+} from '../../contracts';
 import { CheckpointResponseDto } from '../../contracts/dtos/checkpoint.dto';
 import { ResolveApprovalRequestDto } from '../../contracts/dtos/orchestration.dto';
 import {

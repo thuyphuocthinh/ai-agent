@@ -6,9 +6,7 @@ import {
   EQueueName,
   IUpdateDynamicProviderTokenJobData,
 } from '@agent/core/infrastructure/queue';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { DynamicProviderEntity } from '../../infrastructure/database/entities/dynamic-provider.entity';
+import { PrismaService } from '../../infrastructure/database/prisma.service';
 
 @Processor(EQueueName.DYNAMIC_PROVIDER_QUEUE, {
   concurrency: 2,
@@ -19,10 +17,7 @@ export class DynamicProviderProcessor extends BaseProcessor<
   void,
   EJobName
 > {
-  constructor(
-    @InjectRepository(DynamicProviderEntity)
-    private readonly providerRepo: Repository<DynamicProviderEntity>,
-  ) {
+  constructor(private readonly prisma: PrismaService) {
     super();
   }
 
@@ -51,20 +46,32 @@ export class DynamicProviderProcessor extends BaseProcessor<
       // fail tạm thời, trong lúc đó refreshToken đã bị xoay vòng lần nữa), refreshToken
       // hiện tại trong DB sẽ KHÔNG còn khớp previousRefreshToken nữa — bỏ qua write này
       // thay vì đè lên token mới hơn bằng token cũ đã bị provider vô hiệu hoá.
-      const where = previousRefreshToken
-        ? { id: providerId, refreshToken: previousRefreshToken }
-        : providerId;
-      const result = await this.providerRepo.update(where, {
-        accessToken,
-        refreshToken,
-        tokenExpiresAt,
-      });
-      if (previousRefreshToken && result.affected === 0) {
-        this.logger.warn(
-          `Skipped stale token write for provider ${providerId} — refreshToken already rotated by a newer update.`,
-        );
-        return;
+      if (previousRefreshToken) {
+        const updateResult = await this.prisma.dynamicProvider.updateMany({
+          where: { id: providerId, refreshToken: previousRefreshToken },
+          data: {
+            accessToken,
+            refreshToken,
+            tokenExpiresAt,
+          },
+        });
+        if (updateResult.count === 0) {
+          this.logger.warn(
+            `Skipped stale token write for provider ${providerId} — refreshToken already rotated by a newer update.`,
+          );
+          return;
+        }
+      } else {
+        await this.prisma.dynamicProvider.update({
+          where: { id: providerId },
+          data: {
+            accessToken,
+            refreshToken,
+            tokenExpiresAt,
+          },
+        });
       }
+
       this.logger.log(
         `Successfully persisted token for provider ${providerId} via Queue.`,
       );

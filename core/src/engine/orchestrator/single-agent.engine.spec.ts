@@ -7,7 +7,7 @@ import { TurnCancelledError } from '../loop/turn-cancelled.error';
 import { ApprovalRequiredError } from '../loop/approval-required.error';
 import { ClarificationRequiredError } from '../../contracts/clarification.types';
 import { EngineExecutionContext, EngineRoutingContext } from '../../contracts/execution-engine.interface';
-import { PendingToolCall } from '../../infrastructure/database/entities/orchestration-checkpoint.entity';
+import { PendingToolCall } from '../../contracts';
 import { AnswerResult } from './orchestration-answer.types';
 
 describe('SingleAgentEngine', () => {

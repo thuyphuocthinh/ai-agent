@@ -5,7 +5,7 @@ import { ApprovalRequestService } from './approval-request.service';
 import { MessageClientService } from '../../contracts/message-client.service';
 import { AgentStreamService } from '../../contracts/agent-stream.service';
 import { CheckpointService } from './checkpoint.service';
-import { OrchestrationCheckpointStatus } from '../../infrastructure/database/entities/orchestration-checkpoint.entity';
+import { OrchestrationCheckpointStatus } from '../../contracts';
 import { ETurnLogStatus, TURN_EVENT_LOG } from '../../contracts';
 import { TurnEventRecorderService } from '../orchestrator/turn-event-recorder.service';
 

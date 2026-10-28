@@ -13,7 +13,7 @@ import { CheckpointService } from './checkpoint.service';
 import {
   AmbiguousAgentCandidate,
   PendingToolCall,
-} from '../../infrastructure/database/entities/orchestration-checkpoint.entity';
+} from '../../contracts';
 import { CreateCheckpointRequestDto } from '../../contracts/dtos/checkpoint.dto';
 import {
   AvailableAgentDto,

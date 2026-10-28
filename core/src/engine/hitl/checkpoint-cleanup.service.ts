@@ -4,7 +4,7 @@ import { EAgentStreamStepType } from '@agent/core/constants';
 import { CheckpointService } from './checkpoint.service';
 import { MessageClientService } from '../../contracts/message-client.service';
 import { AgentStreamService } from '../../contracts/agent-stream.service';
-import { OrchestrationCheckpointStatus } from '../../infrastructure/database/entities/orchestration-checkpoint.entity';
+import { OrchestrationCheckpointStatus } from '../../contracts';
 import { CheckpointResponseDto } from '../../contracts/dtos/checkpoint.dto';
 
 /**

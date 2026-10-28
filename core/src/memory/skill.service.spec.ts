@@ -1,25 +1,25 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { getRepositoryToken } from '@nestjs/typeorm';
 import { ECheckpointRiskLevel } from '@agent/core/constants';
 import { SkillService } from './skill.service';
-import { SkillEntity } from '../infrastructure/database/entities/skill.entity';
+import { PrismaService } from '../infrastructure/database/prisma.service';
 
 describe('SkillService', () => {
   let service: SkillService;
 
-  const mockRepo = {
-    find: jest.fn(),
-    create: jest.fn((input) => input),
-    save: jest.fn(),
-    findOne: jest.fn(),
-    update: jest.fn(),
+  const mockPrisma = {
+    skill: {
+      findMany: jest.fn(),
+      create: jest.fn(),
+      findUnique: jest.fn(),
+      update: jest.fn(),
+    },
   };
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         SkillService,
-        { provide: getRepositoryToken(SkillEntity), useValue: mockRepo },
+        { provide: PrismaService, useValue: mockPrisma },
       ],
     }).compile();
 
@@ -30,20 +30,52 @@ describe('SkillService', () => {
 
   describe('findByWorkspace', () => {
     it('queries skills scoped to the given workspaceId', async () => {
-      mockRepo.find.mockResolvedValue([{ id: 'skill-1' }]);
+      mockPrisma.skill.findMany.mockResolvedValue([
+        {
+          id: 'skill-1',
+          tenantId: 'ws-1',
+          taskDescription: 'test',
+          summaryMarkdown: 'test',
+          steps: [],
+          sourceCheckpointIds: [],
+          approvedRunCount: 1,
+          riskLevel: null,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ]);
 
       const result = await service.findByWorkspace('ws-1');
 
-      expect(mockRepo.find).toHaveBeenCalledWith({
+      expect(mockPrisma.skill.findMany).toHaveBeenCalledWith({
         where: { tenantId: 'ws-1' },
       });
-      expect(result).toEqual([{ id: 'skill-1' }]);
+      expect(result).toHaveLength(1);
+      expect(result[0].id).toBe('skill-1');
+      expect(result[0].workspaceId).toBe('ws-1');
     });
   });
 
   describe('create', () => {
     it('seeds sourceCheckpointIds with exactly the one checkpoint that produced this skill', async () => {
-      mockRepo.save.mockResolvedValue({ id: 'skill-1' });
+      mockPrisma.skill.create.mockResolvedValue({
+        id: 'skill-1',
+        tenantId: 'ws-1',
+        taskDescription: 'tạo 5 sản phẩm ngẫu nhiên',
+        summaryMarkdown: '## Tạo sản phẩm\nGọi execute_write_query để INSERT.',
+        steps: [
+          {
+            provider: 'sql_server',
+            tool: 'execute_write_query',
+            argsTemplate: { query: 'INSERT INTO Products ...' },
+          },
+        ],
+        sourceCheckpointIds: ['checkpoint-1'],
+        approvedRunCount: 1,
+        riskLevel: ECheckpointRiskLevel.MEDIUM,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
 
       await service.create({
         workspaceId: 'ws-1',
@@ -60,34 +92,38 @@ describe('SkillService', () => {
         riskLevel: ECheckpointRiskLevel.MEDIUM,
       });
 
-      expect(mockRepo.save).toHaveBeenCalledWith(
-        expect.objectContaining({ sourceCheckpointIds: ['checkpoint-1'] }),
-      );
+      expect(mockPrisma.skill.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ sourceCheckpointIds: ['checkpoint-1'] }),
+      });
     });
   });
 
   describe('incrementApprovedRunCount', () => {
     it('bumps the count and appends the new checkpoint id, keeps steps unchanged', async () => {
-      mockRepo.findOne.mockResolvedValue({
+      mockPrisma.skill.findUnique.mockResolvedValue({
         id: 'skill-1',
         approvedRunCount: 2,
         sourceCheckpointIds: ['checkpoint-1'],
       });
+      mockPrisma.skill.update.mockResolvedValue({});
 
       await service.incrementApprovedRunCount('skill-1', 'checkpoint-2');
 
-      expect(mockRepo.update).toHaveBeenCalledWith('skill-1', {
-        approvedRunCount: 3,
-        sourceCheckpointIds: ['checkpoint-1', 'checkpoint-2'],
+      expect(mockPrisma.skill.update).toHaveBeenCalledWith({
+        where: { id: 'skill-1' },
+        data: {
+          approvedRunCount: 3,
+          sourceCheckpointIds: ['checkpoint-1', 'checkpoint-2'],
+        },
       });
     });
 
     it('does nothing when the skill no longer exists (deleted between match and record)', async () => {
-      mockRepo.findOne.mockResolvedValue(null);
+      mockPrisma.skill.findUnique.mockResolvedValue(null);
 
       await service.incrementApprovedRunCount('skill-1', 'checkpoint-2');
 
-      expect(mockRepo.update).not.toHaveBeenCalled();
+      expect(mockPrisma.skill.update).not.toHaveBeenCalled();
     });
   });
 });

@@ -3,7 +3,7 @@ import { CheckpointCleanupService } from './checkpoint-cleanup.service';
 import { CheckpointService } from './checkpoint.service';
 import { MessageClientService } from '../../contracts/message-client.service';
 import { AgentStreamService } from '../../contracts/agent-stream.service';
-import { OrchestrationCheckpointStatus } from '../../infrastructure/database/entities/orchestration-checkpoint.entity';
+import { OrchestrationCheckpointStatus } from '../../contracts';
 
 describe('CheckpointCleanupService', () => {
   let service: CheckpointCleanupService;

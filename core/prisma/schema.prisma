@@ -217,6 +217,41 @@ model ConversationMemory {
   @@map("conversation_memories")
 }
 
+model Skill {
+  id                  String   @id(map: "PK_orchestration_skills") @default(uuid(7)) @db.Uuid
+  tenantId            String   @map("tenant_id")
+  taskDescription     String   @map("task_description") @db.Text
+  summaryMarkdown     String   @map("summary_markdown") @db.Text
+  steps               Json     @db.JsonB
+  sourceCheckpointIds Json     @default("[]") @map("source_checkpoint_ids") @db.JsonB
+  approvedRunCount    Int      @default(1) @map("approved_run_count")
+  riskLevel           String?  @map("risk_level")
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt           DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([tenantId], map: "IDX_orchestration_skills_tenant_id")
+  @@map("orchestration_skills")
+}
+
+model DynamicProvider {
+  id             String    @id(map: "PK_orchestration_dynamic_providers")
+  userId         String    @map("user_id")
+  name           String
+  specUrl        String    @map("spec_url") @db.Text
+  description    String?   @db.Text
+  accessToken    String?   @map("access_token") @db.Text
+  authType       String    @default("BEARER") @map("auth_type")
+  refreshToken   String?   @map("refresh_token") @db.Text
+  tokenExpiresAt DateTime? @map("token_expires_at") @db.Timestamptz
+  authConfig     Json?     @map("auth_config") @db.JsonB
+  isActive       Boolean   @default(true) @map("is_active")
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([userId], map: "idx_dyn_prov_user_id")
+  @@map("orchestration_dynamic_providers")
+}
+
 // ====================================================
 // 5. SECURITY & AUDIT TRAIL (IMMUTABLE)
 // ====================================================

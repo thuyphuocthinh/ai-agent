@@ -3,7 +3,7 @@ import { ECheckpointRiskLevel } from '@agent/core/constants';
 import { SkillRetrievalService } from './skill-retrieval.service';
 import { SkillService } from './skill.service';
 import { OpenAiEmbeddingProvider } from './embedding/openai-embedding.provider';
-import { SkillEntity } from '../infrastructure/database/entities/skill.entity';
+import { SkillRecord } from './memory.interface';
 
 describe('SkillRetrievalService', () => {
   let service: SkillRetrievalService;
@@ -11,9 +11,10 @@ describe('SkillRetrievalService', () => {
   const mockSkillService = { findByWorkspace: jest.fn() };
   const mockEmbeddingProvider = { embed: jest.fn() };
 
-  const buildSkill = (overrides: Partial<SkillEntity> = {}): SkillEntity =>
+  const buildSkill = (overrides: Partial<SkillRecord> = {}): SkillRecord =>
     ({
       id: 'skill-1',
+      tenantId: 'ws-1',
       workspaceId: 'ws-1',
       taskDescription: 'tạo 5 sản phẩm ngẫu nhiên',
       summaryMarkdown: '## Skill',
@@ -22,8 +23,9 @@ describe('SkillRetrievalService', () => {
       approvedRunCount: 2,
       riskLevel: ECheckpointRiskLevel.MEDIUM,
       createdAt: new Date(),
+      updatedAt: new Date(),
       ...overrides,
-    }) as SkillEntity;
+    });
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({

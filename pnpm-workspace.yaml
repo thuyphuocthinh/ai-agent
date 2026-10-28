@@ -2,3 +2,14 @@ packages:
   - 'core'
   - 'tools'
   - 'cli'
+
+allowBuilds:
+  '@parcel/watcher': true
+  '@prisma/client': true
+  '@prisma/engines': true
+  '@scarf/scarf': true
+  '@swc/core': true
+  esbuild: true
+  msgpackr-extract: true
+  prisma: true
+  unrs-resolver: true

@@ -33,7 +33,7 @@ import { ExecutedStepDto } from '../../contracts/dtos/message-client.dto';
 import { TOOL_PROVIDER, IToolProvider } from '../../contracts';
 import { extractTextFromMcpResult } from '../../common';
 import { CheckpointResponseDto } from '../../contracts/dtos/checkpoint.dto';
-import { PendingToolCall } from '../../infrastructure/database/entities/orchestration-checkpoint.entity';
+import { PendingToolCall } from '../../contracts';
 
 const PIPELINE_INTENT_REGEX =
   /(quy trình|pipeline|báo cáo tuần|onboarding|theo các bước tuần tự|bước 1.*bước 2|chaining)/i;

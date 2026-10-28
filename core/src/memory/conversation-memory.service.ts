@@ -9,7 +9,7 @@ import {
   CHARS_PER_TOKEN_ESTIMATE,
 } from './embedding/openai-embedding.provider';
 import { PrismaService } from '../infrastructure/database/prisma.service';
-import { ConversationMemoryEntity } from '../infrastructure/database/entities/conversation-memory.entity';
+import { ConversationMemoryRecord as ConversationMemoryEntity } from './memory.interface';
 import { ToolCallTraceDto } from '../contracts/dtos/react-loop.dto';
 import { isLikelyCreateToolCall } from './create-tool-heuristic.util';
 import { looksLikeInjection } from './memory-injection-heuristic.util';

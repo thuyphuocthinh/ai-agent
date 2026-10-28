@@ -1,4 +1,4 @@
-import { PendingToolCall } from '../../infrastructure/database/entities/orchestration-checkpoint.entity';
+import { PendingToolCall } from '../../contracts';
 import { ToolCallTraceDto } from '../../contracts/dtos/react-loop.dto';
 
 /**

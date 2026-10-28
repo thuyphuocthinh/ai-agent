@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { SupervisorRoundDto } from '../../contracts/dtos/supervisor.dto';
 import { ChatHistoryTurnDto } from '../../contracts/dtos/message-client.dto';
-import { ConversationMemoryEntity } from '../../infrastructure/database/entities/conversation-memory.entity';
-import { SkillEntity } from '../../infrastructure/database/entities/skill.entity';
+import { ConversationMemoryRecord as ConversationMemoryEntity } from '../../memory/memory.interface';
+import { SkillRecord } from '../../memory/memory.interface';
 import { MemoryManagerService } from '../../memory/memory-manager.service';
 import { capRoundResults } from '../../common/token-budget.util';
 import { detectFrustration } from '../loop/detect-frustration.util';
@@ -19,7 +19,7 @@ export class SupervisorPromptBuilder {
     history: ChatHistoryTurnDto[],
     memories: ConversationMemoryEntity[],
     modelId: string,
-    matchedSkill: SkillEntity | null,
+    matchedSkill: SkillRecord | null,
   ): string {
     const sections: string[] = [];
 

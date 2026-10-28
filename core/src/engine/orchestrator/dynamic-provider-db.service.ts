@@ -1,9 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { DynamicProviderEntity } from '../../infrastructure/database/entities/dynamic-provider.entity';
+import { Prisma } from '@prisma/client';
+import { PrismaService } from '../../infrastructure/database/prisma.service';
 import {
   DynamicProviderAuthConfig,
+  DynamicProviderRecord,
   EDynamicProviderAuthType,
 } from '../../contracts/dtos/dynamic-provider.dto';
 import {
@@ -24,6 +24,8 @@ import {
   Oauth2RefreshTokenRefresher,
 } from 'agentic-openapi-parser';
 import { inferOAuth2RefreshFormat } from '@agent/core/common';
+
+export type DynamicProviderEntity = DynamicProviderRecord;
 
 export interface CreateDynamicProviderParams {
   userId: string;
@@ -51,25 +53,60 @@ interface OAuth2InputFields {
   defaultExpiresInSecs?: number;
 }
 
+function mapPrismaToRecord(entity: {
+  id: string;
+  userId: string;
+  name: string;
+  specUrl: string;
+  description: string | null;
+  accessToken: string | null;
+  authType: string;
+  refreshToken: string | null;
+  tokenExpiresAt: Date | null;
+  authConfig: Prisma.JsonValue | null;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}): DynamicProviderRecord {
+  return {
+    id: entity.id,
+    userId: entity.userId,
+    name: entity.name,
+    specUrl: entity.specUrl,
+    description: entity.description ?? undefined,
+    accessToken: entity.accessToken ?? undefined,
+    authType:
+      (entity.authType as EDynamicProviderAuthType) ||
+      EDynamicProviderAuthType.BEARER,
+    refreshToken: entity.refreshToken ?? undefined,
+    tokenExpiresAt: entity.tokenExpiresAt ?? undefined,
+    authConfig:
+      (entity.authConfig as DynamicProviderAuthConfig | null) ?? undefined,
+    isActive: entity.isActive,
+    createdAt: entity.createdAt,
+    updatedAt: entity.updatedAt,
+  };
+}
+
 @Injectable()
 export class DynamicProviderDbService implements IDynamicProviderLoader {
   private readonly logger = new Logger(DynamicProviderDbService.name);
 
   constructor(
-    @InjectRepository(DynamicProviderEntity)
-    private readonly providerRepo: Repository<DynamicProviderEntity>,
+    private readonly prisma: PrismaService,
     private readonly registryService: CoreDynamicToolRegistryService,
     private readonly parserService: CoreOpenApiParserService,
   ) {}
 
-  async loadEntity(providerId: string): Promise<DynamicProviderEntity | null> {
-    return this.providerRepo.findOne({
+  async loadEntity(providerId: string): Promise<DynamicProviderRecord | null> {
+    const entity = await this.prisma.dynamicProvider.findFirst({
       where: { id: providerId, isActive: true },
     });
+    return entity ? mapPrismaToRecord(entity) : null;
   }
 
   async hasProvider(providerId: string): Promise<boolean> {
-    const count = await this.providerRepo.count({
+    const count = await this.prisma.dynamicProvider.count({
       where: { id: providerId, isActive: true },
     });
     return count > 0;
@@ -114,7 +151,7 @@ export class DynamicProviderDbService implements IDynamicProviderLoader {
     dto: UpdateDynamicProviderRequestDto,
   ): Promise<DynamicProviderDto> {
     const entity = await this.findOwnedProviderOrThrow(id, userId, 'update');
-    const originalRefreshToken = entity.refreshToken;
+    const originalRefreshToken = entity.refreshToken ?? undefined;
     const fields = this.resolveOAuth2Fields(dto, entity);
 
     if (dto.authType && dto.authType !== entity.authType) {
@@ -154,38 +191,46 @@ export class DynamicProviderDbService implements IDynamicProviderLoader {
   ): Promise<DynamicProviderDto> {
     try {
       await this.parserService.loadSpec(params.specUrl);
-    } catch (parseError: any) {
+    } catch (parseError: unknown) {
+      const message =
+        parseError instanceof Error ? parseError.message : String(parseError);
       this.logger.error(
-        `Failed to parse OpenAPI spec at ${params.specUrl}: ${parseError.message}`,
+        `Failed to parse OpenAPI spec at ${params.specUrl}: ${message}`,
       );
       if (parseError instanceof RpcException) throw parseError;
       throw new RpcException({
         ...ORCHESTRATION_ERROR.INVALID_OPENAPI_SPEC,
-        details: parseError.message,
+        details: message,
       });
     }
 
-    const entity = this.providerRepo.create({
-      id: uuidv4(),
-      userId: params.userId,
-      name: params.name,
-      specUrl: params.specUrl,
-      description: params.description,
-      accessToken: params.accessToken,
-      authType: params.authType || EDynamicProviderAuthType.BEARER,
-      refreshToken: params.refreshToken,
-      tokenExpiresAt: params.tokenExpiresAt,
-      authConfig: params.authConfig,
-    });
-
-    let saved: DynamicProviderEntity;
+    const providerId = uuidv4();
+    let saved: DynamicProviderRecord;
     try {
-      saved = await this.providerRepo.save(entity);
+      const created = await this.prisma.dynamicProvider.create({
+        data: {
+          id: providerId,
+          userId: params.userId,
+          name: params.name,
+          specUrl: params.specUrl,
+          description: params.description,
+          accessToken: params.accessToken,
+          authType: params.authType || EDynamicProviderAuthType.BEARER,
+          refreshToken: params.refreshToken,
+          tokenExpiresAt: params.tokenExpiresAt,
+          authConfig: params.authConfig
+            ? (params.authConfig as unknown as Prisma.InputJsonValue)
+            : undefined,
+        },
+      });
+      saved = mapPrismaToRecord(created);
       this.logger.log(
         `Registered dynamic provider "${saved.name}" with ID "${saved.id}"`,
       );
-    } catch (dbError: any) {
-      this.logger.error(`Failed to save provider to DB: ${dbError.message}`);
+    } catch (dbError: unknown) {
+      const message =
+        dbError instanceof Error ? dbError.message : String(dbError);
+      this.logger.error(`Failed to save provider to DB: ${message}`);
       throw new RpcException({
         ...ORCHESTRATION_ERROR.DATABASE_OPERATION_FAILED,
         details: 'Could not save dynamic provider to database',
@@ -199,17 +244,24 @@ export class DynamicProviderDbService implements IDynamicProviderLoader {
 
   async deleteProvider(id: string, userId: string): Promise<void> {
     try {
-      const provider = await this.findOwnedProviderOrThrow(id, userId, 'delete');
+      const provider = await this.findOwnedProviderOrThrow(
+        id,
+        userId,
+        'delete',
+      );
 
-      await this.providerRepo.remove(provider);
+      await this.prisma.dynamicProvider.delete({
+        where: { id: provider.id },
+      });
       this.registryService.removeProvider(id);
       this.logger.log(
         `Deleted dynamic provider "${provider.name}" with ID "${provider.id}"`,
       );
-    } catch (error: any) {
+    } catch (error: unknown) {
       if (error instanceof RpcException) throw error;
+      const message = error instanceof Error ? error.message : String(error);
 
-      this.logger.error(`Failed to delete provider ${id}: ${error.message}`);
+      this.logger.error(`Failed to delete provider ${id}: ${message}`);
       throw new RpcException({
         ...ORCHESTRATION_ERROR.DATABASE_OPERATION_FAILED,
         details: 'Could not delete dynamic provider from database',
@@ -218,23 +270,25 @@ export class DynamicProviderDbService implements IDynamicProviderLoader {
   }
 
   async getProvidersByUser(userId: string): Promise<DynamicProviderDto[]> {
-    const entities = await this.providerRepo.find({ where: { userId } });
-    return entities.map((e) => this.mapToDto(e));
+    const entities = await this.prisma.dynamicProvider.findMany({
+      where: { userId },
+    });
+    return entities.map((e) => this.mapToDto(mapPrismaToRecord(e)));
   }
 
-  private mapToDto(entity: DynamicProviderEntity): DynamicProviderDto {
+  private mapToDto(entity: DynamicProviderRecord): DynamicProviderDto {
     return {
       id: entity.id,
       userId: entity.userId,
       name: entity.name,
       specUrl: entity.specUrl,
-      description: entity.description,
+      description: entity.description ?? undefined,
       hasAuth: !!entity.accessToken || !!entity.refreshToken,
       authType: entity.authType,
       hasAccessToken: !!entity.accessToken,
       hasRefreshToken: !!entity.refreshToken,
       hasTokenUrl: !!entity.authConfig?.tokenUrl,
-      tokenExpiresAt: entity.tokenExpiresAt,
+      tokenExpiresAt: entity.tokenExpiresAt ?? undefined,
       isActive: entity.isActive,
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
@@ -243,7 +297,7 @@ export class DynamicProviderDbService implements IDynamicProviderLoader {
 
   private resolveOAuth2Fields(
     dto: OAuth2InputFields,
-    existing?: DynamicProviderEntity,
+    existing?: DynamicProviderRecord,
   ): OAuth2InputFields {
     const tokenUrl = dto.tokenUrl || existing?.authConfig?.tokenUrl;
     let refreshRequestFormat: ERefreshFormat | undefined;
@@ -255,8 +309,8 @@ export class DynamicProviderDbService implements IDynamicProviderLoader {
     }
 
     return {
-      accessToken: dto.accessToken || existing?.accessToken,
-      refreshToken: dto.refreshToken || existing?.refreshToken,
+      accessToken: dto.accessToken || existing?.accessToken || undefined,
+      refreshToken: dto.refreshToken || existing?.refreshToken || undefined,
       tokenUrl,
       clientId: dto.clientId || existing?.authConfig?.clientId,
       clientSecret: dto.clientSecret || existing?.authConfig?.clientSecret,
@@ -296,25 +350,34 @@ export class DynamicProviderDbService implements IDynamicProviderLoader {
     id: string,
     userId: string,
     verb: 'update' | 'delete',
-  ): Promise<DynamicProviderEntity> {
-    const entity = await this.providerRepo.findOne({ where: { id, userId } });
+  ): Promise<DynamicProviderRecord> {
+    const entity = await this.prisma.dynamicProvider.findFirst({
+      where: { id, userId },
+    });
     if (!entity) {
       throw new RpcException({
         ...ORCHESTRATION_ERROR.DYNAMIC_PROVIDER_NOT_FOUND,
         details: `Dynamic provider ${id} not found or you don't have permission to ${verb} it.`,
       });
     }
-    return entity;
+    return mapPrismaToRecord(entity);
   }
 
   private async persistUpdatedProvider(
-    entity: DynamicProviderEntity,
+    entity: DynamicProviderRecord,
     originalRefreshToken: string | undefined,
   ): Promise<void> {
     try {
-      const result = await this.providerRepo.update(
-        { id: entity.id, refreshToken: originalRefreshToken },
-        {
+      const whereClause: Prisma.DynamicProviderWhereInput = {
+        id: entity.id,
+      };
+      if (originalRefreshToken !== undefined) {
+        whereClause.refreshToken = originalRefreshToken;
+      }
+
+      const result = await this.prisma.dynamicProvider.updateMany({
+        where: whereClause,
+        data: {
           name: entity.name,
           specUrl: entity.specUrl,
           description: entity.description,
@@ -322,10 +385,12 @@ export class DynamicProviderDbService implements IDynamicProviderLoader {
           accessToken: entity.accessToken,
           refreshToken: entity.refreshToken,
           tokenExpiresAt: entity.tokenExpiresAt,
-          authConfig: entity.authConfig as any,
+          authConfig: entity.authConfig
+            ? (entity.authConfig as unknown as Prisma.InputJsonValue)
+            : Prisma.DbNull,
         },
-      );
-      if (result.affected === 0) {
+      });
+      if (result.count === 0) {
         throw new RpcException({
           ...ORCHESTRATION_ERROR.DYNAMIC_PROVIDER_CONCURRENT_UPDATE,
           details: `Dynamic provider ${entity.id} was modified concurrently — please retry.`,
@@ -334,9 +399,11 @@ export class DynamicProviderDbService implements IDynamicProviderLoader {
       this.logger.log(
         `Updated dynamic provider "${entity.name}" with ID "${entity.id}"`,
       );
-    } catch (dbError: any) {
+    } catch (dbError: unknown) {
       if (dbError instanceof RpcException) throw dbError;
-      this.logger.error(`Failed to update provider in DB: ${dbError.message}`);
+      const message =
+        dbError instanceof Error ? dbError.message : String(dbError);
+      this.logger.error(`Failed to update provider in DB: ${message}`);
       throw new RpcException({
         ...ORCHESTRATION_ERROR.DATABASE_OPERATION_FAILED,
         details: 'Could not update dynamic provider in database',
@@ -345,7 +412,7 @@ export class DynamicProviderDbService implements IDynamicProviderLoader {
   }
 
   private async reloadRegistryTools(
-    entity: DynamicProviderEntity,
+    entity: DynamicProviderRecord,
     action: 'load spec for new' | 'reload spec for updated',
   ): Promise<void> {
     try {
