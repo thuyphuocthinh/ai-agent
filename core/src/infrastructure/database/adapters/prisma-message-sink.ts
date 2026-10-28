@@ -139,15 +139,13 @@ export class PrismaMessageSink implements IMessageSink {
 
       return eligible
         .filter((m) => Boolean(m.text && m.text.trim()))
-        .filter((m, idx, arr) => {
+        .filter((m) => {
           if (
-            m.text.includes('⏸️ Cần bạn duyệt') ||
-            m.text.includes('Cần bạn duyệt 1 hành động')
+            m.text.startsWith('⏸️') ||
+            m.text.includes('Cần bạn duyệt') ||
+            m.text.includes('Cần bạn làm rõ')
           ) {
-            const hasLaterModelMsg = arr
-              .slice(idx + 1)
-              .some((later) => later.role === MessageRole.ASSISTANT);
-            return !hasLaterModelMsg;
+            return false;
           }
           return true;
         })
@@ -216,10 +214,18 @@ export class PrismaMessageSink implements IMessageSink {
         ...(dto.executionTimeMs !== undefined ? { executionTimeMs: dto.executionTimeMs } : {}),
       };
 
+      const isPauseIndicator =
+        typeof dto.content === 'string' &&
+        (dto.content.startsWith('⏸️') ||
+          dto.content.includes('Cần bạn duyệt') ||
+          dto.content.includes('Cần bạn làm rõ'));
+
+      const finalText = isPauseIndicator ? existing.text : text;
+
       await this.prisma.conversationMessage.update({
         where: { id: dto.id },
         data: {
-          text,
+          text: finalText,
           isText,
           metadata: updatedMetadata,
           latencyMs: dto.executionTimeMs,

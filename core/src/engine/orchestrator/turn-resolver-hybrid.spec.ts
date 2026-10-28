@@ -3,7 +3,7 @@ import { TurnResolverService } from './turn-resolver.service';
 import { SingleAgentEngine } from './single-agent.engine';
 import { SmartExecutionRouter } from './smart-execution-router.service';
 import { ExecutionEngineRegistryService } from './execution-engine-registry.service';
-import { EXECUTION_ENGINE_REGISTRY, EXECUTION_ROUTER } from '../../contracts';
+import { EXECUTION_ENGINE_REGISTRY, EXECUTION_ROUTER, EExecutionEngineMode } from '../../contracts';
 import { ReactLoopService } from '../loop/react-loop.service';
 import { SupervisorService } from '../supervisor/supervisor.service';
 import { AgentCancellationService } from '../cancellation/agent-cancellation.service';
@@ -194,6 +194,7 @@ describe('TurnResolverService — Hybrid Orchestration Routing (AC-4 & AC-5)', (
         }),
       }),
       [],
+      EExecutionEngineMode.SINGLE_AGENT,
     );
     expect(result.status).toBe('awaiting_approval');
   });

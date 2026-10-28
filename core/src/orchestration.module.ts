@@ -64,6 +64,7 @@ import { ExecutionEngineRegistryService } from './engine/orchestrator/execution-
 import { SingleAgentEngine } from './engine/orchestrator/single-agent.engine';
 import { PipelineChainingEngine } from './engine/orchestrator/pipeline-chaining.engine';
 import { ParallelFanoutEngine } from './engine/orchestrator/parallel-fanout.engine';
+import { DynamicSupervisorEngine } from './engine/orchestrator/dynamic-supervisor.engine';
 import { SubAgentSpawnerService } from './engine/orchestrator/sub-agent-spawner.service';
 import { SmartExecutionRouter } from './engine/orchestrator/smart-execution-router.service';
 import {
@@ -172,6 +173,7 @@ import { SecurityModule } from './security';
     SingleAgentEngine,
     PipelineChainingEngine,
     ParallelFanoutEngine,
+    DynamicSupervisorEngine,
     {
       provide: EXECUTION_ENGINE_REGISTRY,
       useFactory: (...engines: IExecutionEngine[]) => {
@@ -179,7 +181,12 @@ import { SecurityModule } from './security';
         engines.forEach((engine) => registry.register(engine));
         return registry;
       },
-      inject: [SingleAgentEngine, PipelineChainingEngine, ParallelFanoutEngine],
+      inject: [
+        SingleAgentEngine,
+        PipelineChainingEngine,
+        ParallelFanoutEngine,
+        DynamicSupervisorEngine,
+      ],
     },
     SmartExecutionRouter,
     { provide: EXECUTION_ROUTER, useExisting: SmartExecutionRouter },

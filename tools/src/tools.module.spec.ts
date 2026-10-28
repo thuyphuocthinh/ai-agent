@@ -72,7 +72,7 @@ describe('ToolsModule MOCK_TOOLS switch (AC-8)', () => {
       }
     }
 
-    expect(ids).toHaveLength(5);
+    expect(ids).toHaveLength(6);
     expect(endpoints).toEqual(Object.fromEntries(ids.map((id) => [id, `mock://${id}`])));
   });
 });

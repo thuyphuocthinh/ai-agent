@@ -23,6 +23,7 @@ import {
   ExecutedStepDto,
 } from '../../contracts/dtos/message-client.dto';
 import { ApprovalRequiredError } from '../loop/approval-required.error';
+import { ClarificationRequiredError } from '../../contracts/clarification.types';
 import { AgentCancellationService } from '../cancellation/agent-cancellation.service';
 import { runCancellable } from '../../common/cancellable-run.util';
 import { TurnCancelledError } from '../loop/turn-cancelled.error';
@@ -382,14 +383,40 @@ export class TurnResolverRun {
     { done: true; answer: AnswerResult } | { done: false; replan: boolean }
   > {
     const startRealSteps = this.realStepsRun;
-    const results = await Promise.all(
-      batch.map((step, idx) =>
-        this.delegateRound(step, startRealSteps + idx, [
-          ...batch.filter((_, i) => i !== idx),
-          ...remainingSteps,
-        ]),
-      ),
-    );
+    let results: Array<DelegateRoundResult | ApprovalRequiredDelegateResult | null>;
+    try {
+      results = await Promise.all(
+        batch.map((step, idx) =>
+          this.delegateRound(step, startRealSteps + idx, [
+            ...batch.filter((_, i) => i !== idx),
+            ...remainingSteps,
+          ]),
+        ),
+      );
+    } catch (error) {
+      if (error instanceof ClarificationRequiredError) {
+        this.metrics.incrementBehaviorSignal('clarification_required');
+        const candidates: AvailableAgentDto[] = error.candidates.map((c) => ({
+          provider: c.id,
+          label: c.label,
+          description: c.description ?? '',
+        }));
+        return {
+          done: true,
+          answer: await this.checkpointPause.pauseForClarification(
+            this.data,
+            this.prompt,
+            this.rounds,
+            this.toolCalls,
+            this.history,
+            error.question,
+            candidates,
+            remainingSteps,
+          ),
+        };
+      }
+      throw error;
+    }
 
     const approvalIdx = results.findIndex(
       (r) => r && 'approvalRequired' in r,
@@ -862,6 +889,9 @@ export class TurnResolverRun {
           task,
           toolCalls: error.toolCalls,
         };
+      }
+      if (error instanceof ClarificationRequiredError) {
+        throw error;
       }
       this.logger.error(
         `ReactLoop failed for agent "${targetAgent.provider}": ${(error as Error).message}`,

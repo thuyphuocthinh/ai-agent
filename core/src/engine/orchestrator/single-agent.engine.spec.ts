@@ -5,6 +5,7 @@ import { CheckpointPauseService } from '../hitl/checkpoint-pause.service';
 import { MetricsRegistryService } from '../../common/metrics-registry.service';
 import { TurnCancelledError } from '../loop/turn-cancelled.error';
 import { ApprovalRequiredError } from '../loop/approval-required.error';
+import { ClarificationRequiredError } from '../../contracts/clarification.types';
 import { EngineExecutionContext, EngineRoutingContext } from '../../contracts/execution-engine.interface';
 import { PendingToolCall } from '../../infrastructure/database/entities/orchestration-checkpoint.entity';
 import { AnswerResult } from './orchestration-answer.types';
@@ -34,6 +35,9 @@ describe('SingleAgentEngine', () => {
     mockCheckpointPause = {
       pauseForApproval: jest.fn().mockResolvedValue({
         content: 'Paused for approval',
+      } as AnswerResult),
+      pauseForClarification: jest.fn().mockResolvedValue({
+        content: 'Paused for clarification',
       } as AnswerResult),
     } as unknown as jest.Mocked<CheckpointPauseService>;
 
@@ -107,6 +111,44 @@ describe('SingleAgentEngine', () => {
       expect(mockMetrics.incrementBehaviorSignal).toHaveBeenCalledWith('approval_required');
       expect(mockCheckpointPause.pauseForApproval).toHaveBeenCalledTimes(1);
       expect(result.content).toBe('Paused for approval');
+    });
+
+    it('tạm dừng và gọi pauseForClarification khi ném ClarificationRequiredError', async () => {
+      mockReactLoop.run.mockRejectedValue(
+        new ClarificationRequiredError(
+          'Bạn muốn xóa đơn hàng nào?',
+          [
+            { id: 'ord_1', label: 'Đơn #1 (100k)' },
+            { id: 'ord_2', label: 'Đơn #2 (200k)' },
+          ],
+        ),
+      );
+
+      const result = await engine.execute(defaultContext);
+
+      expect(mockMetrics.incrementBehaviorSignal).toHaveBeenCalledWith('clarification_required');
+      expect(mockCheckpointPause.pauseForClarification).toHaveBeenCalledTimes(1);
+      expect(result.content).toBe('Paused for clarification');
+    });
+
+    it('tạm dừng và gọi pauseForClarification khi result trả về clarificationRequired', async () => {
+      mockReactLoop.run.mockResolvedValue({
+        answer: '',
+        toolCalls: [],
+        clarificationRequired: {
+          question: 'Bạn muốn chọn kênh Slack nào?',
+          candidates: [
+            { id: 'c1', label: '#sales' },
+            { id: 'c2', label: '#support' },
+          ],
+        },
+      });
+
+      const result = await engine.execute(defaultContext);
+
+      expect(mockMetrics.incrementBehaviorSignal).toHaveBeenCalledWith('clarification_required');
+      expect(mockCheckpointPause.pauseForClarification).toHaveBeenCalledTimes(1);
+      expect(result.content).toBe('Paused for clarification');
     });
 
     it('ném TurnCancelledError khi lượt chạy đã bị hủy', async () => {

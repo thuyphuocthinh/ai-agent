@@ -29,6 +29,23 @@ describe('token-budget.util', () => {
       expect(capped).toContain('"key":"value"');
       expect(capped).not.toContain('nullVal');
     });
+
+    it('uses ToolOutputCompressor to safely preserve JSON envelope and dataRef when array exceeds budget', () => {
+      const largeArray = Array.from({ length: 100 }, (_, i) => ({
+        id: i,
+        name: `Customer ${i}`,
+        description: 'Detail text for enterprise customer data mapping',
+      }));
+      const rawJson = JSON.stringify(largeArray);
+      const capped = capToolResultSize(rawJson, 1000);
+      expect(capped.length).toBeLessThanOrEqual(1000);
+      // Phải là JSON hợp lệ, không bị syntax error
+      const parsed = JSON.parse(capped);
+      expect(parsed._data_summary).toBeDefined();
+      expect(parsed._data_summary.total_records).toBe(100);
+      expect(parsed._data_summary.dataRef).toBeDefined();
+      expect(parsed.sample_records.length).toBeGreaterThan(0);
+    });
   });
 
   describe('resolveDataCharBudget', () => {

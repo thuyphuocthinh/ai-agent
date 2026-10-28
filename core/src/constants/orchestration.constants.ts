@@ -516,6 +516,7 @@ export const PROVIDER_LABELS: Record<string, string> = {
   notion: 'Notion',
   github: 'GitHub',
   compute: 'Python Compute',
+  kintone: 'Kintone CRM',
 };
 
 // Mô tả ngắn hiển thị trong panel chi tiết provider ở FE.
@@ -531,4 +532,6 @@ export const PROVIDER_DESCRIPTIONS: Record<string, string> = {
   github: 'Truy cập repository, issue, pull request trên GitHub.',
   compute:
     'Chạy code Python để tính toán/xử lý dữ liệu chính xác (phần trăm, trung bình, so sánh ngày giờ...) — dùng khi phép tính có thể sai nếu tự làm bằng suy luận ngôn ngữ. Không truy cập được hệ thống/dữ liệu ngoài.',
+  kintone:
+    'Truy vấn hồ sơ khách hàng doanh nghiệp, tìm kiếm khách hàng, đối soát hợp đồng và dữ liệu CRM Kintone.',
 };

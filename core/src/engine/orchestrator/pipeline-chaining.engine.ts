@@ -1,5 +1,5 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { ORCHESTRATION_CONSTANTS } from '@agent/core/constants';
+import { Injectable, Logger, Inject, Optional } from '@nestjs/common';
+import { ORCHESTRATION_CONSTANTS, EStepExecutionStatus } from '@agent/core/constants';
 import {
   EngineRoutingContext,
   EngineExecutionContext,
@@ -10,6 +10,7 @@ import {
   PipelineDefinition,
   PipelineStepDefinition,
   EPipelineStepType,
+  EPipelineStepFailurePolicy,
 } from '../../contracts/pipeline-chaining.interface';
 import {
   AnswerResult,
@@ -22,11 +23,16 @@ import { CheckpointPauseService } from '../hitl/checkpoint-pause.service';
 import { MetricsRegistryService } from '../../common/metrics-registry.service';
 import { TurnCancelledError } from '../loop/turn-cancelled.error';
 import { ApprovalRequiredError } from '../loop/approval-required.error';
+import { JsonRepair, JsonExtractor } from 'agentic-io-parser';
+import { isZodSchema } from '../../common/zod.util';
 import {
   RunReactLoopRequestDto,
   ToolCallTraceDto,
 } from '../../contracts/dtos/react-loop.dto';
 import { ExecutedStepDto } from '../../contracts/dtos/message-client.dto';
+import { TOOL_PROVIDER, IToolProvider } from '../../contracts';
+import { extractTextFromMcpResult } from '../../common';
+import { CheckpointResponseDto } from '../../contracts/dtos/checkpoint.dto';
 import { PendingToolCall } from '../../infrastructure/database/entities/orchestration-checkpoint.entity';
 
 const PIPELINE_INTENT_REGEX =
@@ -35,9 +41,13 @@ const PIPELINE_INTENT_REGEX =
 /**
  * PipelineChainingEngine
  *
- * Engine thực thi Pipeline Chaining tuần tự (Nhánh 2 trong Master Blueprint: chiếm 10% tác vụ).
- * Hỗ trợ Model Tiering (Step 1 dùng Model rẻ bóc tách dữ liệu -> Step sau dùng Model xịn tổng hợp),
- * Output của Step trước tự động làm Input của Step sau, luồng mã nguồn deterministic và tin cậy 100%.
+ * Engine thực thi Pipeline Chaining tuần tự & rẽ nhánh điều kiện (Nhánh 2 trong Master Blueprint).
+ *
+ * Hardened Features:
+ * - Step Output Schema Validation: Kiểm tra hợp lệ bằng Zod/JSON Schema, tự động kích hoạt 1-shot self-healing correction prompt.
+ * - Dynamic Conditional Branching: Hỗ trợ rẽ nhánh IF/ELSE thông qua `condition` & `branchMap` thay vì chỉ đi đường thẳng.
+ * - Step Failure Policies: Hỗ trợ STOP_ON_FAILURE, SKIP_AND_CONTINUE, và RETRY với giới hạn cứng tối đa 2 lần.
+ * - Buffer Truncation Guard: Giới hạn an toàn 50.000 ký tự cho input giữa các bước.
  */
 @Injectable()
 export class PipelineChainingEngine implements IPipelineChainingEngine {
@@ -47,12 +57,17 @@ export class PipelineChainingEngine implements IPipelineChainingEngine {
 
   private readonly logger = new Logger(PipelineChainingEngine.name);
   private readonly pipelines = new Map<string, PipelineDefinition>();
+  private readonly jsonRepair = new JsonRepair();
+  private readonly jsonExtractor = new JsonExtractor();
 
   constructor(
     private readonly reactLoop: ReactLoopService,
     private readonly cancellation: AgentCancellationService,
     private readonly checkpointPause: CheckpointPauseService,
     private readonly metrics: MetricsRegistryService,
+    @Optional()
+    @Inject(TOOL_PROVIDER)
+    private readonly toolProvider?: IToolProvider,
   ) {
     this.registerBuiltInPipelines();
   }
@@ -62,7 +77,9 @@ export class PipelineChainingEngine implements IPipelineChainingEngine {
       throw new Error('[PipelineChainingEngine] Pipeline id là bắt buộc');
     }
     this.pipelines.set(pipeline.id, pipeline);
-    this.logger.log(`Đã đăng ký pipeline "${pipeline.id}" (${pipeline.name}) [${pipeline.steps.length} steps]`);
+    this.logger.log(
+      `Đã đăng ký pipeline "${pipeline.id}" (${pipeline.name}) [${pipeline.steps.length} steps]`,
+    );
   }
 
   getPipeline(id: string): PipelineDefinition | undefined {
@@ -96,21 +113,36 @@ export class PipelineChainingEngine implements IPipelineChainingEngine {
   async executePipeline(
     pipeline: PipelineDefinition,
     context: EngineExecutionContext,
+    startIndex = 0,
+    initialInput?: string,
+    initialExecutedSteps: ExecutedStepDto[] = [],
+    initialToolCalls: ToolCallTraceDto[] = [],
   ): Promise<AnswerResult> {
     const { data, replyMessageId, prompt, agents, history, signal } = context;
     const connectedProviders = (agents ?? []).map((a) => a.provider);
     const primaryProvider = connectedProviders[0] ?? 'compute';
 
     this.logger.log(
-      `Bắt đầu thực thi pipeline "${pipeline.id}" (${pipeline.name}) cho turn ${replyMessageId} [${pipeline.steps.length} steps]`,
+      `Bắt đầu thực thi pipeline "${pipeline.id}" (${pipeline.name}) cho turn ${replyMessageId} [${pipeline.steps.length} steps, startIndex=${startIndex}]`,
     );
 
-    let currentInput = prompt;
-    const allToolCalls: ToolCallTraceDto[] = [];
-    const executedSteps: ExecutedStepDto[] = [];
+    let currentInput = initialInput ?? prompt;
+    const allToolCalls: ToolCallTraceDto[] = [...initialToolCalls];
+    const executedSteps: ExecutedStepDto[] = [...initialExecutedSteps];
+    let currentStepIndex = startIndex;
+    const executedStepIds = new Set<string>(executedSteps.map((s) => s.agent));
 
-    for (let i = 0; i < pipeline.steps.length; i++) {
-      const step = pipeline.steps[i];
+    while (currentStepIndex < pipeline.steps.length) {
+      const step = pipeline.steps[currentStepIndex];
+
+      // Chống lặp vô tận do rẽ nhánh vòng lặp
+      if (executedStepIds.has(step.id)) {
+        this.logger.warn(
+          `[Pipeline: ${pipeline.id}] Step "${step.id}" đã được thực thi trước đó, dừng lại để tránh vòng lặp vô hạn.`,
+        );
+        break;
+      }
+      executedStepIds.add(step.id);
 
       // 1. Kiểm tra cờ hủy
       const isCancelled = await this.cancellation.isCancelled(replyMessageId);
@@ -119,71 +151,58 @@ export class PipelineChainingEngine implements IPipelineChainingEngine {
       }
 
       this.logger.log(
-        `[Pipeline: ${pipeline.id}] Đang thực thi Step ${i + 1}/${pipeline.steps.length}: "${step.name}" (model=${step.model ?? 'default'})`,
+        `[Pipeline: ${pipeline.id}] Đang thực thi Step: "${step.name}" (id=${step.id}, model=${step.model ?? 'default'})`,
       );
-
-      // 2. Kiểm tra Human-In-The-Loop Gate ở cấp độ Step
-      if (step.requireHumanApproval) {
-        this.logger.warn(
-          `[Pipeline: ${pipeline.id}] Step "${step.id}" yêu cầu phê duyệt con người trước khi tiếp tục.`,
-        );
-        this.metrics.incrementBehaviorSignal('approval_required');
-
-        const pendingTool: PendingToolCall = {
-          name: `step_gate:${step.id}`,
-          provider: step.provider ?? primaryProvider,
-          args: { stepId: step.id, stepName: step.name, inputPreview: currentInput.slice(0, 300) },
-        };
-
-        const approvalNeeded: ApprovalRequiredDelegateResult = {
-          approvalRequired: pendingTool,
-          task: `Yêu cầu phê duyệt thực thi bước "${step.name}" trong quy trình ${pipeline.name}`,
-          toolCalls: allToolCalls,
-        };
-
-        return this.checkpointPause.pauseForApproval(
-          data,
-          prompt,
-          executedSteps.map((s) => ({
-            agent: s.agent,
-            task: s.task,
-            result: s.result ?? '',
-          })),
-          allToolCalls,
-          history,
-          approvalNeeded,
-          [],
-        );
-      }
 
       // 3. Xử lý Step chuyển đổi mã TS thuần (Code Transform)
       if (step.type === EPipelineStepType.CODE_TRANSFORM && step.transform) {
         try {
-          currentInput = await step.transform(currentInput, (context.metadata as Record<string, unknown>) ?? {});
+          currentInput = await step.transform(
+            currentInput,
+            (context.metadata as Record<string, unknown>) ?? {},
+          );
           executedSteps.push({
             agent: step.id,
             task: step.name,
-            persona: { role: step.name, goal: 'Chuyển đổi dữ liệu bằng mã logic lập trình' },
+            persona: {
+              role: step.name,
+              goal: 'Chuyển đổi dữ liệu bằng mã logic lập trình',
+            },
             toolCalls: [],
             result: currentInput,
           });
+
+          currentStepIndex = this.resolveNextStepIndex(
+            pipeline,
+            step,
+            currentInput,
+            context,
+            currentStepIndex,
+          );
           continue;
         } catch (transformError) {
           this.logger.error(
             `[Pipeline: ${pipeline.id}] Lỗi thực thi code_transform tại step "${step.id}": ${(transformError as Error)?.message}`,
           );
+          if (step.failurePolicy === EPipelineStepFailurePolicy.SKIP_AND_CONTINUE) {
+            this.logger.warn(
+              `[Pipeline: ${pipeline.id}] Bỏ qua lỗi tại step "${step.id}" do failurePolicy=SKIP_AND_CONTINUE`,
+            );
+            currentStepIndex++;
+            continue;
+          }
           throw transformError;
         }
       }
 
-      // 4. Chuẩn bị prompt và cấu hình ReAct Loop cho Step
       // 4. Chuẩn bị prompt với bảo vệ Token Budget và chống Regex Injection
       let safeInput = currentInput;
       if (safeInput.length > 50000) {
         this.logger.warn(
           `[Pipeline: ${pipeline.id}] Input step "${step.id}" quá lớn (${safeInput.length} chars), tự động cắt bớt về 50k chars để tránh tràn token budget.`,
         );
-        safeInput = safeInput.slice(0, 50000) + '\n...[Đã cắt bớt do quá độ dài an toàn]';
+        safeInput =
+          safeInput.slice(0, 50000) + '\n...[Đã cắt bớt do quá độ dài an toàn]';
       }
 
       const stepPrompt = step.promptTemplate
@@ -205,29 +224,80 @@ export class PipelineChainingEngine implements IPipelineChainingEngine {
         channelType: data.sessionType ?? data.channelType ?? 'web',
         sessionType: data.sessionType,
         history: [], // Cô lập theo từng step: output step trước được truyền thẳng qua prompt
-        model: step.model ?? process.env.DEFAULT_REACT_MODEL ?? ORCHESTRATION_CONSTANTS.DEFAULT_REACT_MODEL,
+        model:
+          step.model ??
+          process.env.DEFAULT_REACT_MODEL ??
+          ORCHESTRATION_CONSTANTS.DEFAULT_REACT_MODEL,
         persona: {
           role: step.name,
           goal: step.systemPrompt ?? `Thực thi bước ${step.name}`,
         },
         allowedTools: step.tools ? [...step.tools] : undefined,
+        maxSelfCorrectionRetries: 2,
       };
 
       try {
-        const result = await this.reactLoop.run(requestDto, signal);
+        let stepOutput = '';
+        let stepToolCalls: ToolCallTraceDto[] = [];
+        let executionAttempt = 0;
+        const maxRetries =
+          step.failurePolicy === EPipelineStepFailurePolicy.RETRY
+            ? (step.maxStepRetries ?? 2)
+            : 0;
 
-        currentInput = result.answer;
-        if (result.toolCalls && result.toolCalls.length > 0) {
-          allToolCalls.push(...result.toolCalls);
+        while (executionAttempt <= maxRetries) {
+          executionAttempt++;
+          try {
+            const result = await this.reactLoop.run(requestDto, signal);
+            stepOutput = result.answer;
+            stepToolCalls = result.toolCalls ?? [];
+
+            // 5. Kiểm tra tính hợp lệ bằng Output Schema và 1-shot self-healing correction
+            stepOutput = await this.validateAndSelfHealSchema(
+              step,
+              stepOutput,
+              requestDto,
+              signal,
+            );
+            break;
+          } catch (runErr) {
+            if (
+              runErr instanceof TurnCancelledError ||
+              runErr instanceof ApprovalRequiredError
+            ) {
+              throw runErr;
+            }
+            if (executionAttempt <= maxRetries) {
+              this.logger.warn(
+                `[Pipeline: ${pipeline.id}] Step "${step.id}" thất bại lần ${executionAttempt}/${maxRetries + 1}, thử lại...`,
+              );
+              continue;
+            }
+            throw runErr;
+          }
+        }
+
+        currentInput = stepOutput;
+        if (stepToolCalls.length > 0) {
+          allToolCalls.push(...stepToolCalls);
         }
 
         executedSteps.push({
           agent: step.id,
           task: step.name,
           persona: { role: step.name, goal: step.systemPrompt ?? step.name },
-          toolCalls: result.toolCalls,
-          result: result.answer,
+          toolCalls: stepToolCalls,
+          result: stepOutput,
         });
+
+        // 6. Rẽ nhánh điều kiện (Conditional Branching)
+        currentStepIndex = this.resolveNextStepIndex(
+          pipeline,
+          step,
+          currentInput,
+          context,
+          currentStepIndex,
+        );
       } catch (error) {
         if (error instanceof TurnCancelledError) {
           throw error;
@@ -245,24 +315,48 @@ export class PipelineChainingEngine implements IPipelineChainingEngine {
             toolCalls: error.toolCalls,
           };
 
+          const accumulatedToolCalls = [
+            ...allToolCalls,
+            ...(error.toolCalls ?? []),
+          ];
+
+          const completedSteps = executedSteps.map((s) => ({
+            agent: s.agent,
+            task: s.task,
+            result: s.result ?? '',
+          }));
+
+          const remainingSteps = pipeline.steps
+            .slice(currentStepIndex + 1)
+            .map((s) => ({
+              agent: s.provider ?? s.id,
+              task: s.name,
+            }));
+
           return this.checkpointPause.pauseForApproval(
             data,
             prompt,
-            executedSteps.map((s) => ({
-              agent: s.agent,
-              task: s.task,
-              result: s.result ?? '',
-            })),
-            [...allToolCalls, ...(error.toolCalls ?? [])],
+            completedSteps,
+            accumulatedToolCalls,
             history,
             approvalNeeded,
-            [],
+            remainingSteps,
+            EExecutionEngineMode.PIPELINE_CHAINING,
           );
         }
 
         this.logger.error(
           `[Pipeline: ${pipeline.id}] Lỗi khi thực thi step "${step.id}": ${(error as Error)?.message}`,
         );
+
+        if (step.failurePolicy === EPipelineStepFailurePolicy.SKIP_AND_CONTINUE) {
+          this.logger.warn(
+            `[Pipeline: ${pipeline.id}] Bỏ qua lỗi tại step "${step.id}" do failurePolicy=SKIP_AND_CONTINUE`,
+          );
+          currentStepIndex++;
+          continue;
+        }
+
         throw error;
       }
     }
@@ -272,6 +366,145 @@ export class PipelineChainingEngine implements IPipelineChainingEngine {
     );
 
     return buildAnswer(currentInput, allToolCalls, executedSteps);
+  }
+
+  /**
+   * Đánh giá điều kiện rẽ nhánh và trả về index của step tiếp theo
+   */
+  private resolveNextStepIndex(
+    pipeline: PipelineDefinition,
+    step: PipelineStepDefinition,
+    output: string,
+    context: EngineExecutionContext,
+    currentIndex: number,
+  ): number {
+    if (step.condition) {
+      try {
+        const decision = step.condition(
+          output,
+          (context.metadata as Record<string, unknown>) ?? {},
+        );
+
+        let targetStepId: string | undefined;
+        if (typeof decision === 'string') {
+          targetStepId = step.branchMap?.[decision] ?? decision;
+        } else if (decision === true && step.defaultNextStepId) {
+          targetStepId = step.defaultNextStepId;
+        }
+
+        if (targetStepId) {
+          const targetIndex = pipeline.steps.findIndex(
+            (s) => s.id === targetStepId,
+          );
+          if (targetIndex >= 0) {
+            this.logger.log(
+              `[Pipeline: ${pipeline.id}] Rẽ nhánh thành công từ step "${step.id}" sang step "${targetStepId}" (index ${targetIndex})`,
+            );
+            return targetIndex;
+          }
+          this.logger.warn(
+            `[Pipeline: ${pipeline.id}] Không tìm thấy step đích "${targetStepId}" trong pipeline, tiếp tục step kế tiếp.`,
+          );
+        }
+      } catch (condError) {
+        this.logger.warn(
+          `[Pipeline: ${pipeline.id}] Lỗi khi đánh giá condition tại step "${step.id}": ${(condError as Error)?.message}`,
+        );
+      }
+    }
+
+    if (step.defaultNextStepId) {
+      const targetIndex = pipeline.steps.findIndex(
+        (s) => s.id === step.defaultNextStepId,
+      );
+      if (targetIndex >= 0) return targetIndex;
+    }
+
+    return currentIndex + 1;
+  }
+
+  /**
+   * Xác thực định dạng output với Zod Schema và kích hoạt 1-shot self-healing correction nếu format sai
+   */
+  private async validateAndSelfHealSchema(
+    step: PipelineStepDefinition,
+    output: string,
+    baseRequestDto: RunReactLoopRequestDto,
+    signal?: AbortSignal,
+  ): Promise<string> {
+    if (!step.outputSchema) return output;
+
+    const parsedPayload = this.parseOrRepairJson(output);
+
+    // Nếu outputSchema là Zod schema
+    if (isZodSchema(step.outputSchema)) {
+      const parseResult = step.outputSchema.safeParse(parsedPayload);
+      if (parseResult.success) {
+        return typeof parsedPayload === 'string'
+          ? parsedPayload
+          : JSON.stringify(parsedPayload, null, 2);
+      }
+
+      this.logger.warn(
+        `[Pipeline Step: ${step.id}] Output không khớp schema: ${JSON.stringify(parseResult.error.format())}. Kích hoạt 1-shot self-healing...`,
+      );
+
+      // Kích hoạt 1-shot correction prompt
+      const correctionPrompt = [
+        'Dữ liệu JSON bạn vừa tạo ra không đúng định dạng schema bắt buộc.',
+        `Chi tiết lỗi: ${JSON.stringify(parseResult.error.issues ?? parseResult.error.message)}`,
+        'Dữ liệu ban đầu của bạn:',
+        output,
+        'YÊU CẦU: Hãy sửa lại và trả về DUY NHẤT một chuỗi JSON hợp lệ tuân thủ đúng schema trên. Không giải thích thêm.',
+      ].join('\n\n');
+
+      try {
+        const healedResult = await this.reactLoop.run(
+          {
+            ...baseRequestDto,
+            prompt: correctionPrompt,
+          },
+          signal,
+        );
+
+        const healedPayload = this.parseOrRepairJson(healedResult.answer);
+        const recheck = step.outputSchema.safeParse(healedPayload);
+        if (recheck.success) {
+          this.logger.log(
+            `[Pipeline Step: ${step.id}] 1-shot self-healing thành công! Output đã hợp lệ.`,
+          );
+          return JSON.stringify(healedPayload, null, 2);
+        }
+      } catch (healError) {
+        this.logger.warn(
+          `[Pipeline Step: ${step.id}] 1-shot self-healing thất bại: ${(healError as Error)?.message}`,
+        );
+      }
+    }
+
+    return output;
+  }
+
+  /**
+   * Trích xuất và sửa lỗi cú pháp JSON từ phản hồi LLM sử dụng agentic-io-parser
+   */
+  private parseOrRepairJson(rawText: string): unknown {
+    try {
+      return JSON.parse(rawText);
+    } catch {
+      // 1. Thử dùng JsonRepair sửa cú pháp (thiếu quotes, trailing commas...)
+      try {
+        return this.jsonRepair.repairAndParse(rawText);
+      } catch {
+        // 2. Thử bóc tách markdown block bằng JsonExtractor rồi sửa
+        try {
+          const extracted = this.jsonExtractor.extract(rawText);
+          return this.jsonRepair.repairAndParse(extracted);
+        } catch {
+          return null;
+        }
+      }
+    }
   }
 
   private resolvePipeline(context: EngineExecutionContext): PipelineDefinition {
@@ -284,7 +517,6 @@ export class PipelineChainingEngine implements IPipelineChainingEngine {
       return this.pipelines.get(workflowId)!;
     }
 
-    // Default built-in general pipeline: 2-step extraction -> strategic synthesis
     return this.pipelines.get('default-two-step-pipeline')!;
   }
 
@@ -292,23 +524,154 @@ export class PipelineChainingEngine implements IPipelineChainingEngine {
     this.registerPipeline({
       id: 'default-two-step-pipeline',
       name: 'Default Chaining Pipeline',
-      description: 'Quy trình chuẩn 2 bước: Bóc tách dữ liệu thô (Model rẻ) -> Phân tích & Tổng hợp (Model xịn)',
+      description:
+        'Quy trình chuẩn 2 bước: Bóc tách dữ liệu thô (Model rẻ) -> Phân tích & Tổng hợp (Model xịn)',
       steps: [
         {
           id: 'step_extract',
           name: 'Trích xuất Dữ liệu Thô',
-          model: process.env.CHEAP_TIER_MODEL ?? process.env.DEFAULT_REACT_MODEL ?? ORCHESTRATION_CONSTANTS.DEFAULT_REACT_MODEL,
-          systemPrompt: 'Bạn là chuyên viên trích xuất dữ liệu. Hãy bóc tách các ý chính, thông số số liệu và thông tin cấu trúc từ yêu cầu của người dùng một cách chính xác, ngắn gọn.',
-          promptTemplate: 'Dữ liệu đầu vào từ người dùng:\n{{input}}\n\nHãy trích xuất đầy đủ các thông tin cốt lõi.',
+          model:
+            process.env.CHEAP_TIER_MODEL ??
+            process.env.DEFAULT_REACT_MODEL ??
+            ORCHESTRATION_CONSTANTS.DEFAULT_REACT_MODEL,
+          systemPrompt:
+            'Bạn là chuyên viên trích xuất dữ liệu. Hãy bóc tách các ý chính, thông số số liệu và thông tin cấu trúc từ yêu cầu của người dùng một cách chính xác, ngắn gọn.',
+          promptTemplate:
+            'Dữ liệu đầu vào từ người dùng:\n{{input}}\n\nHãy trích xuất đầy đủ các thông tin cốt lõi.',
         },
         {
           id: 'step_synthesize',
           name: 'Tổng hợp Chiến lược & Khuyến nghị',
-          model: process.env.PREMIUM_TIER_MODEL ?? process.env.DEFAULT_REACT_MODEL ?? ORCHESTRATION_CONSTANTS.DEFAULT_REACT_MODEL,
-          systemPrompt: 'Bạn là chuyên gia cố vấn cao cấp. Dựa trên dữ liệu đã được trích xuất, hãy đưa ra câu trả lời toàn diện, sâu sắc và các khuyến nghị tối ưu nhất.',
-          promptTemplate: 'Dữ liệu đã được bóc tách từ bước trước:\n{{input}}\n\nHãy tổng hợp thành câu trả lời hoàn chỉnh, mạch lạc và chuyên nghiệp.',
+          model:
+            process.env.PREMIUM_TIER_MODEL ??
+            process.env.DEFAULT_REACT_MODEL ??
+            ORCHESTRATION_CONSTANTS.DEFAULT_REACT_MODEL,
+          systemPrompt:
+            'Bạn là chuyên gia cố vấn cao cấp. Dựa trên dữ liệu đã được trích xuất, hãy đưa ra câu trả lời toàn diện, sâu sắc và các khuyến nghị tối ưu nhất.',
+          promptTemplate:
+            'Dữ liệu đã được bóc tách từ bước trước:\n{{input}}\n\nHãy tổng hợp thành câu trả lời hoàn chỉnh, mạch lạc và chuyên nghiệp.',
         },
       ],
     });
+  }
+  async resume(checkpoint: CheckpointResponseDto): Promise<AnswerResult> {
+    const { userId, replyMessageId, workspaceId, channelId, sessionType, channelType } = checkpoint;
+    const conversationId = checkpoint.conversationId ?? channelId;
+
+    const pipeline = this.resolvePipelineFromCheckpoint(checkpoint);
+    if (!pipeline) {
+      throw new Error(
+        `[PipelineChainingEngine] Không tìm thấy pipeline cho turn ${replyMessageId}`,
+      );
+    }
+
+    if (!this.toolProvider) {
+      throw new Error(
+        '[PipelineChainingEngine] Thiếu toolProvider để thực thi tool đã duyệt',
+      );
+    }
+
+    const pendingTool = checkpoint.pendingTool;
+    if (!pendingTool) {
+      throw new Error(
+        `[PipelineChainingEngine] Checkpoint ${checkpoint.id} thiếu pendingTool`,
+      );
+    }
+
+    this.logger.log(
+      `[PipelineChainingEngine] Resume step cho turn ${replyMessageId}: thực thi tool ${pendingTool.provider}.${pendingTool.name}`,
+    );
+
+    const toolResult = await this.toolProvider.callTool({
+      provider: pendingTool.provider,
+      name: pendingTool.name,
+      args: pendingTool.args,
+      ownerId: userId,
+      workspaceId,
+    });
+
+    const toolResultText = extractTextFromMcpResult(toolResult);
+    if (toolResult.isError) {
+      return buildAnswer(
+        `⚠️ Hành động "${pendingTool.name}" đã được duyệt nhưng thực thi thất bại:\n${toolResultText}`,
+        [],
+      );
+    }
+
+    const executedSteps: ExecutedStepDto[] = (checkpoint.roundsSoFar ?? []).map((r) => ({
+      agent: r.agent,
+      task: r.task,
+      result: r.result,
+      toolCalls: [],
+    }));
+
+    const currentStepIndex = checkpoint.roundsSoFar.length;
+    const currentStep = pipeline.steps[currentStepIndex];
+
+    const currentStepToolCalls: ToolCallTraceDto[] = [
+      {
+        tool: `${pendingTool.provider}:${pendingTool.name}`,
+        status: EStepExecutionStatus.SUCCESS,
+        resultPreview: toolResultText.slice(0, 200),
+        argsPreview: JSON.stringify(pendingTool.args).slice(0, 200),
+      },
+    ];
+
+    if (currentStep) {
+      executedSteps.push({
+        agent: currentStep.id,
+        task: currentStep.name,
+        persona: {
+          role: currentStep.name,
+          goal: currentStep.systemPrompt ?? currentStep.name,
+        },
+        toolCalls: currentStepToolCalls,
+        result: toolResultText,
+      });
+    }
+
+    const context: EngineExecutionContext = {
+      data: {
+        userId,
+        channelId: conversationId,
+        conversationId,
+        messageId: replyMessageId,
+        workspaceId,
+        tenantId: workspaceId,
+        sessionType,
+        channelType,
+      },
+      replyMessageId,
+      prompt: checkpoint.originalPrompt,
+      agents: [],
+      history: checkpoint.history,
+    };
+
+    return this.executePipeline(
+      pipeline,
+      context,
+      currentStepIndex + 1,
+      toolResultText,
+      executedSteps,
+      currentStepToolCalls,
+    );
+  }
+
+  private resolvePipelineFromCheckpoint(
+    checkpoint: CheckpointResponseDto,
+  ): PipelineDefinition | undefined {
+    for (const [id, pipeline] of this.pipelines.entries()) {
+      if (
+        checkpoint.originalPrompt.includes(id) ||
+        checkpoint.pendingTask.includes(id) ||
+        checkpoint.pendingTask.includes(pipeline.name)
+      ) {
+        return pipeline;
+      }
+    }
+    return (
+      this.pipelines.get('default-two-step-pipeline') ??
+      Array.from(this.pipelines.values())[0]
+    );
   }
 }

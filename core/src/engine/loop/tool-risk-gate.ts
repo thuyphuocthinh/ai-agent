@@ -157,6 +157,10 @@ export class ToolRiskGate {
   }> {
     if (!this.idempotencyManager) return { success: true };
 
+    if (this.isReadOnlyTool(name)) {
+      return { success: true };
+    }
+
     const res = await this.idempotencyManager.acquireForTool({
       userId: this.dto.userId,
       provider: this.resolveProvider(name),
@@ -198,6 +202,29 @@ export class ToolRiskGate {
     const query = typeof args.query === 'string' ? args.query : undefined;
     if (!query) return false;
     return extractWriteQueryPreviewTarget(query)?.kind === 'insert-rows';
+  }
+
+  /**
+   * Nhận diện tool chỉ đọc dữ liệu (Query / Search / Fetch).
+   * Các tool này không làm thay đổi trạng thái hệ thống nên không cần khóa Idempotency.
+   */
+  private isReadOnlyTool(name: string): boolean {
+    const lower = name.toLowerCase();
+    const readOnlyPrefixes = [
+      'get_',
+      'read_',
+      'find_',
+      'search_',
+      'list_',
+      'fetch_',
+      'check_',
+      'describe_',
+      'inspect_',
+      'query_',
+    ];
+    return readOnlyPrefixes.some(
+      (prefix) => lower.startsWith(prefix) || lower.includes(`.${prefix}`),
+    );
   }
 
   // Model ghi thiếu dòng so với yêu cầu, kể cả rải ra nhiều lần gọi 1-dòng-1-lần —

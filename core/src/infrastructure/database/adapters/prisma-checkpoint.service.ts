@@ -20,6 +20,7 @@ import {
 } from '../../../contracts/dtos/checkpoint.dto';
 import { DelegationDto, SupervisorRoundDto } from '../../../contracts/dtos/supervisor.dto';
 import { ChatHistoryTurnDto } from '../../../contracts/dtos/message-client.dto';
+import { ToolCallTraceDto } from '../../../contracts/dtos/react-loop.dto';
 import { PrismaService } from '../prisma.service';
 import { sanitizePrismaError } from '../../../common/errors';
 import { CheckpointKind, CheckpointStatus, Prisma } from '@prisma/client';
@@ -113,7 +114,16 @@ export class PrismaCheckpointService {
           clarificationQuestion: dto.clarificationQuestion ?? null,
           clarificationCandidates: dto.clarificationCandidates ? (JSON.parse(JSON.stringify(dto.clarificationCandidates)) as Prisma.InputJsonArray) : Prisma.JsonNull,
           selectedProvider: null,
-          roundsSoFar: (dto.roundsSoFar ? JSON.parse(JSON.stringify(dto.roundsSoFar)) : []) as Prisma.InputJsonArray,
+          roundsSoFar: (dto.roundsSoFar
+            ? [
+                ...JSON.parse(JSON.stringify(dto.roundsSoFar)),
+                ...(dto.engineMode ? [{ __engineMode: dto.engineMode }] : []),
+                ...(dto.toolCalls && dto.toolCalls.length > 0 ? [{ __toolCalls: dto.toolCalls }] : []),
+              ]
+            : [
+                ...(dto.engineMode ? [{ __engineMode: dto.engineMode }] : []),
+                ...(dto.toolCalls && dto.toolCalls.length > 0 ? [{ __toolCalls: dto.toolCalls }] : []),
+              ]) as Prisma.InputJsonArray,
           remainingSteps: (dto.remainingSteps ? JSON.parse(JSON.stringify(dto.remainingSteps)) : []) as Prisma.InputJsonArray,
           history: (dto.history ? JSON.parse(JSON.stringify(dto.history)) : []) as Prisma.InputJsonArray,
           status: CheckpointStatus.PENDING,
@@ -391,7 +401,19 @@ export class PrismaCheckpointService {
       originalPrompt: record.originalPrompt,
       pendingTool: record.pendingTool as unknown as CheckpointResponseDto['pendingTool'],
       pendingTask: record.pendingTask,
-      roundsSoFar: (record.roundsSoFar as unknown as SupervisorRoundDto[]) || [],
+      ...(() => {
+        const raw = (record.roundsSoFar as unknown as Array<SupervisorRoundDto & { __engineMode?: string; __toolCalls?: ToolCallTraceDto[] }>) || [];
+        const meta = raw.find((r) => r && r.__engineMode);
+        const tcMeta = raw.find((r) => r && r.__toolCalls);
+        const engineMode = meta?.__engineMode ?? (raw.some((r) => r.agent === 'single_agent') ? 'single_agent' : 'dynamic_supervisor');
+        const clean = raw.filter((r) => !r || (!r.__engineMode && !r.__toolCalls));
+        return {
+          roundsSoFar: clean,
+          engineMode,
+          toolCalls: tcMeta?.__toolCalls ?? [],
+          selectedCandidateId: record.selectedProvider ?? null,
+        };
+      })(),
       remainingSteps: (record.remainingSteps as unknown as DelegationDto[]) || [],
       history: (record.history as unknown as ChatHistoryTurnDto[]) || [],
       status: record.status.toLowerCase() as OrchestrationCheckpointStatus,

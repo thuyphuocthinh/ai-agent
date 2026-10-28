@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { IProcessAiTriggerJobData } from '@agent/core/infrastructure/queue';
-import { ECheckpointRiskLevel } from '@agent/core/constants';
+import { ECheckpointKind, ECheckpointRiskLevel } from '@agent/core/constants';
 import { CheckpointPauseService } from './checkpoint-pause.service';
 import { MessageClientService } from '../../contracts/message-client.service';
 import { CheckpointService } from './checkpoint.service';
@@ -105,12 +105,14 @@ describe('CheckpointPauseService', () => {
         pendingTool: approvalNeeded.approvalRequired,
         pendingTask: approvalNeeded.task,
         roundsSoFar: [],
+        toolCalls: [],
+        remainingSteps: undefined,
         history: [],
         riskLevel: null,
+        engineMode: undefined,
       });
       expect(result).toEqual({
-        content:
-          '⏸️ Cần bạn duyệt 1 hành động trước khi tiếp tục — xem tin nhắn bên dưới.',
+        content: '',
         toolCalls: undefined,
       });
     });
@@ -608,9 +610,10 @@ describe('CheckpointPauseService', () => {
         pendingTool: null,
         pendingTask: 'lưu thông tin này lại',
         roundsSoFar: [],
+        toolCalls: [],
         remainingSteps,
         history: [],
-        kind: 'clarification',
+        kind: ECheckpointKind.CLARIFICATION,
         clarificationQuestion: expect.stringContaining(
           '"Google Docs" hay "Notion"',
         ),
@@ -618,10 +621,10 @@ describe('CheckpointPauseService', () => {
           { provider: 'google_docs', label: 'Google Docs' },
           { provider: 'notion', label: 'Notion' },
         ],
+        engineMode: undefined,
       });
       expect(result).toEqual({
-        content:
-          '⏸️ Cần bạn làm rõ trước khi tiếp tục — xem tin nhắn bên dưới.',
+        content: '',
         toolCalls: undefined,
       });
     });

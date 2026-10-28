@@ -46,6 +46,10 @@ export const AGENT_REGISTRY: Record<string, AgentRegistryEntry> = {
     label: 'Notion',
     endpoint: process.env.AGENT_NOTION_URL,
   },
+  kintone: {
+    label: 'Kintone CRM',
+    endpoint: process.env.AGENT_KINTONE_URL,
+  },
   // Agent HỆ THỐNG — không phải kết nối tới hệ thống ngoài, không cần user
   // connect (xem SupervisorService.getSystemAgents()).
   compute: {

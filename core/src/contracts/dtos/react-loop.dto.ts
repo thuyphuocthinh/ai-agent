@@ -1,6 +1,7 @@
 import { ChatHistoryTurnDto } from './message-client.dto';
 import { EStepExecutionStatus } from '@agent/core/constants';
 import { PersonaDto } from './supervisor.dto';
+import { IClarificationQuestion } from '../clarification.types';
 
 export class RunReactLoopRequestDto {
   prompt: string;
@@ -39,6 +40,9 @@ export class RunReactLoopRequestDto {
   // Danh sách công cụ được phép dùng (Principle of Least Privilege).
   // Nếu truyền, ReactLoop chỉ nạp các tool trùng tên trong mảng này.
   allowedTools?: string[];
+  // Số lần tự sửa lỗi tối đa khi gọi tool fail (Hard cap: mặc định 2 lần, không retry vô tận)
+  maxSelfCorrectionRetries?: number;
+  selfCorrectionCount?: number;
 }
 
 export class ToolCallTraceDto {
@@ -55,9 +59,19 @@ export class ToolCallTraceDto {
   argsPreview?: string;
 }
 
+export class ReflectionTraceDto {
+  attempt: number;
+  tool: string;
+  error: string;
+  reflection: string;
+  correctedArgs?: Record<string, unknown>;
+}
+
 export class RunReactLoopResponseDto {
   answer: string;
   toolCalls: ToolCallTraceDto[];
+  reflectionTraces?: ReflectionTraceDto[];
+  clarificationRequired?: IClarificationQuestion;
 }
 
 export class QuantityCheckRequiredDto {

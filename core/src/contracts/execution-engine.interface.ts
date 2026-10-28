@@ -3,6 +3,7 @@ import { ChatHistoryTurnDto } from './dtos/message-client.dto';
 import { AgentWorkflowConfig } from './agent-workflow.types';
 import { IProcessAiTriggerJobData } from '../infrastructure/queue/job-data.interface';
 import { AnswerResult } from '../engine/orchestrator/orchestration-answer.types';
+import { CheckpointResponseDto } from './dtos/checkpoint.dto';
 
 export const EXECUTION_ENGINE_REGISTRY = Symbol.for('EXECUTION_ENGINE_REGISTRY');
 export const EXECUTION_ROUTER = Symbol.for('EXECUTION_ROUTER');
@@ -71,6 +72,7 @@ export interface IExecutionEngine {
    * Thực thi yêu cầu và trả về kết quả chuẩn AnswerResult
    */
   execute(context: EngineExecutionContext): Promise<AnswerResult>;
+  resume?(checkpoint: CheckpointResponseDto): Promise<AnswerResult>;
 }
 
 export interface IExecutionEngineRegistry {

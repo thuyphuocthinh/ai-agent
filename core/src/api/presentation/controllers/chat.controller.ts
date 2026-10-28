@@ -75,7 +75,15 @@ export class ChatController {
   @ApiBadRequestResponse({ description: 'Hành động duyệt hoặc ID không hợp lệ' })
   @ApiNotFoundResponse({ description: 'Không tìm thấy session hoặc message checkpoint yêu cầu duyệt' })
   async approve(@Body() dto: ApproveRequestDto, @Res() res: ServerResponse): Promise<void> {
-    const turn = await this.chatService.approve(dto.sessionId, dto.messageId, dto.action);
+    const effectiveCandidateId = dto.selectedCandidateId ?? dto.selectedProvider;
+    const turn = effectiveCandidateId !== undefined
+      ? await this.chatService.approve(
+          dto.sessionId,
+          dto.messageId,
+          dto.action,
+          effectiveCandidateId,
+        )
+      : await this.chatService.approve(dto.sessionId, dto.messageId, dto.action);
     await this.streamPresenter.pipe(res, turn);
   }
 

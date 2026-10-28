@@ -26,6 +26,7 @@ export class ProviderPreflightGuard {
     'google_sheets',
     'slack',
     'github',
+    'kintone',
   ]);
 
   // Mock in-memory lưu trữ cấu hình kết nối khi chạy cục bộ / test

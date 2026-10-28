@@ -5,6 +5,7 @@ import {
   PayloadCompressor,
   JsonValue,
 } from 'agentic-io-parser';
+import { ToolOutputCompressor } from './tool-output-compressor';
 
 const DEFAULT_MODEL_CONTEXT_TOKENS: Record<string, number> = {
   'gemini-1.5-pro': 2_000_000,
@@ -91,6 +92,16 @@ export function capToolResultSize(
     payload !== null &&
     JSON.stringify(payload).length > maxChars
   ) {
+    // 1. Thử nén có cấu trúc (Structured Compression): Bảo toàn mảng JSON + sinh dataRef lưu cache
+    const structured = ToolOutputCompressor.compress(payload, {
+      maxCharacters: maxChars,
+      sampleCount: 3,
+    });
+    if (structured.isTruncated && structured.text.length <= maxChars) {
+      return structured.text;
+    }
+
+    // 2. Fallback: Dùng PayloadCompressor từ agentic-io-parser để alias keys
     const { compressed, dictionary } = compressor.compress(payload);
     payload = compressed;
     if (Object.keys(dictionary).length > 0) {

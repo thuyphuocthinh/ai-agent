@@ -4,6 +4,8 @@ import { EJobName, EQueueName, QueueService } from '@agent/core/infrastructure/q
 import {
   ORCHESTRATION_ERROR,
   EAgentStreamStepType,
+  EApprovalAction,
+  ECheckpointKind,
 } from '@agent/core/constants';
 import { MessageClientService } from '../../contracts/message-client.service';
 import { AgentStreamService } from '../../contracts/agent-stream.service';
@@ -43,19 +45,23 @@ export class ApprovalRequestService {
     this.validateActionAndKind(dto, checkpoint);
 
     const toStatus =
-      dto.action === 'reject'
+      dto.action === EApprovalAction.REJECT
         ? OrchestrationCheckpointStatus.REJECTED
         : OrchestrationCheckpointStatus.APPROVED;
     const updatedPendingTool =
-      dto.action === 'edit_and_approve'
+      dto.action === EApprovalAction.EDIT_AND_APPROVE
         ? this.validateAndApplyEditedArgs(dto, checkpoint)
         : undefined;
+
+    const effectiveCandidateId =
+      (dto as unknown as { selectedCandidateId?: string }).selectedCandidateId ??
+      dto.selectedProvider;
 
     const { claimed } = await this.checkpoint.claim({
       id: checkpoint.id,
       toStatus,
-      ...(dto.action === 'clarify' && {
-        selectedProvider: dto.selectedProvider,
+      ...(dto.action === EApprovalAction.CLARIFY && {
+        selectedProvider: effectiveCandidateId,
       }),
       ...(updatedPendingTool && { updatedPendingTool }),
     });
@@ -63,7 +69,7 @@ export class ApprovalRequestService {
       throw new RpcException(ORCHESTRATION_ERROR.CHECKPOINT_ALREADY_RESOLVED);
     }
 
-    if (dto.action === 'reject') {
+    if (dto.action === EApprovalAction.REJECT) {
       await this.rejectCheckpoint(checkpoint, dto.userId);
       return;
     }
@@ -97,10 +103,13 @@ export class ApprovalRequestService {
     dto: ResolveApprovalRequestDto,
     checkpoint: CheckpointResponseDto,
   ): void {
+    const candidateId =
+      (dto as unknown as { selectedCandidateId?: string }).selectedCandidateId ??
+      dto.selectedProvider;
     const kindMatchesAction =
-      dto.action === 'clarify'
-        ? checkpoint.kind === 'clarification' && Boolean(dto.selectedProvider)
-        : checkpoint.kind === 'approval';
+      dto.action === EApprovalAction.CLARIFY
+        ? checkpoint.kind === ECheckpointKind.CLARIFICATION && Boolean(candidateId)
+        : checkpoint.kind === ECheckpointKind.APPROVAL;
     if (!kindMatchesAction) {
       throw new RpcException(ORCHESTRATION_ERROR.CHECKPOINT_ACTION_MISMATCH);
     }

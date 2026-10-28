@@ -390,5 +390,31 @@ describe('ToolRiskGate', () => {
       await gate.releaseIdempotency('idemp-key-102');
       expect(mockIdempotency.release).toHaveBeenCalledWith('idemp-key-102');
     });
+
+    it('acquireIdempotency() bypasses IdempotencyManager hoàn toàn cho các tool Read-only / Query', async () => {
+      const mockIdempotency = {
+        acquireForTool: jest.fn(),
+      };
+
+      const gate = new ToolRiskGate({
+        dto: baseDto,
+        mcpTools: [],
+        strategy: createStrategy(),
+        model: 'gemini-2.0-flash',
+        circuitBreaker,
+        logger,
+        signal: new AbortController().signal,
+        insertAccumulator: new InsertAccumulator(),
+        idempotencyManager: mockIdempotency as never,
+      });
+
+      const resFind = await gate.acquireIdempotency('find_customer', { name: 'Nam' });
+      expect(resFind.success).toBe(true);
+      expect(mockIdempotency.acquireForTool).not.toHaveBeenCalled();
+
+      const resRead = await gate.acquireIdempotency('google_sheets.read_range', { range: 'A1:B2' });
+      expect(resRead.success).toBe(true);
+      expect(mockIdempotency.acquireForTool).not.toHaveBeenCalled();
+    });
   });
 });

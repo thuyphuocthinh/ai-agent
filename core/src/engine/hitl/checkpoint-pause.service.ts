@@ -62,6 +62,7 @@ export class CheckpointPauseService {
     // đây) — lưu lại để resume ĐÚNG theo kế hoạch gốc, xem
     // TurnResolverService.continueRounds().
     remainingSteps: DelegationDto[],
+    engineMode?: string,
   ): Promise<AnswerResult> {
     const { userId, channelId, workspaceId } = data;
     const botUserId = data.botUserId ?? 'agent-bot';
@@ -99,9 +100,11 @@ export class CheckpointPauseService {
         pendingTool,
         pendingTask,
         roundsSoFar: rounds,
+        toolCalls,
         remainingSteps,
         history,
         riskLevel,
+        engineMode,
       },
       '⚠️ Không thể tạo yêu cầu duyệt, vui lòng hỏi lại.',
     );
@@ -118,7 +121,7 @@ export class CheckpointPauseService {
       `pauseForApproval() tool=${pendingTool.provider}.${pendingTool.name} approvalMessageId=${approvalMessage.id}`,
     );
     return buildAnswer(
-      '⏸️ Cần bạn duyệt 1 hành động trước khi tiếp tục — xem tin nhắn bên dưới.',
+      '',
       toolCalls,
     );
   }
@@ -175,16 +178,19 @@ export class CheckpointPauseService {
     task: string,
     candidates: AvailableAgentDto[],
     remainingSteps: DelegationDto[],
+    engineMode?: string,
   ): Promise<AnswerResult> {
     const { userId, channelId, botUserId } = data;
     const question = this.buildClarificationQuestion(task, candidates);
     const clarificationContent = {
       type: 'clarification_request',
       question,
-      candidates: candidates.map((c) => ({
-        provider: c.provider,
-        label: c.label,
-      })),
+      candidates: candidates.map(
+        (c): AmbiguousAgentCandidate => ({
+          provider: c.provider,
+          label: c.label,
+        }),
+      ),
       status: 'pending',
       triggerUserId: userId,
     };
@@ -202,6 +208,7 @@ export class CheckpointPauseService {
         pendingTool: null,
         pendingTask: task,
         roundsSoFar: rounds,
+        toolCalls,
         remainingSteps,
         history,
         kind: ECheckpointKind.CLARIFICATION,
@@ -215,15 +222,27 @@ export class CheckpointPauseService {
             label: c.label,
           }),
         ),
+        engineMode,
       },
       '⚠️ Không thể tạo yêu cầu làm rõ, vui lòng hỏi lại.',
     );
+
+    if (toolCalls && toolCalls.length > 0) {
+      await this.attachPendingToolCallTrace(
+        clarificationMessage.id,
+        botUserId ?? '',
+        channelId,
+        clarificationContent,
+        toolCalls,
+        null,
+      );
+    }
 
     this.logger.log(
       `pauseForClarification() candidates=${candidates.map((c) => c.provider).join(',')} clarificationMessageId=${clarificationMessage.id}`,
     );
     return buildAnswer(
-      '⏸️ Cần bạn làm rõ trước khi tiếp tục — xem tin nhắn bên dưới.',
+      '',
       toolCalls,
     );
   }
@@ -245,21 +264,26 @@ export class CheckpointPauseService {
     channelId: string,
     approvalContent: Record<string, unknown>,
     toolCalls: ToolCallTraceDto[],
-    pendingTool: PendingToolCall,
+    pendingTool?: PendingToolCall | null,
   ): Promise<void> {
     try {
+      const allCalls = [
+        ...toolCalls,
+        ...(pendingTool
+          ? [
+              {
+                tool: `${pendingTool.provider}.${pendingTool.name}`,
+                status: EStepExecutionStatus.AWAITING_APPROVAL,
+              },
+            ]
+          : []),
+      ];
       await this.messageClient.updateMessage({
         id: approvalMessageId,
         userId: botUserId,
         channelId,
         content: approvalContent,
-        toolCalls: [
-          ...toolCalls,
-          {
-            tool: `${pendingTool.provider}.${pendingTool.name}`,
-            status: EStepExecutionStatus.AWAITING_APPROVAL,
-          },
-        ],
+        toolCalls: allCalls,
       });
     } catch (error) {
       this.logger.warn(
@@ -367,3 +391,4 @@ export class CheckpointPauseService {
     }
   }
 }
+

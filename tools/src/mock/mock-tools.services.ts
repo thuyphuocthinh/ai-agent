@@ -12,8 +12,10 @@ import { MOCK_SHEETS_PROVIDER_ID, createMockSheetsProvider } from './mock-sheets
 import { MOCK_MAIL_PROVIDER_ID, createMockMailProvider } from './mock-mail.provider';
 import { MOCK_SLACK_PROVIDER_ID, createMockSlackProvider } from './mock-slack.provider';
 import { MOCK_GITHUB_PROVIDER_ID, createMockGithubProvider } from './mock-github.provider';
+import { MOCK_KINTONE_PROVIDER_ID, createMockKintoneProvider } from './mock-kintone.provider';
 
 export { MOCK_PROVIDER_ID } from './mock-sql.provider';
+export { MOCK_KINTONE_PROVIDER_ID } from './mock-kintone.provider';
 
 // Mỗi provider giả là 1 dòng ở đây; id phải có trong AGENT_REGISTRY (agents.registry.ts)
 // để Supervisor liệt kê được.
@@ -23,6 +25,7 @@ const createMockProviders = (): MockProvider[] => [
   createMockMailProvider(),
   createMockSlackProvider(),
   createMockGithubProvider(),
+  createMockKintoneProvider(),
 ];
 // Khai tĩnh (không dựng provider lúc import, vì ToolsModule import file này cả khi không mock).
 export const MOCK_PROVIDER_IDS: string[] = [
@@ -31,6 +34,7 @@ export const MOCK_PROVIDER_IDS: string[] = [
   MOCK_MAIL_PROVIDER_ID,
   MOCK_SLACK_PROVIDER_ID,
   MOCK_GITHUB_PROVIDER_ID,
+  MOCK_KINTONE_PROVIDER_ID,
 ];
 
 /**

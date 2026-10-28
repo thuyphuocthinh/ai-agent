@@ -380,6 +380,25 @@ describe('ChatService', () => {
       expect(chunks.find((c) => (c.type as string) === 'data-reply')).toMatchObject({ data: { text: '❌ Đã huỷ theo yêu cầu.' } });
     });
 
+    it('supports clarify action with selectedProvider', async () => {
+      const { turn, approvalId } = await pausedTurn();
+      approvals.resolveApproval.mockImplementation(async () => {
+        await messages.updateMessage({ id: approvalId, content: 'Đã chọn provider sql_server thành công.' });
+        await agentStream.emitStep({ userId: 'u', channelId: 'c', messageId: approvalId }, { type: 'done' });
+      });
+
+      const chunks = await readAll(
+        await service.approve(turn.sessionId, approvalId, 'clarify', 'sql_server'),
+      );
+
+      expect(approvals.resolveApproval).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'clarify', selectedProvider: 'sql_server' }),
+      );
+      expect(chunks.find((c) => (c.type as string) === 'data-reply')).toMatchObject({
+        data: { text: 'Đã chọn provider sql_server thành công.' },
+      });
+    });
+
     it('answers 404 for an unknown session and for a message that was never an approval request of the session', async () => {
       const { turn } = await pausedTurn();
 

@@ -9,7 +9,7 @@ import {
 } from '@nestjs/common';
 import { RpcException } from '@nestjs/microservices';
 import type { UIMessageChunk } from 'ai';
-import { EApprovalAction, EMessageRole } from '@agent/core/constants';
+import { EApprovalAction, ECheckpointKind, EMessageRole } from '@agent/core/constants';
 import {
   EJobName,
   EQueueName,
@@ -139,7 +139,8 @@ export class ChatService {
   async approve(
     sessionId: string,
     messageId: string,
-    action: 'approve' | 'reject',
+    action: EApprovalAction,
+    selectedProvider?: string,
   ): Promise<TurnStream> {
     const session = await this.sessionManager.get(sessionId);
     if (!session) throw new NotFoundException('Phiên không tồn tại');
@@ -170,7 +171,8 @@ export class ChatService {
       await this.approvals.resolveApproval({
         userId: session.userId,
         messageId,
-        action: action as EApprovalAction,
+        action,
+        selectedProvider,
       });
     } catch (error) {
       turn.close();
@@ -187,19 +189,24 @@ export class ChatService {
       const checkpoint = await this.approvals.findPendingByConversationId(conversationId);
       if (!checkpoint) return null;
       const pendingTool = (checkpoint.pendingTool as { provider?: string; name?: string; args?: Record<string, unknown> } | null) ?? undefined;
-      const friendlySummary = pendingTool && pendingTool.provider && pendingTool.name
-        ? formatActionSummary({
-            provider: pendingTool.provider,
-            toolName: pendingTool.name,
-            args: pendingTool.args ?? {},
-          })
-        : 'Cần bạn duyệt hành động này trước khi tiếp tục';
+      const isClarification = checkpoint.kind === ECheckpointKind.CLARIFICATION;
+      const friendlySummary = isClarification
+        ? (checkpoint.pendingTask || 'Cần bạn làm rõ yêu cầu để tiếp tục')
+        : (pendingTool && pendingTool.provider && pendingTool.name
+            ? formatActionSummary({
+                provider: pendingTool.provider,
+                toolName: pendingTool.name,
+                args: pendingTool.args ?? {},
+              })
+            : 'Cần bạn duyệt hành động này trước khi tiếp tục');
 
       return {
         messageId: checkpoint.replyMessageId,
         tool: (checkpoint.pendingTool as unknown as Record<string, unknown>) || {},
         preview: checkpoint.pendingTask || checkpoint.originalPrompt,
         friendlySummary,
+        kind: checkpoint.kind,
+        candidates: checkpoint.clarificationCandidates ?? undefined,
       };
     } catch (err) {
       this.logger.warn(`Lỗi khi truy vấn pending checkpoint cho conversation ${conversationId}: ${(err as Error)?.message}`);

@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { EJobName, EQueueName, QueueService } from '@agent/core/infrastructure/queue';
+import { EApprovalAction, ECheckpointKind } from '@agent/core/constants';
 import { ApprovalRequestService } from './approval-request.service';
 import { MessageClientService } from '../../contracts/message-client.service';
 import { AgentStreamService } from '../../contracts/agent-stream.service';
@@ -64,7 +65,7 @@ describe('ApprovalRequestService', () => {
         },
       ],
       history: [],
-      kind: 'approval' as const,
+      kind: ECheckpointKind.APPROVAL,
     };
 
     it('reject: marks the checkpoint rejected, edits the message, does NOT enqueue any job', async () => {
@@ -238,7 +239,7 @@ describe('ApprovalRequestService', () => {
     it('accuracy_problem.md mục 1 — clarify: claims with selectedProvider then enqueues the same background job as approve', async () => {
       const clarificationCheckpoint = {
         ...checkpoint,
-        kind: 'clarification' as const,
+        kind: ECheckpointKind.CLARIFICATION,
       };
       mockCheckpoint.findPendingByReplyMessageId.mockResolvedValue(
         clarificationCheckpoint,
@@ -247,7 +248,7 @@ describe('ApprovalRequestService', () => {
       await service.resolveApproval({
         userId: 'user-1',
         messageId: 'approval-msg-1',
-        action: 'clarify',
+        action: EApprovalAction.CLARIFY,
         selectedProvider: 'notion',
       });
 
@@ -271,7 +272,7 @@ describe('ApprovalRequestService', () => {
         service.resolveApproval({
           userId: 'user-1',
           messageId: 'approval-msg-1',
-          action: 'clarify',
+          action: EApprovalAction.CLARIFY,
           selectedProvider: 'notion',
         }),
       ).rejects.toThrow();
@@ -281,7 +282,7 @@ describe('ApprovalRequestService', () => {
     it('throws CHECKPOINT_ACTION_MISMATCH when action="clarify" but selectedProvider is missing', async () => {
       const clarificationCheckpoint = {
         ...checkpoint,
-        kind: 'clarification' as const,
+        kind: ECheckpointKind.CLARIFICATION,
       };
       mockCheckpoint.findPendingByReplyMessageId.mockResolvedValue(
         clarificationCheckpoint,
@@ -291,7 +292,7 @@ describe('ApprovalRequestService', () => {
         service.resolveApproval({
           userId: 'user-1',
           messageId: 'approval-msg-1',
-          action: 'clarify',
+          action: EApprovalAction.CLARIFY,
         }),
       ).rejects.toThrow();
       expect(mockCheckpoint.claim).not.toHaveBeenCalled();
@@ -300,7 +301,7 @@ describe('ApprovalRequestService', () => {
     it('throws CHECKPOINT_ACTION_MISMATCH when action="approve" but the checkpoint kind is "clarification"', async () => {
       const clarificationCheckpoint = {
         ...checkpoint,
-        kind: 'clarification' as const,
+        kind: ECheckpointKind.CLARIFICATION,
       };
       mockCheckpoint.findPendingByReplyMessageId.mockResolvedValue(
         clarificationCheckpoint,
@@ -310,7 +311,7 @@ describe('ApprovalRequestService', () => {
         service.resolveApproval({
           userId: 'user-1',
           messageId: 'approval-msg-1',
-          action: 'approve',
+          action: EApprovalAction.APPROVE,
         }),
       ).rejects.toThrow();
       expect(mockCheckpoint.claim).not.toHaveBeenCalled();

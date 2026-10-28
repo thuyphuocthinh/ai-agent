@@ -12,8 +12,10 @@ import {
 import {
   PipelineDefinition,
   EPipelineStepType,
+  EPipelineStepFailurePolicy,
 } from '../../contracts/pipeline-chaining.interface';
 import { AnswerResult } from './orchestration-answer.types';
+import { z } from 'zod';
 
 describe('PipelineChainingEngine', () => {
   let engine: PipelineChainingEngine;
@@ -21,6 +23,7 @@ describe('PipelineChainingEngine', () => {
   let mockCancellation: jest.Mocked<AgentCancellationService>;
   let mockCheckpointPause: jest.Mocked<CheckpointPauseService>;
   let mockMetrics: jest.Mocked<MetricsRegistryService>;
+  let mockToolProvider: { callTool: jest.Mock };
 
   beforeEach(() => {
     mockReactLoop = {
@@ -41,11 +44,16 @@ describe('PipelineChainingEngine', () => {
       incrementBehaviorSignal: jest.fn(),
     } as unknown as jest.Mocked<MetricsRegistryService>;
 
+    mockToolProvider = {
+      callTool: jest.fn().mockResolvedValue({ content: [{ type: 'text', text: 'Tool executed successfully' }], isError: false }),
+    };
+
     engine = new PipelineChainingEngine(
       mockReactLoop,
       mockCancellation,
       mockCheckpointPause,
       mockMetrics,
+      mockToolProvider as any,
     );
   });
 
@@ -155,37 +163,6 @@ describe('PipelineChainingEngine', () => {
       expect(result.content).toContain('BÁO CÁO TÀI CHÍNH');
     });
 
-    it('dừng lại chờ duyệt HITL khi một step được cấu hình requireHumanApproval=true', async () => {
-      const pipelineWithGate: PipelineDefinition = {
-        id: 'p-with-gate',
-        name: 'Pipeline có cổng duyệt',
-        steps: [
-          {
-            id: 'step1',
-            name: 'Đọc dữ liệu',
-          },
-          {
-            id: 'step2_dangerous',
-            name: 'Gửi email hàng loạt',
-            requireHumanApproval: true,
-          },
-        ],
-      };
-
-      mockReactLoop.run.mockResolvedValueOnce({
-        answer: 'Đã sẵn sàng danh sách email gửi',
-        toolCalls: [],
-      });
-
-      const result = await engine.executePipeline(pipelineWithGate, baseContext);
-
-      // Phải dừng trước khi chạy step 2
-      expect(mockReactLoop.run).toHaveBeenCalledTimes(1);
-      expect(mockMetrics.incrementBehaviorSignal).toHaveBeenCalledWith('approval_required');
-      expect(mockCheckpointPause.pauseForApproval).toHaveBeenCalledTimes(1);
-      expect(result.content).toBe('Paused for approval');
-    });
-
     it('bắt và xử lý ApprovalRequiredError khi một tool trong step yêu cầu phê duyệt', async () => {
       const pipeline: PipelineDefinition = {
         id: 'p-tool-gate',
@@ -213,6 +190,51 @@ describe('PipelineChainingEngine', () => {
       expect(result.content).toBe('Paused for approval');
     });
 
+    it('thực thi tool và chạy tiếp các step còn lại khi resume()', async () => {
+      const pipeline: PipelineDefinition = {
+        id: 'p-resume',
+        name: 'Pipeline Resume Test',
+        steps: [
+          { id: 'step1', name: 'Bước 1' },
+          { id: 'step2', name: 'Bước 2' },
+          { id: 'step3', name: 'Bước 3' },
+        ],
+      };
+      engine.registerPipeline(pipeline);
+
+      mockReactLoop.run.mockResolvedValueOnce({
+        answer: 'Kết quả bước 3 hoàn tất',
+        toolCalls: [],
+      });
+
+      const checkpoint: any = {
+        id: 'cp-pipe-1',
+        replyMessageId: 'reply-1',
+        originalPrompt: 'Chạy pipeline p-resume',
+        pendingTask: 'Thao tác trong p-resume',
+        pendingTool: { provider: 'sql', name: 'update_db', args: { id: 1 } },
+        roundsSoFar: [
+          { agent: 'step1', task: 'Bước 1', result: 'Kết quả bước 1' },
+        ],
+        history: [],
+        userId: 'u1',
+        workspaceId: 'w1',
+        channelId: 'c1',
+      };
+
+      const result = await engine.resume(checkpoint);
+
+      expect(mockToolProvider.callTool).toHaveBeenCalledWith({
+        provider: 'sql',
+        name: 'update_db',
+        args: { id: 1 },
+        ownerId: 'u1',
+        workspaceId: 'w1',
+      });
+      expect(mockReactLoop.run).toHaveBeenCalledTimes(1);
+      expect(result.content).toBe('Kết quả bước 3 hoàn tất');
+    });
+
     it('ném TurnCancelledError khi nhận tín hiệu hủy', async () => {
       mockCancellation.isCancelled.mockResolvedValue(true);
 
@@ -223,6 +245,152 @@ describe('PipelineChainingEngine', () => {
       };
 
       await expect(engine.executePipeline(pipeline, baseContext)).rejects.toThrow(TurnCancelledError);
+    });
+
+    it('tự động kích hoạt 1-shot self-healing khi output step vi phạm zod schema', async () => {
+      const CustomerSchema = z.object({
+        customerId: z.string(),
+        totalAmount: z.number(),
+      });
+
+      const pipeline: PipelineDefinition = {
+        id: 'p-schema-heal',
+        name: 'Schema Healing Pipeline',
+        steps: [
+          {
+            id: 'step1_extract_json',
+            name: 'Trích xuất JSON Khách hàng',
+            outputSchema: CustomerSchema,
+          },
+        ],
+      };
+
+      // Lần 1: LLM trả về JSON lỗi (thiếu totalAmount hoặc sai kiểu dữ liệu)
+      // Lần 2: LLM nhận correction prompt và trả về JSON đúng
+      mockReactLoop.run
+        .mockResolvedValueOnce({
+          answer: '```json\n{"customerId": "CUST-001", "totalAmount": "one million"}\n```',
+          toolCalls: [],
+        })
+        .mockResolvedValueOnce({
+          answer: JSON.stringify({ customerId: 'CUST-001', totalAmount: 1000000 }),
+          toolCalls: [],
+        });
+
+      const result = await engine.executePipeline(pipeline, baseContext);
+
+      // Gọi lần 1 cho step bình thường, lần 2 cho 1-shot self-healing
+      expect(mockReactLoop.run).toHaveBeenCalledTimes(2);
+      expect(mockReactLoop.run.mock.calls[1][0].prompt).toContain('Dữ liệu JSON bạn vừa tạo ra không đúng định dạng schema bắt buộc');
+      expect(result.content).toContain('1000000');
+      const parsed = JSON.parse(result.content);
+      expect(parsed.customerId).toBe('CUST-001');
+      expect(parsed.totalAmount).toBe(1000000);
+    });
+
+    it('rẽ nhánh điều kiện thành công dựa trên output của step trước (conditional branching)', async () => {
+      const pipeline: PipelineDefinition = {
+        id: 'p-branching',
+        name: 'Branching Pipeline',
+        steps: [
+          {
+            id: 'step1_classify',
+            name: 'Phân loại khách hàng',
+            condition: (output) => (output.includes('VIP') ? 'vip_route' : 'standard_route'),
+            branchMap: {
+              vip_route: 'step_vip',
+              standard_route: 'step_standard',
+            },
+          },
+          {
+            id: 'step_standard',
+            name: 'Xử lý Standard',
+          },
+          {
+            id: 'step_vip',
+            name: 'Xử lý VIP Priority',
+          },
+        ],
+      };
+
+      mockReactLoop.run
+        .mockResolvedValueOnce({
+          answer: 'Khách hàng phân loại là VIP cấp Gold',
+          toolCalls: [],
+        })
+        .mockResolvedValueOnce({
+          answer: 'Ưu đãi VIP: Giảm giá 20% và tặng quà',
+          toolCalls: [],
+        });
+
+      const result = await engine.executePipeline(pipeline, baseContext);
+
+      // Chỉ thực thi step1_classify và step_vip (bỏ qua step_standard)
+      expect(mockReactLoop.run).toHaveBeenCalledTimes(2);
+      expect(result.steps).toHaveLength(2);
+      expect(result.steps?.[0].agent).toBe('step1_classify');
+      expect(result.steps?.[1].agent).toBe('step_vip');
+      expect(result.content).toContain('Ưu đãi VIP');
+    });
+
+    it('bỏ qua step bị lỗi và tiếp tục các step sau khi failurePolicy = SKIP_AND_CONTINUE', async () => {
+      const pipeline: PipelineDefinition = {
+        id: 'p-skip-failure',
+        name: 'Skip Failure Pipeline',
+        steps: [
+          {
+            id: 'step1_flaky',
+            name: 'Step không quan trọng bị lỗi',
+            failurePolicy: EPipelineStepFailurePolicy.SKIP_AND_CONTINUE,
+          },
+          {
+            id: 'step2_main',
+            name: 'Step chính tiếp tục',
+          },
+        ],
+      };
+
+      mockReactLoop.run
+        .mockRejectedValueOnce(new Error('Connection timeout'))
+        .mockResolvedValueOnce({
+          answer: 'Kết quả bước 2 thành công',
+          toolCalls: [],
+        });
+
+      const result = await engine.executePipeline(pipeline, baseContext);
+
+      expect(mockReactLoop.run).toHaveBeenCalledTimes(2);
+      expect(result.steps).toHaveLength(1);
+      expect(result.steps?.[0].agent).toBe('step2_main');
+      expect(result.content).toBe('Kết quả bước 2 thành công');
+    });
+
+    it('tự động retry tối đa maxStepRetries khi failurePolicy = RETRY và step gặp lỗi', async () => {
+      const pipeline: PipelineDefinition = {
+        id: 'p-retry',
+        name: 'Retry Pipeline',
+        steps: [
+          {
+            id: 'step1_retryable',
+            name: 'Step thử lại khi lỗi mạng',
+            failurePolicy: EPipelineStepFailurePolicy.RETRY,
+            maxStepRetries: 2,
+          },
+        ],
+      };
+
+      mockReactLoop.run
+        .mockRejectedValueOnce(new Error('Transient 503 error'))
+        .mockResolvedValueOnce({
+          answer: 'Bước 1 thành công sau khi retry lần 1',
+          toolCalls: [],
+        });
+
+      const result = await engine.executePipeline(pipeline, baseContext);
+
+      expect(mockReactLoop.run).toHaveBeenCalledTimes(2);
+      expect(result.steps).toHaveLength(1);
+      expect(result.content).toContain('Bước 1 thành công sau khi retry lần 1');
     });
   });
 });

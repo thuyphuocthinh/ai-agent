@@ -4,8 +4,6 @@ import { ORCHESTRATION_CONSTANTS } from '@agent/core/constants';
 import {
   IMessageSink,
   MESSAGE_SINK,
-  IStreamSink,
-  STREAM_SINK,
   IWorkflowRegistry,
   WORKFLOW_REGISTRY,
   WORKFLOW_RUNNER,
@@ -15,30 +13,22 @@ import {
   IExecutionEngineRegistry,
   IExecutionRouter,
 } from '../../contracts';
-import { ReactLoopService } from '../loop/react-loop.service';
 import { SupervisorService } from '../supervisor/supervisor.service';
 import { WorkflowRunnerService } from '../workflow/workflow-runner.service';
-import {
-  AvailableAgentDto,
-  DelegationDto,
-  SupervisorRoundDto,
-} from '../../contracts/dtos/supervisor.dto';
-import { ToolCallTraceDto } from '../../contracts/dtos/react-loop.dto';
-import { ChatHistoryTurnDto } from '../../contracts/dtos/message-client.dto';
-import { AgentCancellationService } from '../cancellation/agent-cancellation.service';
-import { runCancellable } from '../../common/cancellable-run.util';
-import { TurnCancelledError } from '../loop/turn-cancelled.error';
-import { CheckpointPauseService } from '../hitl/checkpoint-pause.service';
-import { MetricsRegistryService } from '../../common/metrics-registry.service';
 import { AnswerResult } from './orchestration-answer.types';
-import { TurnResolverRun } from './turn-resolver-run';
 import { MemoryManagerService } from '../../memory/memory-manager.service';
 
-// Ghi chú thiết kế đầy đủ (WHY): docs/orchestration/code-notes/turn-resolver.service.md
-// Logic chi tiết 1 turn (plan/delegate/evaluate/synthesize) nằm ở
-// TurnResolverRun (turn-resolver-run.ts) — file này chỉ dựng dependencies
-// rồi giao việc, giữ nguyên API công khai (continueRounds()/resolveAnswer())
-// vì ApprovalFlowService/CheckpointPauseService gọi thẳng vào đây.
+/**
+ * TurnResolverService
+ *
+ * Master Dispatcher (Tổng đài điều phối AI Orchestration).
+ * Nhiệm vụ duy nhất:
+ * 1. Thu thập ngữ cảnh câu hỏi, lịch sử và danh sách agent khả dụng.
+ * 2. Phân loại tác vụ thông qua Execution Router.
+ * 3. Phân bổ công việc tới Engine chuyên trách tương ứng trong Execution Engine Registry.
+ *
+ * Hoàn toàn tách biệt khỏi logic thực thi vòng lặp (Execution Engine).
+ */
 @Injectable()
 export class TurnResolverService {
   private readonly logger = new Logger(TurnResolverService.name);
@@ -46,13 +36,7 @@ export class TurnResolverService {
   constructor(
     @Inject(MESSAGE_SINK)
     private readonly messageSink: IMessageSink,
-    private readonly reactLoop: ReactLoopService,
     private readonly supervisor: SupervisorService,
-    @Inject(STREAM_SINK)
-    private readonly streamSink: IStreamSink,
-    private readonly cancellation: AgentCancellationService,
-    private readonly checkpointPause: CheckpointPauseService,
-    private readonly metrics: MetricsRegistryService,
     private readonly memoryManager: MemoryManagerService,
     @Inject(EXECUTION_ENGINE_REGISTRY)
     private readonly engineRegistry: IExecutionEngineRegistry,
@@ -65,14 +49,6 @@ export class TurnResolverService {
     @Inject(WORKFLOW_RUNNER)
     private readonly workflowRunner?: WorkflowRunnerService,
   ) {}
-
-  private get messageClient(): IMessageSink {
-    return this.messageSink;
-  }
-
-  private get agentStream(): IStreamSink {
-    return this.streamSink;
-  }
 
   async resolveAnswer(
     data: IProcessAiTriggerJobData,
@@ -137,80 +113,22 @@ export class TurnResolverService {
       forcedMode: this.forcedModeFromEnv(),
     });
 
+    const targetEngineId = decision.engineId ?? decision.mode;
     const engine =
-      decision.mode !== EExecutionEngineMode.DYNAMIC_SUPERVISOR && decision.engineId
-        ? this.engineRegistry.get(decision.engineId)
-        : undefined;
+      this.engineRegistry.get(targetEngineId) ??
+      this.engineRegistry.get(EExecutionEngineMode.DYNAMIC_SUPERVISOR);
+
     if (engine) {
       return engine.execute({ data, replyMessageId, prompt, agents, history });
     }
 
-    return this.continueRounds(
-      data,
-      replyMessageId,
-      prompt,
-      agents,
-      history,
-      [],
-      [],
+    throw new Error(
+      `[TurnResolverService] Không tìm thấy engine "${targetEngineId}" để thực thi turn ${replyMessageId}`,
     );
   }
 
   private forcedModeFromEnv(): 'single' | 'supervisor' | 'auto' {
     const mode = process.env.DEFAULT_ORCHESTRATION_MODE;
     return mode === 'single' || mode === 'supervisor' ? mode : 'auto';
-  }
-
-  async continueRounds(
-    data: IProcessAiTriggerJobData,
-    replyMessageId: string,
-    prompt: string,
-    agents: AvailableAgentDto[],
-    history: ChatHistoryTurnDto[],
-    rounds: SupervisorRoundDto[],
-    toolCalls: ToolCallTraceDto[],
-    forcedStep?: DelegationDto,
-    remainingSteps?: DelegationDto[],
-    signal?: AbortSignal,
-  ): Promise<AnswerResult> {
-    const runTurn = (sig?: AbortSignal) =>
-      new TurnResolverRun(
-        {
-          data,
-          replyMessageId,
-          prompt,
-          agents,
-          history,
-          rounds,
-          toolCalls,
-          signal: sig,
-        },
-        {
-          reactLoop: this.reactLoop,
-          supervisor: this.supervisor,
-          streamSink: this.streamSink,
-          agentStream: this.streamSink,
-          cancellation: this.cancellation,
-          checkpointPause: this.checkpointPause,
-          metrics: this.metrics,
-          memoryManager: this.memoryManager,
-          logger: this.logger,
-        },
-      ).run(forcedStep, remainingSteps);
-
-    if (signal) {
-      return runTurn(signal);
-    }
-
-    return runCancellable(
-      replyMessageId,
-      this.cancellation,
-      (sig) => runTurn(sig),
-      () => {
-        const partialText =
-          rounds.length > 0 ? rounds[rounds.length - 1].result : undefined;
-        return new TurnCancelledError(partialText);
-      },
-    );
   }
 }

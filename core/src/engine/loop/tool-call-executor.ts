@@ -15,6 +15,10 @@ import {
 import { LlmToolCall, LlmToolResult } from '../strategy/llm-strategy.interface';
 
 import { ApprovalRequiredError } from './approval-required.error';
+import {
+  ClarificationRequiredError,
+  IClarificationCandidate,
+} from '../../contracts';
 import { CallToolResponseDto, McpToolDto } from '../../contracts/dtos/mcp.dto';
 import { abortableSleep } from '../../common/abortable-sleep.util';
 import { capToolResultSize } from '../../common/token-budget.util';
@@ -602,6 +606,21 @@ export class ToolCallExecutor {
       } catch (error) {
         if (this.signal?.aborted) {
           throw error;
+        }
+        if (
+          error instanceof ClarificationRequiredError ||
+          (error as Error)?.name === 'ClarificationRequiredError'
+        ) {
+          if (error instanceof ClarificationRequiredError) {
+            throw error;
+          }
+          const e = error as Error & { candidates?: IClarificationCandidate[]; parameterName?: string };
+          throw new ClarificationRequiredError(
+            e.message,
+            e.candidates ?? [],
+            this.toolCalls,
+            e.parameterName,
+          );
         }
         const errorMessage = PiiScrubberUtil.scrub(
           (error as Error).message,

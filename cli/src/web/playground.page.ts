@@ -405,6 +405,78 @@ export const PLAYGROUND_HTML = /* html */ `<!doctype html>
   .btn-approve:disabled, .btn-reject:disabled { opacity: 0.4; cursor: default; }
   .approval-status { font-size: 11px; font-family: var(--font-mono); color: var(--text-muted); margin-top: 4px; }
 
+  /* Clarification HITL Card */
+  .clarification-card {
+    background: var(--surface-dim, #1a1e24);
+    border: 1px solid var(--accent, #6366f1);
+    border-radius: 8px;
+    padding: 14px 16px;
+    margin-top: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .clarification-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .clarification-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text, #ffffff);
+  }
+  .clarification-badge {
+    background: rgba(99, 102, 241, 0.15);
+    color: var(--accent, #6366f1);
+    border: 1px solid rgba(99, 102, 241, 0.3);
+    font-size: 10px;
+    font-family: var(--font-mono);
+    padding: 2px 8px;
+    border-radius: 4px;
+    text-transform: uppercase;
+  }
+  .clarification-question {
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--text-dim, #cbd5e1);
+  }
+  .candidate-btn-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 6px;
+  }
+  .btn-candidate {
+    background: var(--surface, #232832);
+    color: var(--text, #ffffff);
+    border: 1px solid var(--line, #334155);
+    padding: 8px 14px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+  }
+  .btn-candidate:hover:not(:disabled) {
+    background: var(--accent, #6366f1);
+    color: #ffffff;
+    border-color: var(--accent, #6366f1);
+    transform: translateY(-1px);
+  }
+  .btn-candidate:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+  .btn-candidate-desc {
+    font-size: 10px;
+    opacity: 0.75;
+  }
+
   /* Final Answer Section (Tôn lên trang trọng, không bị che) */
   .final-wrapper {
     border-top: 1px solid var(--line);
@@ -806,6 +878,7 @@ export const PLAYGROUND_HTML = /* html */ `<!doctype html>
     DATA_PERSONA: 'data-persona',
     DATA_RESYNC: 'data-resync',
     DATA_APPROVAL: 'data-approval',
+    DATA_CLARIFICATION: 'data-clarification',
     DATA_REPLY: 'data-reply',
     START_STEP: 'start-step',
     FINISH_STEP: 'finish-step',
@@ -1318,7 +1391,7 @@ export const PLAYGROUND_HTML = /* html */ `<!doctype html>
       }
     });
     if (bubble.hasApproval) {
-      setProgress(bubble, 75, '⏸ Đang tạm dừng chờ người dùng phê duyệt hành động...', 'Chờ phê duyệt');
+      if (progressWrap) progressWrap.style.display = 'none';
       if (bubble.replyEl && bubble.replyEl.parentNode) {
         bubble.replyEl.parentNode.remove();
         bubble.replyEl = null;
@@ -1503,7 +1576,11 @@ export const PLAYGROUND_HTML = /* html */ `<!doctype html>
       case CHUNK_TYPES.DATA_REPLY: {
         clearStatus(bubble);
         var replyText = chunk.data && chunk.data.text;
-        if (replyText && (replyText.indexOf('⏸️') === 0 || replyText.indexOf('Cần bạn duyệt') !== -1)) {
+        if (replyText && (
+          replyText.indexOf('⏸️') === 0 ||
+          replyText.indexOf('Cần bạn duyệt') !== -1 ||
+          replyText.indexOf('Cần bạn làm rõ') !== -1
+        )) {
           bubble.hasApproval = true;
           bubble.reply = null;
         } else {
@@ -1513,6 +1590,7 @@ export const PLAYGROUND_HTML = /* html */ `<!doctype html>
       }
 
       case CHUNK_TYPES.DATA_APPROVAL:
+      case CHUNK_TYPES.DATA_CLARIFICATION:
         clearStatus(bubble);
         bubble.hasApproval = true;
         renderApproval(bubble, chunk.data || {});
@@ -1530,10 +1608,89 @@ export const PLAYGROUND_HTML = /* html */ `<!doctype html>
     scroll();
   }
 
-  function renderApproval(bubble, data, targetContainer) {
+  function renderClarification(bubble, data, targetContainer) {
     clearStatus(bubble);
+    if (progressWrap) progressWrap.style.display = 'none';
+    if (data.messageId && bubble.box.querySelector('.clarification-card[data-msg-id="' + data.messageId + '"]')) {
+      return;
+    }
+    var box = el('div', 'clarification-card');
+    if (data.messageId) box.setAttribute('data-msg-id', data.messageId);
+
+    if (bubble.currentAgentHeader && bubble.currentAgentHeader.statusTag) {
+      bubble.currentAgentHeader.statusTag.textContent = 'Cần làm rõ';
+      bubble.currentAgentHeader.statusTag.classList.add('waiting');
+    }
+
+    var header = el('div', 'clarification-header');
+    header.appendChild(el('div', 'clarification-title', 'Yêu cầu làm rõ thông tin'));
+    header.appendChild(el('span', 'clarification-badge', 'Clarification'));
+    box.appendChild(header);
+
+    var questionText = data.friendlySummary || data.preview || 'Vui lòng chọn một trong các phương án bên dưới để tiếp tục:';
+    box.appendChild(el('div', 'clarification-question', questionText));
+
+    var candidates = data.candidates || [];
+    var btnGroup = el('div', 'candidate-btn-group');
+
+    function selectCandidate(candidate) {
+      var allBtns = btnGroup.querySelectorAll('.btn-candidate');
+      for (var i = 0; i < allBtns.length; i++) {
+        allBtns[i].disabled = true;
+      }
+      box.appendChild(el('div', 'approval-status', 'Đã chọn: ' + (candidate.label || candidate.provider || candidate.id) + ', đang tiếp tục...'));
+      bubble.hasApproval = false;
+      var selectedId = candidate.id || candidate.provider;
+      run('/api/approve', {
+        sessionId: sessionId,
+        messageId: data.messageId,
+        action: 'clarify',
+        selectedProvider: selectedId,
+        selectedCandidateId: selectedId
+      }, bubble);
+    }
+
+    if (candidates.length > 0) {
+      candidates.forEach(function (c) {
+        var btn = el('button', 'btn-candidate');
+        btn.appendChild(el('span', 'btn-candidate-label', c.label || c.provider || c.id));
+        if (c.description) {
+          btn.appendChild(el('span', 'btn-candidate-desc', c.description));
+        }
+        btn.onclick = function () { selectCandidate(c); };
+        btnGroup.appendChild(btn);
+      });
+      box.appendChild(btnGroup);
+    } else {
+      var fallbackBtn = el('button', 'btn-approve', 'Tiếp tục thực thi');
+      fallbackBtn.onclick = function () {
+        fallbackBtn.disabled = true;
+        bubble.hasApproval = false;
+        run('/api/approve', { sessionId: sessionId, messageId: data.messageId, action: 'approve' }, bubble);
+      };
+      box.appendChild(fallbackBtn);
+    }
+
+    if (targetContainer) {
+      targetContainer.appendChild(box);
+    } else {
+      bubble.box.appendChild(box);
+    }
+  }
+
+  function renderApproval(bubble, data, targetContainer) {
+    if (data.kind === 'clarification' || (data.candidates && data.candidates.length > 0)) {
+      renderClarification(bubble, data, targetContainer);
+      return;
+    }
+    clearStatus(bubble);
+    if (progressWrap) progressWrap.style.display = 'none';
+    if (data.messageId && bubble.box.querySelector('.approval[data-msg-id="' + data.messageId + '"]')) {
+      return;
+    }
     var tool = data.tool || {};
     var box = el('div', 'approval');
+    if (data.messageId) box.setAttribute('data-msg-id', data.messageId);
 
     if (bubble.currentAgentHeader && bubble.currentAgentHeader.statusTag) {
       bubble.currentAgentHeader.statusTag.textContent = 'Chờ phê duyệt';
@@ -1576,7 +1733,7 @@ export const PLAYGROUND_HTML = /* html */ `<!doctype html>
     if (targetContainer) {
       targetContainer.appendChild(box);
     } else {
-      stepHost(bubble).appendChild(box);
+      bubble.box.appendChild(box);
     }
   }
 
@@ -1824,10 +1981,13 @@ export const PLAYGROUND_HTML = /* html */ `<!doctype html>
             else if (Array.isArray(res.data)) turns = res.data;
           }
         }
-        turns = turns.filter(function (turn, idx, arr) {
-          if (turn.role === 'model' && turn.text && (turn.text.indexOf('⏸️ Cần bạn duyệt') !== -1 || turn.text.indexOf('Cần bạn duyệt 1 hành động') !== -1)) {
-            var hasLaterModelMsg = arr.slice(idx + 1).some(function (later) { return later.role === 'model'; });
-            return !hasLaterModelMsg;
+        turns = turns.filter(function (turn) {
+          if (turn.role === 'model' && turn.text && (
+            turn.text.indexOf('⏸️') === 0 ||
+            turn.text.indexOf('Cần bạn duyệt') !== -1 ||
+            turn.text.indexOf('Cần bạn làm rõ') !== -1
+          )) {
+            return false;
           }
           return true;
         });

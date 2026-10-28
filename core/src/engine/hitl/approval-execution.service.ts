@@ -1,53 +1,47 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { IProcessApprovalJobData } from '@agent/core/infrastructure/queue';
 import {
-  ORCHESTRATION_CONSTANTS,
   EAgentStreamStepType,
+  ECheckpointKind,
 } from '@agent/core/constants';
-import { extractTextFromMcpResult } from '@agent/core/common';
 import { MessageClientService } from '../../contracts/message-client.service';
-import { SupervisorService } from '../supervisor/supervisor.service';
-import { IToolProvider, TOOL_PROVIDER } from '../../contracts';
 import { AgentStreamService } from '../../contracts/agent-stream.service';
 import { describeExternalServiceError } from '../loop/external-service-error.util';
 import { CheckpointService } from './checkpoint.service';
 import { CheckpointResponseDto } from '../../contracts/dtos/checkpoint.dto';
-import { DelegationDto } from '../../contracts/dtos/supervisor.dto';
 import { AgentCancellationService } from '../cancellation/agent-cancellation.service';
 import { TurnCancelledError } from '../loop/turn-cancelled.error';
-import { TurnResolverService } from '../orchestrator/turn-resolver.service';
-import { capToolResultSize } from '../../common/token-budget.util';
-import { MemoryManagerService } from '../../memory/memory-manager.service';
-import { ApprovalContinuationPlannerService } from './approval-continuation-planner.service';
 import { ApprovalSkillRecorderService } from './approval-skill-recorder.service';
 import { AnswerResult } from '../orchestrator/orchestration-answer.types';
+import {
+  EXECUTION_ENGINE_REGISTRY,
+  IExecutionEngineRegistry,
+  EExecutionEngineMode,
+} from '../../contracts/execution-engine.interface';
 
-interface TurnContext {
-  userId: string;
-  channelId: string;
-  workspaceId: string;
-  messageId: string;
-  botUserId: string;
-  channelType: string;
-}
-
+/**
+ * ApprovalExecutionService
+ *
+ * Điều phối xử lý job phê duyệt HITL (Human-in-the-Loop) từ hàng đợi.
+ * Nhiệm vụ duy nhất:
+ * 1. Claim checkpoint để chống trùng lặp thực thi (idempotency).
+ * 2. Ghi nhận kỹ năng học hỏi (Skill Recorder) khi người dùng duyệt tool.
+ * 3. Ủy quyền tiếp tục phiên làm việc (resume) cho Execution Engine tương ứng
+ *    (SingleAgentEngine, PipelineChainingEngine, hoặc DynamicSupervisorEngine).
+ */
 @Injectable()
 export class ApprovalExecutionService {
   private readonly logger = new Logger(ApprovalExecutionService.name);
 
   constructor(
     private readonly messageClient: MessageClientService,
-    private readonly supervisor: SupervisorService,
     private readonly agentStream: AgentStreamService,
     private readonly checkpoint: CheckpointService,
-    @Inject(TOOL_PROVIDER)
-    private readonly mcpClient: IToolProvider,
     private readonly cancellation: AgentCancellationService,
-    private readonly turnResolver: TurnResolverService,
-    private readonly memoryManager: MemoryManagerService,
-    private readonly continuationPlanner: ApprovalContinuationPlannerService,
     private readonly skillRecorder: ApprovalSkillRecorderService,
-  ) { }
+    @Inject(EXECUTION_ENGINE_REGISTRY)
+    private readonly engineRegistry: IExecutionEngineRegistry,
+  ) {}
 
   async processApprovalJob(data: IProcessApprovalJobData): Promise<void> {
     const checkpoint = await this.checkpoint.findById({
@@ -70,11 +64,35 @@ export class ApprovalExecutionService {
       return;
     }
 
-    if (checkpoint.kind === 'clarification') {
-      await this.resolveClarificationCheckpoint(checkpoint, data.userId);
+    if (checkpoint.kind === ECheckpointKind.APPROVAL && checkpoint.pendingTool) {
+      await this.skillRecorder.record({
+        checkpointId: checkpoint.id,
+        workspaceId: checkpoint.workspaceId,
+        pendingTask: checkpoint.pendingTask,
+        pendingTool: checkpoint.pendingTool,
+        riskLevel: checkpoint.riskLevel,
+      });
+    }
+
+    const engineMode = checkpoint.engineMode || EExecutionEngineMode.DYNAMIC_SUPERVISOR;
+    const engine = this.engineRegistry.get(engineMode);
+
+    if (engine?.resume) {
+      await this.runResumableTurn(
+        checkpoint,
+        data.userId,
+        `resume:${engine.id}`,
+        async () => {
+          const result = await engine.resume!(checkpoint);
+          await this.finishTurn(checkpoint, result);
+        },
+      );
       return;
     }
-    await this.approveCheckpoint(checkpoint, data.userId);
+
+    throw new Error(
+      `[ApprovalExecutionService] Không tìm thấy engine "${engineMode}" hoặc engine không hỗ trợ resume cho checkpoint ${checkpoint.id}`,
+    );
   }
 
   private async emitDone(context: {
@@ -144,162 +162,5 @@ export class ApprovalExecutionService {
       channelId: checkpoint.channelId,
       ...result,
     });
-  }
-
-  private buildTurnContext(
-    checkpoint: CheckpointResponseDto,
-    userId: string,
-  ): TurnContext {
-    return {
-      userId,
-      channelId: checkpoint.channelId,
-      workspaceId: checkpoint.workspaceId,
-      messageId: checkpoint.replyMessageId,
-      botUserId: checkpoint.botUserId,
-      channelType: checkpoint.channelType,
-    };
-  }
-
-  private async approveCheckpoint(
-    checkpoint: CheckpointResponseDto,
-    userId: string,
-  ): Promise<void> {
-    await this.runResumableTurn(
-      checkpoint,
-      userId,
-      'approveCheckpoint',
-      async () => {
-        const pendingTool = checkpoint.pendingTool!;
-        const { id, replyMessageId, botUserId } = checkpoint;
-        const { text: toolResultText, isError } =
-          await this.executeApprovedToolForReal(checkpoint, userId);
-
-        if (isError) {
-          this.logger.warn(
-            `approveCheckpoint() checkpoint=${id} — tool "${pendingTool.provider}.${pendingTool.name}" thất bại sau khi duyệt, dừng không retry: ${toolResultText}`,
-          );
-          await this.checkpoint.markToolExecuted({ id });
-          await this.messageClient.updateMessage({
-            id: replyMessageId,
-            userId: botUserId,
-            content: `⚠️ Hành động "${pendingTool.name}" đã được duyệt nhưng thực thi thất bại:\n${toolResultText}`,
-          });
-          return;
-        }
-
-        await this.checkpoint.markToolExecuted({ id });
-        await this.skillRecorder.record({
-          checkpointId: id,
-          workspaceId: checkpoint.workspaceId,
-          pendingTask: checkpoint.pendingTask,
-          pendingTool,
-          riskLevel: checkpoint.riskLevel,
-        });
-
-        await this.messageClient.updateMessage({
-          id: replyMessageId,
-          userId: botUserId,
-          content: '🤖 Đang tổng hợp kết quả...',
-        });
-
-        const { remainingSteps, resultText } =
-          await this.continuationPlanner.resolveRemainingSteps(
-            checkpoint,
-            toolResultText,
-          );
-        const agents = await this.supervisor.getAvailableAgents(
-          userId,
-          checkpoint.workspaceId,
-        );
-        const rounds = [
-          ...checkpoint.roundsSoFar,
-          {
-            agent: pendingTool.provider,
-            task: checkpoint.pendingTask,
-            result: resultText,
-          },
-        ];
-
-        const result = await this.turnResolver.continueRounds(
-          this.buildTurnContext(checkpoint, userId),
-          replyMessageId,
-          checkpoint.originalPrompt,
-          agents,
-          checkpoint.history,
-          rounds,
-          [],
-          undefined,
-          remainingSteps,
-        );
-
-        await this.finishTurn(checkpoint, result);
-      },
-    );
-  }
-
-  private async resolveClarificationCheckpoint(
-    checkpoint: CheckpointResponseDto,
-    userId: string,
-  ): Promise<void> {
-    await this.runResumableTurn(
-      checkpoint,
-      userId,
-      'resolveClarificationCheckpoint',
-      async () => {
-        const { replyMessageId, botUserId } = checkpoint;
-        await this.messageClient.updateMessage({
-          id: replyMessageId,
-          userId: botUserId,
-          content: '🤖 Đang tổng hợp kết quả...',
-        });
-
-        const agents = await this.supervisor.getAvailableAgents(
-          userId,
-          checkpoint.workspaceId,
-        );
-        const forcedStep: DelegationDto = {
-          agent: checkpoint.selectedProvider!,
-          task: checkpoint.pendingTask,
-        };
-
-        const result = await this.turnResolver.continueRounds(
-          this.buildTurnContext(checkpoint, userId),
-          replyMessageId,
-          checkpoint.originalPrompt,
-          agents,
-          checkpoint.history,
-          checkpoint.roundsSoFar,
-          [],
-          forcedStep,
-          checkpoint.remainingSteps,
-        );
-
-        await this.finishTurn(checkpoint, result);
-      },
-    );
-  }
-
-  private async executeApprovedToolForReal(
-    checkpoint: CheckpointResponseDto,
-    userId: string,
-  ): Promise<{ text: string; isError: boolean }> {
-    const pendingTool = checkpoint.pendingTool!;
-    const toolResult = await this.mcpClient.callTool({
-      provider: pendingTool.provider,
-      name: pendingTool.name,
-      args: pendingTool.args,
-      ownerId: userId,
-      workspaceId: checkpoint.workspaceId,
-    });
-    const reactModelId =
-      process.env.DEFAULT_REACT_MODEL ??
-      ORCHESTRATION_CONSTANTS.DEFAULT_REACT_MODEL;
-    return {
-      text: capToolResultSize(
-        extractTextFromMcpResult(toolResult),
-        this.memoryManager.buildBudget(reactModelId).toolResultCharBudget,
-      ),
-      isError: Boolean(toolResult.isError),
-    };
   }
 }

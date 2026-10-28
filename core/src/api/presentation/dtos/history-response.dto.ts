@@ -6,6 +6,13 @@ export interface IPendingApprovalDto {
   tool: Record<string, unknown>;
   preview?: unknown;
   friendlySummary?: string;
+  kind?: string;
+  candidates?: Array<{
+    provider?: string;
+    id?: string;
+    label: string;
+    description?: string;
+  }>;
 }
 
 export class HistoryResponseDto {

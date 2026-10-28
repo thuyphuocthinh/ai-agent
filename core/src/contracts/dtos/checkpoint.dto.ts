@@ -1,5 +1,6 @@
 import { DelegationDto, SupervisorRoundDto } from './supervisor.dto';
 import { ChatHistoryTurnDto } from './message-client.dto';
+import { ToolCallTraceDto } from './react-loop.dto';
 import { ECheckpointKind, ECheckpointRiskLevel } from '@agent/core/constants';
 
 export enum OrchestrationCheckpointStatus {
@@ -34,12 +35,15 @@ export class CreateCheckpointRequestDto {
   pendingTool: PendingToolCall | null;
   pendingTask: string;
   roundsSoFar: SupervisorRoundDto[];
+  toolCalls?: ToolCallTraceDto[];
   history: ChatHistoryTurnDto[];
   kind?: ECheckpointKind;
   riskLevel?: ECheckpointRiskLevel | null;
   clarificationQuestion?: string | null;
   clarificationCandidates?: AmbiguousAgentCandidate[] | null;
   remainingSteps?: DelegationDto[];
+  engineMode?: string;
+  selectedCandidateId?: string;
 }
 
 // Response cho create()/findPendingByReplyMessageId()/findById()/findExpiredPending()
@@ -60,6 +64,7 @@ export class CheckpointResponseDto {
   pendingTool: PendingToolCall | null;
   pendingTask: string;
   roundsSoFar: SupervisorRoundDto[];
+  toolCalls?: ToolCallTraceDto[];
   remainingSteps: DelegationDto[];
   history: ChatHistoryTurnDto[];
   status: OrchestrationCheckpointStatus;
@@ -68,6 +73,8 @@ export class CheckpointResponseDto {
   clarificationQuestion: string | null;
   clarificationCandidates: AmbiguousAgentCandidate[] | null;
   selectedProvider: string | null;
+  selectedCandidateId?: string | null;
+  engineMode?: string;
   expiresAt: Date;
   toolExecutedAt: Date | null;
   createdAt: Date;

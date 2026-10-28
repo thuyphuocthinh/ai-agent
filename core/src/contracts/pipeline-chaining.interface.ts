@@ -1,6 +1,7 @@
 import { ToolCallTraceDto } from './dtos/react-loop.dto';
 import { AnswerResult } from '../engine/orchestrator/orchestration-answer.types';
 import { EngineExecutionContext, IExecutionEngine } from './execution-engine.interface';
+import type { ZodTypeAny } from 'zod';
 
 export const PIPELINE_CHAINING_ENGINE = Symbol.for('PIPELINE_CHAINING_ENGINE');
 
@@ -8,6 +9,12 @@ export enum EPipelineStepType {
   LLM = 'llm',
   REACT_LOOP = 'react_loop',
   CODE_TRANSFORM = 'code_transform',
+}
+
+export enum EPipelineStepFailurePolicy {
+  STOP_ON_FAILURE = 'stop_on_failure',
+  SKIP_AND_CONTINUE = 'skip_and_continue',
+  RETRY = 'retry',
 }
 
 export interface PipelineStepDefinition {
@@ -56,9 +63,39 @@ export interface PipelineStepDefinition {
   readonly provider?: string;
 
   /**
-   * Cờ yêu cầu con người phê duyệt trước khi bước này được thực thi (HITL Gate).
+   * Schema Zod hoặc JSON Schema dùng để kiểm tra hợp lệ định dạng đầu ra của bước này.
+   * Nếu output không đạt chuẩn, kích hoạt 1-shot self-healing correction prompt.
    */
-  readonly requireHumanApproval?: boolean;
+  readonly outputSchema?: ZodTypeAny | Record<string, unknown>;
+
+  /**
+   * Biểu thức hoặc hàm đánh giá điều kiện rẽ nhánh dựa trên output của bước này.
+   * Trả về step ID tiếp theo hoặc branch key trong `branchMap`.
+   */
+  readonly condition?: (
+    output: string,
+    context: Record<string, unknown>,
+  ) => string | boolean;
+
+  /**
+   * Bản đồ ánh xạ điều kiện -> Step ID kế tiếp (ví dụ: `{ 'URGENT': 'step_escalate', 'NORMAL': 'step_archive' }`)
+   */
+  readonly branchMap?: Record<string, string>;
+
+  /**
+   * ID của bước tiếp theo mặc định (nếu không rẽ nhánh)
+   */
+  readonly defaultNextStepId?: string;
+
+  /**
+   * Chính sách xử lý khi bước này gặp lỗi không thể phục hồi
+   */
+  readonly failurePolicy?: EPipelineStepFailurePolicy;
+
+  /**
+   * Số lần retry tối đa cho bước này (khi failurePolicy là RETRY, mặc định 2)
+   */
+  readonly maxStepRetries?: number;
 
   /**
    * Hàm chuyển đổi dữ liệu tùy biến bằng mã TS (nếu type là 'code_transform').

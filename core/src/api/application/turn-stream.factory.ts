@@ -1,6 +1,6 @@
 import { Injectable, Optional } from '@nestjs/common';
 import type { UIMessageChunk } from 'ai';
-import { EMessageRole, CACHE } from '@agent/core/constants';
+import { EMessageRole, CACHE, ECheckpointKind } from '@agent/core/constants';
 import {
   ActiveTurn,
   AgentStreamService,
@@ -152,6 +152,24 @@ export class TurnStreamFactory {
             preview: event.content.preview,
             friendlySummary: (event.content as Record<string, unknown>)
               .friendlySummary,
+          },
+        });
+        return;
+      }
+      if (
+        typeof event.content === 'object' &&
+        event.content.type === 'clarification_request'
+      ) {
+        session.approvalMessageIds.add(event.id);
+        const content = event.content as Record<string, unknown>;
+        adapter.send({
+          type: 'data-clarification',
+          data: {
+            messageId: event.id,
+            kind: ECheckpointKind.CLARIFICATION,
+            preview: content.question,
+            friendlySummary: content.question,
+            candidates: content.candidates,
           },
         });
         return;
