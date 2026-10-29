@@ -16,7 +16,7 @@ import {
   IStreamSink,
   STREAM_SINK,
 } from '../../../contracts';
-import { extractTextFromMcpResult } from '../../../common';
+import { executeApprovedTool } from '../../hitl/utils/approved-tool-execution.util';
 import { capToolResultSize } from '../../../common/text/token-budget.util';
 import {
   AvailableAgentDto,
@@ -148,7 +148,7 @@ export class DynamicSupervisorEngine implements IExecutionEngine {
     triggerData: IProcessAiTriggerJobData,
     agents: AvailableAgentDto[],
   ): Promise<AnswerResult> {
-    const { userId, replyMessageId, workspaceId } = checkpoint;
+    const { replyMessageId } = checkpoint;
     const pendingTool = checkpoint.pendingTool;
     if (!pendingTool) {
       throw new Error('Checkpoint approval thiếu thông tin pendingTool');
@@ -158,19 +158,18 @@ export class DynamicSupervisorEngine implements IExecutionEngine {
       `[DynamicSupervisorEngine] Resume Approval cho turn ${replyMessageId}: thực thi tool ${pendingTool.provider}.${pendingTool.name}`,
     );
 
-    const toolResult = await this.toolProvider.callTool({
-      provider: pendingTool.provider,
-      name: pendingTool.name,
-      args: pendingTool.args,
-      ownerId: userId,
-      workspaceId,
-    });
+    const { resultText: toolResultText, isError } = await executeApprovedTool(
+      {
+        toolProvider: this.toolProvider,
+        markToolExecuted: this.checkpointService
+          ? (dto) => this.checkpointService!.markToolExecuted(dto)
+          : undefined,
+      },
+      checkpoint,
+      pendingTool,
+    );
 
-    const toolResultText = extractTextFromMcpResult(toolResult);
-
-    await this.checkpointService?.markToolExecuted({ id: checkpoint.id });
-
-    if (toolResult.isError) {
+    if (isError) {
       const errorMessage = buildApprovedToolFailureMessage(
         pendingTool.name,
         toolResultText,

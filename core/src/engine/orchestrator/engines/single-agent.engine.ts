@@ -2,7 +2,6 @@ import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import {
   ORCHESTRATION_CONSTANTS,
   ECheckpointKind,
-  EStepExecutionStatus,
 } from '@agent/core/constants';
 import {
   IExecutionEngine,
@@ -43,7 +42,8 @@ import {
   TOOL_PROVIDER,
 } from '../../../contracts/tools/tool-provider.interface';
 import { CheckpointResponseDto } from '../../../contracts/dtos/checkpoint.dto';
-import { extractTextFromMcpResult } from '../../../common/mcp.util';
+import { CheckpointService } from '../../hitl/checkpoint.service';
+import { executeApprovedTool } from '../../hitl/utils/approved-tool-execution.util';
 
 /**
  * SingleAgentEngine
@@ -77,6 +77,8 @@ export class SingleAgentEngine implements IExecutionEngine {
     @Optional()
     @Inject(TOOL_PROVIDER)
     private readonly toolProvider?: IToolProvider,
+    @Optional()
+    private readonly checkpointService?: CheckpointService,
   ) {}
 
   canHandle(context: EngineRoutingContext): boolean {
@@ -385,28 +387,26 @@ export class SingleAgentEngine implements IExecutionEngine {
       );
     }
 
-    const toolResult = await this.toolProvider.callTool({
-      provider: pendingTool.provider,
-      name: pendingTool.name,
-      args: pendingTool.args,
-      ownerId: userId,
-      workspaceId,
-    });
-
-    const toolResultText = extractTextFromMcpResult(toolResult);
-    if (toolResult.isError) {
+    const {
+      resultText: toolResultText,
+      isError,
+      trace: executedPendingTool,
+    } = await executeApprovedTool(
+      {
+        toolProvider: this.toolProvider,
+        markToolExecuted: this.checkpointService
+          ? (dto) => this.checkpointService!.markToolExecuted(dto)
+          : undefined,
+      },
+      checkpoint,
+      pendingTool,
+    );
+    if (isError) {
       return buildAnswer(
         buildApprovedToolFailureMessage(pendingTool.name, toolResultText),
         [],
       );
     }
-
-    const executedPendingTool: ToolCallTraceDto = {
-      tool: `${pendingTool.provider}.${pendingTool.name}`,
-      status: EStepExecutionStatus.SUCCESS,
-      argsPreview: JSON.stringify(pendingTool.args).slice(0, 500),
-      resultPreview: toolResultText.slice(0, 500),
-    };
 
     const priorToolCalls: ToolCallTraceDto[] = [
       ...(checkpoint.toolCalls ?? []),

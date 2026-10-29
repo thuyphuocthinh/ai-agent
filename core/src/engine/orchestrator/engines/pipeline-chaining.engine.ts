@@ -5,7 +5,6 @@ import {
   EXTRACT_STEP_PROMPT_TEMPLATE,
   EXTRACT_STEP_SYSTEM_PROMPT,
   ORCHESTRATION_CONSTANTS,
-  EStepExecutionStatus,
   SYNTHESIZE_STEP_PROMPT_TEMPLATE,
   SYNTHESIZE_STEP_SYSTEM_PROMPT,
 } from '@agent/core/constants';
@@ -43,7 +42,8 @@ import {
 } from '../../../contracts/dtos/react-loop.dto';
 import { ExecutedStepDto } from '../../../contracts/dtos/message-client.dto';
 import { TOOL_PROVIDER, IToolProvider } from '../../../contracts';
-import { extractTextFromMcpResult } from '../../../common';
+import { CheckpointService } from '../../hitl/checkpoint.service';
+import { executeApprovedTool } from '../../hitl/utils/approved-tool-execution.util';
 import { buildReactRequestIdentity } from '../utils/react-request-identity.util';
 import { CheckpointResponseDto } from '../../../contracts/dtos/checkpoint.dto';
 import { PendingToolCall } from '../../../contracts';
@@ -92,6 +92,8 @@ export class PipelineChainingEngine implements IPipelineChainingEngine {
     @Optional()
     @Inject(TOOL_PROVIDER)
     private readonly toolProvider?: IToolProvider,
+    @Optional()
+    private readonly checkpointService?: CheckpointService,
   ) {
     this.registerBuiltInPipelines();
   }
@@ -651,7 +653,7 @@ export class PipelineChainingEngine implements IPipelineChainingEngine {
     });
   }
   async resume(checkpoint: CheckpointResponseDto): Promise<AnswerResult> {
-    const { userId, replyMessageId, workspaceId } = checkpoint;
+    const { replyMessageId } = checkpoint;
     const { pipeline, pendingTool, toolProvider } =
       this.assertResumable(checkpoint);
 
@@ -659,16 +661,21 @@ export class PipelineChainingEngine implements IPipelineChainingEngine {
       `[PipelineChainingEngine] Resume step cho turn ${replyMessageId}: thực thi tool ${pendingTool.provider}.${pendingTool.name}`,
     );
 
-    const toolResult = await toolProvider.callTool({
-      provider: pendingTool.provider,
-      name: pendingTool.name,
-      args: pendingTool.args,
-      ownerId: userId,
-      workspaceId,
-    });
-
-    const toolResultText = extractTextFromMcpResult(toolResult);
-    if (toolResult.isError) {
+    const {
+      resultText: toolResultText,
+      isError,
+      trace: executedToolTrace,
+    } = await executeApprovedTool(
+      {
+        toolProvider,
+        markToolExecuted: this.checkpointService
+          ? (dto) => this.checkpointService!.markToolExecuted(dto)
+          : undefined,
+      },
+      checkpoint,
+      pendingTool,
+    );
+    if (isError) {
       return buildAnswer(
         buildApprovedToolFailureMessage(pendingTool.name, toolResultText),
         [],
@@ -679,7 +686,7 @@ export class PipelineChainingEngine implements IPipelineChainingEngine {
     const { executedSteps, currentStepToolCalls } = this.buildResumedSteps(
       checkpoint,
       pipeline,
-      pendingTool,
+      executedToolTrace,
       toolResultText,
     );
 
@@ -725,7 +732,7 @@ export class PipelineChainingEngine implements IPipelineChainingEngine {
   private buildResumedSteps(
     checkpoint: CheckpointResponseDto,
     pipeline: PipelineDefinition,
-    pendingTool: PendingToolCall,
+    executedToolTrace: ToolCallTraceDto,
     toolResultText: string,
   ): {
     executedSteps: ExecutedStepDto[];
@@ -741,14 +748,7 @@ export class PipelineChainingEngine implements IPipelineChainingEngine {
     const currentStepIndex = checkpoint.roundsSoFar.length;
     const currentStep = pipeline.steps[currentStepIndex];
 
-    const currentStepToolCalls: ToolCallTraceDto[] = [
-      {
-        tool: `${pendingTool.provider}:${pendingTool.name}`,
-        status: EStepExecutionStatus.SUCCESS,
-        resultPreview: toolResultText.slice(0, 200),
-        argsPreview: JSON.stringify(pendingTool.args).slice(0, 200),
-      },
-    ];
+    const currentStepToolCalls: ToolCallTraceDto[] = [executedToolTrace];
 
     if (currentStep) {
       executedSteps.push({
