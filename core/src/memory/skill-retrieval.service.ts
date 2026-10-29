@@ -5,11 +5,11 @@ import {
   OPENAI_EMBEDDING_MODEL,
   OpenAiEmbeddingProvider,
   CHARS_PER_TOKEN_ESTIMATE,
-} from './embedding/openai-embedding.provider';
+} from '../infrastructure/embedding/openai-embedding.provider';
 import { SkillService } from './skill.service';
 import { SkillRecord } from './memory.interface';
-import { cosineSimilarity } from './skill-cosine-similarity.util';
-import { attachEmbeddingCostMetadata } from '../engine/loop/llm-cost.util';
+import { cosineSimilarity } from '../common/skill-cosine-similarity.util';
+import { attachEmbeddingCostMetadata } from '../common/text/llm-cost.util';
 
 // Bảo thủ có chủ đích — chưa có số liệu thật để tinh chỉnh, thà bỏ sót gợi ý
 // còn hơn gợi ý sai skill.

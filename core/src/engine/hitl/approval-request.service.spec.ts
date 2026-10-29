@@ -2,12 +2,12 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { EJobName, EQueueName, QueueService } from '@agent/core/infrastructure/queue';
 import { EApprovalAction, ECheckpointKind } from '@agent/core/constants';
 import { ApprovalRequestService } from './approval-request.service';
-import { MessageClientService } from '../../contracts/message-client.service';
-import { AgentStreamService } from '../../contracts/agent-stream.service';
+import { MessageClientService } from '../streaming/message-client.service';
+import { AgentStreamService } from '../streaming/agent-stream.service';
 import { CheckpointService } from './checkpoint.service';
 import { OrchestrationCheckpointStatus } from '../../contracts';
 import { ETurnLogStatus, TURN_EVENT_LOG } from '../../contracts';
-import { TurnEventRecorderService } from '../orchestrator/turn-event-recorder.service';
+import { TurnEventRecorderService } from '../orchestrator/turn/turn-event-recorder.service';
 
 describe('ApprovalRequestService', () => {
   let service: ApprovalRequestService;

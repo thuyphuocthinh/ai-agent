@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ORCHESTRATION_CONSTANTS } from '@agent/core/constants';
-import { OpenAiEmbeddingProvider } from '../../memory/embedding/openai-embedding.provider';
-import { SemanticToolIndex } from '../../common/agentic-openapi-parser';
+import { OpenAiEmbeddingProvider } from '../../infrastructure/embedding/openai-embedding.provider';
+import { SemanticToolIndex } from 'agentic-openapi-parser';
 import { AvailableAgentDto } from '../../contracts/dtos/supervisor.dto';
 
 const MIN_AGENT_LABEL_LENGTH_FOR_RESCUE = 3;

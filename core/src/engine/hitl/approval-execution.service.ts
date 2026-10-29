@@ -4,26 +4,26 @@ import {
   EAgentStreamStepType,
   ECheckpointKind,
 } from '@agent/core/constants';
-import { MessageClientService } from '../../contracts/message-client.service';
-import { AgentStreamService } from '../../contracts/agent-stream.service';
-import { describeExternalServiceError } from '../loop/external-service-error.util';
+import { MessageClientService } from '../streaming/message-client.service';
+import { AgentStreamService } from '../streaming/agent-stream.service';
+import { describeExternalServiceError } from '../loop/utils/external-service-error.util';
 import { CheckpointService } from './checkpoint.service';
 import { CheckpointResponseDto } from '../../contracts/dtos/checkpoint.dto';
 import { AgentCancellationService } from '../cancellation/agent-cancellation.service';
-import { TurnCancelledError } from '../loop/turn-cancelled.error';
+import { TurnCancelledError } from '../loop/errors/turn-cancelled.error';
 import { ApprovalSkillRecorderService } from './approval-skill-recorder.service';
-import { AnswerResult } from '../orchestrator/orchestration-answer.types';
-import { TurnEventRecorderService } from '../orchestrator/turn-event-recorder.service';
+import { AnswerResult } from '../../contracts/engine/orchestration-answer.types';
+import { TurnEventRecorderService } from '../orchestrator/turn/turn-event-recorder.service';
 import {
   ETurnLogStatus,
   ITurnEventLog,
   TURN_EVENT_LOG,
-} from '../../contracts/turn-event-log.interface';
+} from '../../contracts/streaming/turn-event-log.interface';
 import {
   EXECUTION_ENGINE_REGISTRY,
   IExecutionEngineRegistry,
   EExecutionEngineMode,
-} from '../../contracts/execution-engine.interface';
+} from '../../contracts/engine/execution-engine.interface';
 
 /**
  * ApprovalExecutionService

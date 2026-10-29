@@ -8,9 +8,9 @@ import { HumanEscalationService } from '../escalation/human-escalation.service';
 import { InMemoryEscalationStore } from '../adapters/in-memory-escalation.store';
 import { ActionAuditService } from '../audit/action-audit.service';
 import { InMemoryAuditStore } from '../adapters/in-memory-audit.store';
-import { ToolRiskGate } from '../../engine/loop/tool-risk-gate';
-import { InsertAccumulator } from '../../engine/loop/insert-accumulator';
-import { CircuitBreakerService } from '../../common/circuit-breaker.service';
+import { ToolRiskGate } from '../../engine/loop/guards/tool-risk-gate';
+import { InsertAccumulator } from '../../engine/loop/guards/insert-accumulator';
+import { CircuitBreakerService } from '../../infrastructure/resilience/circuit-breaker.service';
 import {
   EPolicyVerdict,
   EPolicyStatus,
@@ -23,9 +23,9 @@ import {
   EConversationState,
   IChatSessionManager,
   IChatSession,
-} from '../../contracts/chat-session.interface';
+} from '../../contracts/session/chat-session.interface';
 import { RunReactLoopRequestDto } from '../../contracts/dtos/react-loop.dto';
-import { LlmStrategy } from '../../engine/strategy/llm-strategy.interface';
+import { LlmStrategy } from '../../contracts/engine/llm-strategy.interface';
 import { McpToolDto } from '../../contracts/dtos/mcp.dto';
 
 describe('Semantic Policy RAG & Domain-Agnostic Guardrails Integration Tests', () => {

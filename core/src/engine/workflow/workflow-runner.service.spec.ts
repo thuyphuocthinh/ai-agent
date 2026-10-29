@@ -3,11 +3,11 @@ import { ReactLoopService } from '../loop/react-loop.service';
 import { IStreamSink } from '../../contracts';
 import { AgentCancellationService } from '../cancellation/agent-cancellation.service';
 import { CheckpointPauseService } from '../hitl/checkpoint-pause.service';
-import { MetricsRegistryService } from '../../common/metrics-registry.service';
-import { TurnCancelledError } from '../loop/turn-cancelled.error';
-import { ApprovalRequiredError } from '../loop/approval-required.error';
+import { MetricsRegistryService } from '../../infrastructure/resilience/metrics-registry.service';
+import { TurnCancelledError } from '../loop/errors/turn-cancelled.error';
+import { ApprovalRequiredError } from '../loop/errors/approval-required.error';
 import { AgentWorkflowConfig, createWorkflow } from '../../contracts';
-import { IProcessAiTriggerJobData } from '../../infrastructure/queue/job-data.interface';
+import { IProcessAiTriggerJobData } from '../../contracts/queue/job-data.interface';
 
 describe('WorkflowRunnerService', () => {
   let service: WorkflowRunnerService;

@@ -1,9 +1,9 @@
-import { Injectable, Logger, Optional } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { v7 as uuidv7 } from 'uuid';
 import {
   IMessageSink,
   MessageEvent,
-} from '../../../contracts/message-sink.interface';
+} from '../../../contracts/streaming/message-sink.interface';
 import {
   ChatHistoryTurnDto,
   CreateOrchestrationMessageRequestDto,
@@ -15,7 +15,10 @@ import {
 import { EMessageEventType, EMessageRole } from '@agent/core/constants';
 import { PrismaService } from '../prisma.service';
 import { sanitizePrismaError } from '../../../common/errors';
-import { ConversationMemoryService } from '../../../memory/conversation-memory.service';
+import {
+  CONVERSATION_MEMORY_RECORDER,
+  IConversationMemoryRecorder,
+} from '../../../contracts/memory/conversation-memory-recorder.interface';
 import { MessageRole, Prisma } from '@prisma/client';
 import { DEFAULT_DEV_USER_ID } from './prisma-chat-session.manager';
 
@@ -34,7 +37,9 @@ export class PrismaMessageSink implements IMessageSink {
 
   constructor(
     private readonly prisma: PrismaService,
-    @Optional() private readonly channelMemory?: ConversationMemoryService,
+    @Optional()
+    @Inject(CONVERSATION_MEMORY_RECORDER)
+    private readonly channelMemory?: IConversationMemoryRecorder,
   ) {}
 
   /**

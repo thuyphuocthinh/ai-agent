@@ -10,7 +10,7 @@ import { PrismaService } from '../prisma.service';
 import { sanitizePrismaError } from '../../../common/errors';
 import { ConversationState } from '@prisma/client';
 import { paginateCursor } from '../utils/prisma-paginator.util';
-import { CursorPaginationQueryDto } from '../../../api/presentation/dtos/pagination.dto';
+import { CursorPaginationQueryDto } from '../../../contracts/dtos/pagination.dto';
 
 export const DEFAULT_DEV_USER_ID = '00000000-0000-7000-8000-000000000001';
 

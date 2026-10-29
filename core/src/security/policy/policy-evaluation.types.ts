@@ -1,4 +1,4 @@
-import type { LlmStrategy } from '../../engine/strategy/llm-strategy.interface';
+import type { LlmStrategy } from '../../contracts/engine/llm-strategy.interface';
 import {
   EPolicySeverity,
   EPolicyVerdict,

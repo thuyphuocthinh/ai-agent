@@ -4,7 +4,7 @@ import {
   EPolicyVerdict,
   EOrderStatus,
 } from '../constants/security.constants';
-import type { LlmStrategy } from '../../engine/strategy/llm-strategy.interface';
+import type { LlmStrategy } from '../../contracts/engine/llm-strategy.interface';
 
 describe('SemanticPolicyEvaluatorService', () => {
   let evaluator: SemanticPolicyEvaluatorService;

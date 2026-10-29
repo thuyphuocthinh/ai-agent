@@ -9,19 +9,19 @@ import {
   RunReactLoopResponseDto,
   ToolCallTraceDto,
 } from '../../contracts/dtos/react-loop.dto';
-import { checkQuantity as checkQuantityUtil } from './quantity-check.util';
+import { checkQuantity as checkQuantityUtil } from './guards/quantity-check.util';
 import {
   LlmChatSession,
   LlmStrategy,
   LlmToolResult,
   LlmTurnResult,
-} from '../strategy/llm-strategy.interface';
+} from '../../contracts/engine/llm-strategy.interface';
 
-import { withLlmRetry } from './with-llm-retry.util';
-import { CircuitBreakerService } from '../../common/circuit-breaker.service';
-import { ToolRepeatGuard } from './tool-repeat-guard';
-import { InsertAccumulator } from './insert-accumulator';
-import { ToolRiskGate } from './tool-risk-gate';
+import { withLlmRetry } from './utils/with-llm-retry.util';
+import { CircuitBreakerService } from '../../infrastructure/resilience/circuit-breaker.service';
+import { ToolRepeatGuard } from './guards/tool-repeat-guard';
+import { InsertAccumulator } from './guards/insert-accumulator';
+import { ToolRiskGate } from './guards/tool-risk-gate';
 import { ToolCallExecutor } from './tool-call-executor';
 import {
   ReactLoopRunDeps,

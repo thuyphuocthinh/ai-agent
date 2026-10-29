@@ -4,20 +4,20 @@ import {
   ORCHESTRATION_SELF_CHECK_PROMPT,
 } from '@agent/core/constants';
 import { ReactLoopService } from './react-loop.service';
-import { McpToolConnectorService } from '../../infrastructure/tools/mcp-tool-connector.service';
+import { McpToolConnectorService } from '../../infrastructure/tools/mcp/mcp-tool-connector.service';
 import { LlmStrategyFactory } from '../strategy/llm-strategy.factory';
-import { AgentStreamService } from '../../contracts/agent-stream.service';
+import { AgentStreamService } from '../streaming/agent-stream.service';
 import { RunReactLoopRequestDto } from '../../contracts/dtos/react-loop.dto';
 import { TOOL_PROVIDER, STREAM_SINK } from '../../contracts';
-import { ApprovalRequiredError } from './approval-required.error';
-import { CircuitBreakerService } from '../../common/circuit-breaker.service';
+import { ApprovalRequiredError } from './errors/approval-required.error';
+import { CircuitBreakerService } from '../../infrastructure/resilience/circuit-breaker.service';
 import { AgentCancellationService } from '../cancellation/agent-cancellation.service';
 import { MemoryManagerService } from '../../memory/memory-manager.service';
 import {
   resolveDataCharBudget,
   resolveHistoryCharBudget,
   resolveMemoryCharBudget,
-} from '../../common/token-budget.util';
+} from '../../common/text/token-budget.util';
 
 // @agent/core/common barrel transitively kéo theo "nanoid" (ESM-only) qua
 // string.util.ts — jest không transform được, mock thẳng theo đúng convention

@@ -3,7 +3,11 @@ import { ModuleRef } from '@nestjs/core';
 import { randomUUID } from 'crypto';
 import { JobsOptions } from 'bullmq';
 import { EQueueName, EJobName } from '../../constants/queue.constant';
-import { TJobData } from './job-data.interface';
+import { TJobData } from '../../contracts/queue/job-data.interface';
+import {
+  QUEUE_PROCESSORS,
+  TQueueProcessorMap,
+} from '../../contracts/queue/queue-processor.interface';
 import {
   DispatchResult,
   IQueueDispatcher,
@@ -79,39 +83,19 @@ export class InMemoryQueueDispatcher implements IQueueDispatcher {
       data,
     };
 
-    if (queueName === EQueueName.AI_ORCHESTRATION_QUEUE) {
-      try {
-        // Dynamic lookup to avoid circular imports
-        const { AiOrchestrationProcessor } = await import(
-          '../../engine/orchestrator/ai-orchestration.processor'
-        );
-        const processor = this.moduleRef.get(AiOrchestrationProcessor, {
-          strict: false,
-        });
-        if (processor) {
-          await processor.process(mockJob as any);
-          return;
-        }
-      } catch (err: any) {
-        this.logger.warn(`Could not resolve AiOrchestrationProcessor: ${err?.message}`);
+    try {
+      const processors = this.moduleRef.get<TQueueProcessorMap>(QUEUE_PROCESSORS, {
+        strict: false,
+      });
+      const processor = processors?.[queueName];
+      if (processor) {
+        await processor.process(mockJob as any);
+        return;
       }
-    }
-
-    if (queueName === EQueueName.DYNAMIC_PROVIDER_QUEUE) {
-      try {
-        const { DynamicProviderProcessor } = await import(
-          '../../engine/orchestrator/dynamic-provider.processor'
-        );
-        const processor = this.moduleRef.get(DynamicProviderProcessor, {
-          strict: false,
-        });
-        if (processor) {
-          await processor.process(mockJob as any);
-          return;
-        }
-      } catch (err: any) {
-        this.logger.warn(`Could not resolve DynamicProviderProcessor: ${err?.message}`);
-      }
+    } catch (err: any) {
+      this.logger.warn(
+        `Could not resolve processor for queue ${queueName}: ${err?.message}`,
+      );
     }
 
     this.logger.warn(

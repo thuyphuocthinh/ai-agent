@@ -792,6 +792,203 @@ export const PLAYGROUND_HTML = /* html */ `<!doctype html>
       width: 260px;
     }
   }
+  /* Integrations Drawer & Modal Styling */
+  .header-action-btn {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    color: var(--text);
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.15s ease;
+  }
+  .header-action-btn:hover {
+    background: var(--panel);
+    border-color: var(--text-muted);
+  }
+  .badge-count {
+    background: var(--ok);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 1px 5px;
+    border-radius: 10px;
+    min-width: 16px;
+    text-align: center;
+  }
+  .modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.75);
+    backdrop-filter: blur(4px);
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+  }
+  .modal-backdrop.open {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .modal-card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    width: 90%;
+    max-width: 820px;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+    overflow: hidden;
+  }
+  .modal-header {
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--line);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: var(--bg);
+  }
+  .modal-body {
+    padding: 20px;
+    overflow-y: auto;
+    flex: 1;
+  }
+  .integrations-summary {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 12px;
+    font-family: var(--font-mono);
+    color: var(--text-muted);
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--line);
+    margin-bottom: 16px;
+  }
+  .subtle-btn {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    color: var(--text-dim);
+    padding: 5px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .subtle-btn:hover {
+    color: var(--text);
+    border-color: var(--text-muted);
+  }
+  .primary-btn {
+    background: var(--accent);
+    color: var(--accent-text);
+    border: none;
+    padding: 6px 14px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: opacity 0.15s ease;
+  }
+  .primary-btn:hover {
+    opacity: 0.9;
+  }
+  .danger-btn {
+    background: transparent;
+    border: 1px solid rgba(239, 68, 68, 0.4);
+    color: var(--err);
+    padding: 5px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .danger-btn:hover {
+    background: rgba(239, 68, 68, 0.1);
+    border-color: var(--err);
+  }
+  .integrations-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    gap: 16px;
+  }
+  .integration-card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 14px;
+    transition: border-color 0.15s ease;
+  }
+  .integration-card:hover {
+    border-color: var(--line-subtle);
+  }
+  .integration-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+  }
+  .integration-badge {
+    font-size: 11px;
+    font-family: var(--font-mono);
+    padding: 2px 8px;
+    border-radius: 4px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .badge-connected {
+    background: rgba(16, 185, 129, 0.12);
+    border: 1px solid rgba(16, 185, 129, 0.3);
+    color: var(--ok);
+  }
+  .badge-disconnected {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    color: var(--text-muted);
+  }
+  .badge-type {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: var(--line-subtle);
+    color: var(--text-dim);
+  }
+  .form-label {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-dim);
+    margin-bottom: 4px;
+    display: block;
+  }
+  .form-input {
+    width: 100%;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    color: var(--text);
+    padding: 8px 10px;
+    border-radius: 6px;
+    font-size: 13px;
+    outline: none;
+    box-sizing: border-box;
+  }
+  .form-input:focus {
+    border-color: var(--text-muted);
+  }
 </style>
 </head>
 <body>
@@ -809,6 +1006,10 @@ export const PLAYGROUND_HTML = /* html */ `<!doctype html>
     </div>
   </div>
   <div style="display:flex;align-items:center;gap:12px;">
+    <button id="open-integrations-btn" class="header-action-btn" title="Quản lý kết nối công cụ và cơ sở dữ liệu" type="button">
+      <span>🔌 Integrations</span>
+      <span id="integrations-connected-count" class="badge-count" style="display:none;">0</span>
+    </button>
     <div class="badge-db" title="Dữ liệu phiên và tin nhắn được lưu vĩnh viễn trong PostgreSQL">
       <span class="db-dot"></span> PostgreSQL Synced
     </div>
@@ -869,6 +1070,66 @@ export const PLAYGROUND_HTML = /* html */ `<!doctype html>
       </div>
     </footer>
   </main>
+</div>
+
+<!-- Integrations Backdrop & Modal -->
+<div id="integrations-modal-backdrop" class="modal-backdrop">
+  <div class="modal-card">
+    <div class="modal-header">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span style="font-size:20px;">🔌</span>
+        <div>
+          <div style="font-weight:600;font-size:15px;color:var(--text);">Tool Integrations & Credentials</div>
+          <div style="font-size:12px;color:var(--text-muted);">Kết nối SaaS (OAuth2) và Cơ sở dữ liệu doanh nghiệp (Form Credentials)</div>
+        </div>
+      </div>
+      <button id="close-integrations-btn" class="icon-btn" title="Đóng" type="button">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div id="integrations-summary-bar" class="integrations-summary">
+        <div style="display:flex;gap:16px;">
+          <span id="integrations-stat-total">Tổng: 0 công cụ</span>
+          <span id="integrations-stat-connected" style="color:var(--ok);font-weight:600;">Đã kết nối: 0</span>
+        </div>
+        <button id="refresh-integrations-btn" class="subtle-btn" type="button">🔄 Làm mới</button>
+      </div>
+      <div id="integrations-grid" class="integrations-grid">
+        <div style="color:var(--text-muted);font-size:13px;padding:24px;text-align:center;grid-column:1/-1;">Đang tải danh sách kết nối...</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Database Credential Configure Form Modal -->
+<div id="credential-form-backdrop" class="modal-backdrop" style="z-index:110;">
+  <div class="modal-card" style="max-width:480px;">
+    <div class="modal-header">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span style="font-size:16px;">🔑</span>
+        <div id="credential-form-title" style="font-weight:600;font-size:14px;color:var(--text);">Cấu hình kết nối</div>
+      </div>
+      <button id="close-credential-form-btn" class="icon-btn" title="Đóng" type="button">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+    <form id="credential-form" class="modal-body" style="display:flex;flex-direction:column;gap:14px;">
+      <input type="hidden" id="credential-provider-input" value="">
+      <div id="credential-fields-container" style="display:flex;flex-direction:column;gap:12px;"></div>
+      <div id="credential-form-msg" style="font-size:12px;display:none;"></div>
+      <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:8px;">
+        <button id="cancel-credential-btn" type="button" class="subtle-btn">Hủy</button>
+        <button id="save-credential-btn" type="submit" class="primary-btn">Lưu & Kết Nối</button>
+      </div>
+    </form>
+  </div>
 </div>
 
 <script>
@@ -2260,6 +2521,251 @@ export const PLAYGROUND_HTML = /* html */ `<!doctype html>
   if (newChatBtn) {
     newChatBtn.onclick = startNewChat;
   }
+
+  // ==================== Integrations UI Management ====================
+  var openIntegrationsBtn = document.getElementById('open-integrations-btn');
+  var closeIntegrationsBtn = document.getElementById('close-integrations-btn');
+  var integrationsModal = document.getElementById('integrations-modal-backdrop');
+  var refreshIntegrationsBtn = document.getElementById('refresh-integrations-btn');
+  var integrationsGrid = document.getElementById('integrations-grid');
+  var integrationsCountBadge = document.getElementById('integrations-connected-count');
+  var statTotalEl = document.getElementById('integrations-stat-total');
+  var statConnectedEl = document.getElementById('integrations-stat-connected');
+
+  var credentialModal = document.getElementById('credential-form-backdrop');
+  var closeCredentialBtn = document.getElementById('close-credential-form-btn');
+  var cancelCredentialBtn = document.getElementById('cancel-credential-btn');
+  var credentialForm = document.getElementById('credential-form');
+  var credentialFieldsContainer = document.getElementById('credential-fields-container');
+  var credentialProviderInput = document.getElementById('credential-provider-input');
+  var credentialFormTitle = document.getElementById('credential-form-title');
+  var credentialFormMsg = document.getElementById('credential-form-msg');
+
+  function openIntegrations() {
+    if (integrationsModal) integrationsModal.classList.add('open');
+    loadIntegrationsStatus();
+  }
+
+  function closeIntegrations() {
+    if (integrationsModal) integrationsModal.classList.remove('open');
+  }
+
+  function closeCredentialForm() {
+    if (credentialModal) credentialModal.classList.remove('open');
+  }
+
+  if (openIntegrationsBtn) openIntegrationsBtn.onclick = openIntegrations;
+  if (closeIntegrationsBtn) closeIntegrationsBtn.onclick = closeIntegrations;
+  if (refreshIntegrationsBtn) refreshIntegrationsBtn.onclick = loadIntegrationsStatus;
+
+  if (closeCredentialBtn) closeCredentialBtn.onclick = closeCredentialForm;
+  if (cancelCredentialBtn) cancelCredentialBtn.onclick = closeCredentialForm;
+
+  if (integrationsModal) {
+    integrationsModal.onclick = function (e) {
+      if (e.target === integrationsModal) closeIntegrations();
+    };
+  }
+  if (credentialModal) {
+    credentialModal.onclick = function (e) {
+      if (e.target === credentialModal) closeCredentialForm();
+    };
+  }
+
+  window.addEventListener('message', function (e) {
+    if (e.data && (e.data === 'oauth_success' || e.data.type === 'oauth_success')) {
+      loadIntegrationsStatus();
+    }
+  });
+
+  function loadIntegrationsStatus() {
+    if (!integrationsGrid) return;
+    fetch('/api/integrations/status')
+      .then(function (res) { return res.json(); })
+      .then(function (items) {
+        if (!Array.isArray(items)) {
+          integrationsGrid.innerHTML = '<div style="color:var(--err);padding:16px;text-align:center;grid-column:1/-1;">Không tải được dữ liệu tích hợp</div>';
+          return;
+        }
+
+        var total = items.length;
+        var connected = items.filter(function (i) { return i.isConnected; }).length;
+
+        if (statTotalEl) statTotalEl.textContent = 'Tổng: ' + total + ' công cụ';
+        if (statConnectedEl) statConnectedEl.textContent = 'Đã kết nối: ' + connected;
+
+        if (integrationsCountBadge) {
+          integrationsCountBadge.textContent = connected;
+          integrationsCountBadge.style.display = connected > 0 ? 'inline-block' : 'none';
+        }
+
+        if (items.length === 0) {
+          integrationsGrid.innerHTML = '<div style="color:var(--text-muted);padding:16px;text-align:center;grid-column:1/-1;">Chưa có công cụ nào</div>';
+          return;
+        }
+
+        integrationsGrid.innerHTML = items.map(function (item) {
+          var typeLabel = item.type === 'oauth2' ? 'OAuth2' : item.type === 'form' ? 'Database/Form' : 'Built-in Native';
+          var badgeHtml = item.isConnected
+            ? '<span class="integration-badge badge-connected"><span class="db-dot"></span> Đã kết nối</span>'
+            : '<span class="integration-badge badge-disconnected">⚪ Chưa kết nối</span>';
+
+          var actionHtml = '';
+          if (item.type === 'native') {
+            actionHtml = '<button class="subtle-btn" disabled style="opacity:0.6;cursor:default;">Tích hợp sẵn</button>';
+          } else if (item.isConnected) {
+            actionHtml = '<button class="danger-btn" data-integration-action="disconnect" data-provider="' + escapeHtml(item.providerId) + '">Ngắt kết nối</button>';
+          } else if (item.type === 'oauth2') {
+            actionHtml = '<button class="primary-btn" data-integration-action="oauth" data-provider="' + escapeHtml(item.providerId) + '">Kết nối OAuth</button>';
+          } else {
+            actionHtml = '<button class="primary-btn" data-integration-action="configure" data-provider="' + escapeHtml(item.providerId) + '">Cấu hình DB</button>';
+          }
+
+          return '<div class="integration-card">' +
+            '<div class="integration-card-header">' +
+              '<div>' +
+                '<div style="font-weight:600;font-size:14px;color:var(--text);margin-bottom:2px;">' + escapeHtml(item.name || item.providerId) + '</div>' +
+                '<span class="badge-type">' + typeLabel + '</span>' +
+              '</div>' +
+              badgeHtml +
+            '</div>' +
+            '<div style="font-size:12px;color:var(--text-muted);line-height:1.4;">' + escapeHtml(item.description) + '</div>' +
+            '<div style="display:flex;justify-content:flex-end;margin-top:6px;">' + actionHtml + '</div>' +
+          '</div>';
+        }).join('');
+      })
+      .catch(function (err) {
+        console.warn('loadIntegrationsStatus error:', err);
+        integrationsGrid.innerHTML = '<div style="color:var(--err);padding:16px;text-align:center;grid-column:1/-1;">Lỗi kết nối tới Integrations API</div>';
+      });
+  }
+
+  window.__playgroundConnectOAuth = function (provider) {
+    fetch('/api/integrations/initiate?provider=' + encodeURIComponent(provider))
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (!data || !data.authUrl) {
+          alert('Không lấy được URL ủy quyền OAuth từ mcp_auth');
+          return;
+        }
+        var popup = window.open(data.authUrl, 'oauth_connect_' + provider, 'width=600,height=700,status=no,toolbar=no');
+        var timer = setInterval(function () {
+          if (!popup || popup.closed) {
+            clearInterval(timer);
+            loadIntegrationsStatus();
+          }
+        }, 1000);
+      })
+      .catch(function (e) {
+        alert('Lỗi khởi tạo kết nối OAuth: ' + e.message);
+      });
+  };
+
+  window.__playgroundConfigureForm = function (provider) {
+    fetch('/api/integrations/initiate?provider=' + encodeURIComponent(provider))
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (!data || !data.fields) return;
+        if (credentialProviderInput) credentialProviderInput.value = provider;
+        if (credentialFormTitle) credentialFormTitle.textContent = 'Cấu hình kết nối ' + provider.toUpperCase();
+        if (credentialFormMsg) {
+          credentialFormMsg.style.display = 'none';
+          credentialFormMsg.textContent = '';
+        }
+
+        if (credentialFieldsContainer) {
+          credentialFieldsContainer.innerHTML = data.fields.map(function (f) {
+            return '<div>' +
+              '<label class="form-label">' + f.label + (f.required ? ' *' : '') + '</label>' +
+              '<input class="form-input" name="' + f.name + '" type="' + (f.type || 'text') + '" placeholder="' + (f.placeholder || '') + '" ' + (f.required ? 'required' : '') + ' />' +
+            '</div>';
+          }).join('');
+        }
+
+        if (credentialModal) credentialModal.classList.add('open');
+      })
+      .catch(function (e) {
+        alert('Lỗi lấy thông tin form: ' + e.message);
+      });
+  };
+
+  window.__playgroundDisconnect = function (provider) {
+    if (!confirm('Bạn có chắc muốn ngắt kết nối với "' + provider + '"?')) return;
+    fetch('/api/integrations/' + encodeURIComponent(provider), { method: 'DELETE' })
+      .then(function (r) { return r.json(); })
+      .then(function () {
+        loadIntegrationsStatus();
+      })
+      .catch(function (e) {
+        alert('Lỗi ngắt kết nối: ' + e.message);
+      });
+  };
+
+  var integrationActionHandlers = {
+    disconnect: window.__playgroundDisconnect,
+    oauth: window.__playgroundConnectOAuth,
+    configure: window.__playgroundConfigureForm,
+  };
+
+  if (integrationsGrid) {
+    integrationsGrid.addEventListener('click', function (e) {
+      var btn = e.target.closest('button[data-integration-action]');
+      if (!btn || !integrationsGrid.contains(btn)) return;
+      var handler = integrationActionHandlers[btn.dataset.integrationAction];
+      if (handler) handler(btn.dataset.provider);
+    });
+  }
+
+  if (credentialForm) {
+    credentialForm.onsubmit = function (e) {
+      e.preventDefault();
+      var provider = credentialProviderInput ? credentialProviderInput.value : '';
+      if (!provider) return;
+
+      var formData = new FormData(credentialForm);
+      var credentials = {};
+      formData.forEach(function (value, key) {
+        if (key && key !== 'provider') {
+          credentials[key] = value;
+        }
+      });
+
+      var saveBtn = document.getElementById('save-credential-btn');
+      if (saveBtn) {
+        saveBtn.disabled = true;
+        saveBtn.textContent = 'Đang lưu...';
+      }
+
+      fetch('/api/integrations/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider: provider, credentials: credentials }),
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (res) {
+          if (res.error) {
+            throw new Error(res.message || 'Lưu thất bại');
+          }
+          closeCredentialForm();
+          loadIntegrationsStatus();
+        })
+        .catch(function (err) {
+          if (credentialFormMsg) {
+            credentialFormMsg.style.display = 'block';
+            credentialFormMsg.style.color = 'var(--err)';
+            credentialFormMsg.textContent = 'Lỗi: ' + (err.message || 'Không thể lưu credentials');
+          }
+        })
+        .finally(function () {
+          if (saveBtn) {
+            saveBtn.disabled = false;
+            saveBtn.textContent = 'Lưu & Kết Nối';
+          }
+        });
+    };
+  }
+
+  loadIntegrationsStatus();
 
   loadConversations();
   if (sessionId) {

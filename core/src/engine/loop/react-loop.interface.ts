@@ -2,10 +2,10 @@ import { Logger } from '@nestjs/common';
 import { IStreamSink, IToolProvider } from '../../contracts';
 import { RunReactLoopRequestDto } from '../../contracts/dtos/react-loop.dto';
 import { McpToolDto } from '../../contracts/dtos/mcp.dto';
-import { LlmChatSession, LlmStrategy } from '../strategy/llm-strategy.interface';
-import { CircuitBreakerService } from '../../common/circuit-breaker.service';
+import { LlmChatSession, LlmStrategy } from '../../contracts/engine/llm-strategy.interface';
+import { CircuitBreakerService } from '../../infrastructure/resilience/circuit-breaker.service';
 import { MemoryManagerService } from '../../memory/memory-manager.service';
-import { ToolRepeatGuard } from './tool-repeat-guard';
+import { ToolRepeatGuard } from './guards/tool-repeat-guard';
 import {
   ProviderPreflightGuard,
   BusinessPolicyEngine,

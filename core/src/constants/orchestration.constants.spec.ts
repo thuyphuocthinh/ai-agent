@@ -3,7 +3,7 @@ import {
   SUPERVISOR_PLAN_SCHEMA,
   SUPERVISOR_PLAN_SCHEMA_NO_ANSWER,
 } from './orchestration.constants';
-import { toOpenAiStrictSchema } from '../engine/strategy/openai-strict-schema.util';
+import { toOpenAiStrictSchema } from '../engine/strategy/openai/openai-strict-schema.util';
 
 describe('Supervisor persona (AC-4)', () => {
   it.each([

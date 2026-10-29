@@ -11,9 +11,9 @@ import {
   PROVIDER_DESCRIPTIONS,
   ESupervisorVerdict,
 } from '@agent/core/constants';
-import { McpAuthClientService } from '../../infrastructure/tools/mcp-auth-client.service';
-import { AGENT_REGISTRY } from './agents.registry';
-import { DynamicProviderDbService } from '../orchestrator/dynamic-provider-db.service';
+import { McpAuthClientService } from '../../infrastructure/tools/mcp/mcp-auth-client.service';
+import { AGENT_REGISTRY } from '../../infrastructure/tools/dynamic/agents.registry';
+import { DynamicProviderService } from '../../infrastructure/tools/dynamic/dynamic-provider.service';
 import {
   AvailableAgentDto,
   DelegationDto,
@@ -24,10 +24,10 @@ import {
 import { ChatHistoryTurnDto } from '../../contracts/dtos/message-client.dto';
 import { ToolCallTraceDto } from '../../contracts/dtos/react-loop.dto';
 import { LlmStrategyFactory } from '../strategy/llm-strategy.factory';
-import { checkQuantity, QuantityCheckResult } from '../loop/quantity-check.util';
-import { describeExternalServiceError } from '../loop/external-service-error.util';
-import { withLlmRetry } from '../loop/with-llm-retry.util';
-import { CircuitBreakerService } from '../../common/circuit-breaker.service';
+import { checkQuantity, QuantityCheckResult } from '../loop/guards/quantity-check.util';
+import { describeExternalServiceError } from '../loop/utils/external-service-error.util';
+import { withLlmRetry } from '../loop/utils/with-llm-retry.util';
+import { CircuitBreakerService } from '../../infrastructure/resilience/circuit-breaker.service';
 import {
   PolicyCorpusService,
   SemanticPolicyEvaluatorService,
@@ -36,14 +36,14 @@ import {
 import {
   capRoundResults,
   capToolResultSize,
-} from '../../common/token-budget.util';
+} from '../../common/text/token-budget.util';
 import { hasPendingActionStep } from '../../common/pending-action-step.util';
-import { MetricsRegistryService } from '../../common/metrics-registry.service';
+import { MetricsRegistryService } from '../../infrastructure/resilience/metrics-registry.service';
 import { MemoryManagerService } from '../../memory/memory-manager.service';
 import { SkillRetrievalService } from '../../memory/skill-retrieval.service';
 import { AgentRankingService } from './agent-ranking.service';
 import { SupervisorPromptBuilder } from './supervisor-prompt.builder';
-import { detectFrustration } from '../loop/detect-frustration.util';
+import { detectFrustration } from '../loop/utils/detect-frustration.util';
 import { AgentRankingCache } from './supervisor.interface';
 
 // Ghi chú thiết kế đầy đủ (WHY): docs/orchestration/code-notes/supervisor.service.md
@@ -55,7 +55,7 @@ export class SupervisorService {
     private readonly mcpAuthClient: McpAuthClientService,
     private readonly llmFactory: LlmStrategyFactory,
     private readonly circuitBreaker: CircuitBreakerService,
-    private readonly dynamicProviderDb: DynamicProviderDbService,
+    private readonly dynamicProviderDb: DynamicProviderService,
     private readonly metrics: MetricsRegistryService,
     private readonly memoryManager: MemoryManagerService,
     private readonly skillRetrieval: SkillRetrievalService,

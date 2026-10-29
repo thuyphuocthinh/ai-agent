@@ -5,11 +5,11 @@ import {
   ORCHESTRATION_ERROR,
   type LlmStrategyId,
 } from '@agent/core/constants';
-import { GeminiStrategy } from './gemini.strategy';
-import { OpenAiStrategy } from './openai.strategy';
-import { AnthropicStrategy } from './anthropic.strategy';
-import { MockStrategy } from './mock.strategy';
-import { LlmStrategy } from './llm-strategy.interface';
+import { GeminiStrategy } from './gemini/gemini.strategy';
+import { OpenAiStrategy } from './openai/openai.strategy';
+import { AnthropicStrategy } from './anthropic/anthropic.strategy';
+import { MockStrategy } from './mock/mock.strategy';
+import { LlmStrategy } from '../../contracts/engine/llm-strategy.interface';
 
 /**
  * Strategy Pattern — 1 điểm truy cập duy nhất để lấy đúng LlmStrategy +

@@ -9,16 +9,16 @@ import {
 } from '@agent/core/constants';
 import {
   ActiveTurn,
-  AgentStreamService,
   IChatSession,
   ETurnLogEntryKind,
   ITurnEventLog,
-  MessageClientService,
   MessageEvent,
   TURN_EVENT_LOG,
   VercelUiStreamAdapter,
 } from '../../contracts';
-import { messageEventToChunk } from '../../contracts/message-event-chunk';
+import { AgentStreamService } from '../../engine/streaming/agent-stream.service';
+import { MessageClientService } from '../../engine/streaming/message-client.service';
+import { messageEventToChunk } from '../../contracts/streaming/message-event-chunk';
 import { AgentCancellationService } from '../../engine/cancellation/agent-cancellation.service';
 import { RedisPubSubStreamService } from '../../infrastructure/redis/redis-pubsub-stream.service';
 

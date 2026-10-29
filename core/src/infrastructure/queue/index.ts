@@ -1,5 +1,5 @@
 export * from './base.processor';
-export * from './job-data.interface';
+export * from '../../contracts/queue/job-data.interface';
 export * from './queue.module';
 export * from './queue.service';
 export * from './queue-dispatcher.interface';

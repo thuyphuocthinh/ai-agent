@@ -2,19 +2,19 @@ import { Injectable, Logger } from '@nestjs/common';
 import { traceable } from 'langsmith/traceable';
 import { buildTTL } from '@agent/core/common';
 import { ORCHESTRATION_CONSTANTS } from '@agent/core/constants';
-import { SemanticToolIndex } from '../common/agentic-openapi-parser';
+import { SemanticToolIndex } from 'agentic-openapi-parser';
 import {
   OPENAI_EMBEDDING_MODEL,
   OpenAiEmbeddingProvider,
   CHARS_PER_TOKEN_ESTIMATE,
-} from './embedding/openai-embedding.provider';
+} from '../infrastructure/embedding/openai-embedding.provider';
 import { PrismaService } from '../infrastructure/database/prisma.service';
 import { ConversationMemoryRecord as ConversationMemoryEntity } from './memory.interface';
 import { ToolCallTraceDto } from '../contracts/dtos/react-loop.dto';
 import { isLikelyCreateToolCall } from './create-tool-heuristic.util';
 import { looksLikeInjection } from './memory-injection-heuristic.util';
-import { attachEmbeddingCostMetadata } from '../engine/loop/llm-cost.util';
-import { cosineSimilarity } from './skill-cosine-similarity.util';
+import { attachEmbeddingCostMetadata } from '../common/text/llm-cost.util';
+import { cosineSimilarity } from '../common/skill-cosine-similarity.util';
 
 const FACT_SUPERSEDE_SIMILARITY_THRESHOLD = 0.85;
 

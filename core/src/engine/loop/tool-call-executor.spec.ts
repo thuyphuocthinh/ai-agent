@@ -4,10 +4,10 @@ import {
   EStepExecutionStatus,
 } from '@agent/core/constants';
 import { ToolCallExecutor } from './tool-call-executor';
-import { ToolRepeatGuard } from './tool-repeat-guard';
-import { InsertAccumulator } from './insert-accumulator';
-import { ToolRiskGate } from './tool-risk-gate';
-import { ApprovalRequiredError } from './approval-required.error';
+import { ToolRepeatGuard } from './guards/tool-repeat-guard';
+import { InsertAccumulator } from './guards/insert-accumulator';
+import { ToolRiskGate } from './guards/tool-risk-gate';
+import { ApprovalRequiredError } from './errors/approval-required.error';
 import { RunReactLoopRequestDto } from '../../contracts/dtos/react-loop.dto';
 import { McpToolDto } from '../../contracts/dtos/mcp.dto';
 

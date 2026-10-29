@@ -2,9 +2,9 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ORCHESTRATION_CONSTANTS } from '@agent/core/constants';
 import { DelegationDto } from '../../contracts/dtos/supervisor.dto';
 import { CheckpointResponseDto } from '../../contracts/dtos/checkpoint.dto';
-import { checkQuantity } from '../loop/quantity-check.util';
+import { checkQuantity } from '../loop/guards/quantity-check.util';
 import { LlmStrategyFactory } from '../strategy/llm-strategy.factory';
-import { CircuitBreakerService } from '../../common/circuit-breaker.service';
+import { CircuitBreakerService } from '../../infrastructure/resilience/circuit-breaker.service';
 
 @Injectable()
 export class ApprovalContinuationPlannerService {

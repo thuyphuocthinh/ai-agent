@@ -3,7 +3,7 @@ import {
   resolveDataCharBudget,
   resolveHistoryCharBudget,
   resolveMemoryCharBudget,
-} from '../common/token-budget.util';
+} from '../common/text/token-budget.util';
 import { ConversationMemoryRecord as ConversationMemoryEntity } from './memory.interface';
 import { ConversationMemoryService } from './conversation-memory.service';
 import { ContextBudget } from './memory.interface';

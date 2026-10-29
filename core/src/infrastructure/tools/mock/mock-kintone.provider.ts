@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { McpResourceDto, McpToolDto } from '../../../contracts/dtos/mcp.dto';
-import { ClarificationRequiredError } from '../../../contracts/clarification.types';
+import { ClarificationRequiredError } from '../../../contracts/engine/clarification-required.error';
 import {
   MockProvider,
   errorResult,

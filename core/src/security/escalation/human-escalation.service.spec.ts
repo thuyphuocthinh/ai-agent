@@ -1,6 +1,6 @@
 import { HumanEscalationService } from './human-escalation.service';
 import { InMemoryEscalationStore } from '../adapters/in-memory-escalation.store';
-import { EConversationState } from '../../contracts/chat-session.interface';
+import { EConversationState } from '../../contracts/session/chat-session.interface';
 import { EEscalationStatus } from '../constants/security.constants';
 
 describe('HumanEscalationService', () => {

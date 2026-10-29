@@ -7,7 +7,7 @@ import {
   EStepExecutionStatus,
 } from '@agent/core/constants';
 import { extractTextFromMcpResult } from '@agent/core/common';
-import { MessageClientService } from '../../contracts/message-client.service';
+import { MessageClientService } from '../streaming/message-client.service';
 import { IToolProvider, TOOL_PROVIDER } from '../../contracts';
 import { CheckpointService } from './checkpoint.service';
 import {
@@ -29,13 +29,13 @@ import {
   extractWriteQueryPreviewTarget,
   parseSingleCountResult,
   WriteQueryPreviewTarget,
-} from '../loop/write-query-preview.util';
+} from '../../common/action-summary/write-query-preview.util';
 import {
   AnswerResult,
   ApprovalRequiredDelegateResult,
   buildAnswer,
-} from '../orchestrator/orchestration-answer.types';
-import { capToolResultSize } from '../../common/token-budget.util';
+} from '../../contracts/engine/orchestration-answer.types';
+import { capToolResultSize } from '../../common/text/token-budget.util';
 import { formatActionSummary } from '../../common/action-summary';
 
 @Injectable()

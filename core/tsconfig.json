@@ -41,12 +41,6 @@
       "@agent/core/loop/*": [
         "src/engine/loop/*"
       ],
-      "@agent/tools": [
-        "../tools/src/index.ts"
-      ],
-      "@agent/tools/*": [
-        "../tools/src/*"
-      ],
       "agentic-openapi-parser/*": [
         "node_modules/agentic-openapi-parser/dist/*/index.js"
       ]

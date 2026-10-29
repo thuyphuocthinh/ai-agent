@@ -5,7 +5,7 @@ import {
   resolveDataCharBudget,
   resolveHistoryCharBudget,
   resolveMemoryCharBudget,
-} from '../common/token-budget.util';
+} from '../common/text/token-budget.util';
 
 describe('MemoryManagerService', () => {
   let service: MemoryManagerService;

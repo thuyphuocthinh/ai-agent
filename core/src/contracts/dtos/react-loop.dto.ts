@@ -1,7 +1,7 @@
 import { ChatHistoryTurnDto } from './message-client.dto';
 import { EStepExecutionStatus } from '@agent/core/constants';
 import { PersonaDto } from './supervisor.dto';
-import { IClarificationQuestion } from '../clarification.types';
+import { IClarificationQuestion } from '../engine/clarification.types';
 
 export class RunReactLoopRequestDto {
   prompt: string;

@@ -2,10 +2,10 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { IProcessAiTriggerJobData } from '@agent/core/infrastructure/queue';
 import { ECheckpointKind, ECheckpointRiskLevel } from '@agent/core/constants';
 import { CheckpointPauseService } from './checkpoint-pause.service';
-import { MessageClientService } from '../../contracts/message-client.service';
+import { MessageClientService } from '../streaming/message-client.service';
 import { CheckpointService } from './checkpoint.service';
 import { TOOL_PROVIDER } from '../../contracts';
-import { ApprovalRequiredDelegateResult } from '../orchestrator/orchestration-answer.types';
+import { ApprovalRequiredDelegateResult } from '../../contracts/engine/orchestration-answer.types';
 
 // checkpoint-pause.service.ts import @agent/core/common ở module scope (extractTextFromMcpResult)
 // — mock thẳng barrel để tránh kéo theo "nanoid" (ESM-only) mà jest không transform được.

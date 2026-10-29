@@ -1,6 +1,6 @@
 import { PolicyCorpusService } from './policy-corpus.service';
 import { EPolicySeverity } from '../constants/security.constants';
-import { OpenAiEmbeddingProvider } from '../../memory/embedding/openai-embedding.provider';
+import { OpenAiEmbeddingProvider } from '../../infrastructure/embedding/openai-embedding.provider';
 
 describe('PolicyCorpusService', () => {
   let service: PolicyCorpusService;

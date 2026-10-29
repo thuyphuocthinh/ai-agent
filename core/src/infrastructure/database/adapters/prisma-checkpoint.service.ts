@@ -21,7 +21,7 @@ import {
 import { DelegationDto, SupervisorRoundDto } from '../../../contracts/dtos/supervisor.dto';
 import { ChatHistoryTurnDto } from '../../../contracts/dtos/message-client.dto';
 import { ToolCallTraceDto } from '../../../contracts/dtos/react-loop.dto';
-import { EExecutionEngineMode } from '../../../contracts/execution-engine.interface';
+import { EExecutionEngineMode } from '../../../contracts/engine/execution-engine.interface';
 import { PrismaService } from '../prisma.service';
 import { sanitizePrismaError } from '../../../common/errors';
 import { CheckpointKind, CheckpointStatus, Prisma } from '@prisma/client';

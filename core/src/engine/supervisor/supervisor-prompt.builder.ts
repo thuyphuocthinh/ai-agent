@@ -4,8 +4,8 @@ import { ChatHistoryTurnDto } from '../../contracts/dtos/message-client.dto';
 import { ConversationMemoryRecord as ConversationMemoryEntity } from '../../memory/memory.interface';
 import { SkillRecord } from '../../memory/memory.interface';
 import { MemoryManagerService } from '../../memory/memory-manager.service';
-import { capRoundResults } from '../../common/token-budget.util';
-import { detectFrustration } from '../loop/detect-frustration.util';
+import { capRoundResults } from '../../common/text/token-budget.util';
+import { detectFrustration } from '../loop/utils/detect-frustration.util';
 
 // Ghép conversation_memory + skill gợi ý + lịch sử hội thoại + prompt gốc + các round đã chạy
 // thành 1 prompt duy nhất, đúng thứ tự.

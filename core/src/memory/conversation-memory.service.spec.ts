@@ -1,7 +1,7 @@
 import { Test } from '@nestjs/testing';
 import { ConversationMemoryService } from './conversation-memory.service';
 import { PrismaService } from '../infrastructure/database/prisma.service';
-import { OpenAiEmbeddingProvider } from './embedding/openai-embedding.provider';
+import { OpenAiEmbeddingProvider } from '../infrastructure/embedding/openai-embedding.provider';
 
 describe('ConversationMemoryService', () => {
   let service: ConversationMemoryService;

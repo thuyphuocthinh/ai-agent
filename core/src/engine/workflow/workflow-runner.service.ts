@@ -4,14 +4,14 @@ import { RunReactLoopRequestDto } from '../../contracts/dtos/react-loop.dto';
 import { ReactLoopService } from '../loop/react-loop.service';
 import { AgentCancellationService } from '../cancellation/agent-cancellation.service';
 import { CheckpointPauseService } from '../hitl/checkpoint-pause.service';
-import { MetricsRegistryService } from '../../common/metrics-registry.service';
-import { TurnCancelledError } from '../loop/turn-cancelled.error';
-import { ApprovalRequiredError } from '../loop/approval-required.error';
+import { MetricsRegistryService } from '../../infrastructure/resilience/metrics-registry.service';
+import { TurnCancelledError } from '../loop/errors/turn-cancelled.error';
+import { ApprovalRequiredError } from '../loop/errors/approval-required.error';
 import {
   AnswerResult,
   ApprovalRequiredDelegateResult,
   buildAnswer,
-} from '../orchestrator/orchestration-answer.types';
+} from '../../contracts/engine/orchestration-answer.types';
 import { RunWorkflowOptions } from './workflow-runner.interface';
 
 @Injectable()

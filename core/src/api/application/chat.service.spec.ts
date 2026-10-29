@@ -21,8 +21,8 @@ import {
   TurnStream,
   VercelUiStreamAdapter,
 } from '../../contracts';
-import { AgentStreamService } from '../../contracts/agent-stream.service';
-import { MessageClientService } from '../../contracts/message-client.service';
+import { AgentStreamService } from '../../engine/streaming/agent-stream.service';
+import { MessageClientService } from '../../engine/streaming/message-client.service';
 import {
   ChatSessionNotFoundException,
   StreamReconnectInvalidException,

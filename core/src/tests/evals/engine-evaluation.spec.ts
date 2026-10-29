@@ -1,25 +1,25 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { SmartExecutionRouter } from '../../engine/orchestrator/smart-execution-router.service';
-import { ExecutionEngineRegistryService } from '../../engine/orchestrator/execution-engine-registry.service';
-import { PipelineChainingEngine } from '../../engine/orchestrator/pipeline-chaining.engine';
-import { ParallelFanoutEngine } from '../../engine/orchestrator/parallel-fanout.engine';
-import { SingleAgentEngine } from '../../engine/orchestrator/single-agent.engine';
+import { SmartExecutionRouter } from '../../engine/orchestrator/engines/smart-execution-router.service';
+import { ExecutionEngineRegistryService } from '../../engine/orchestrator/engines/execution-engine-registry.service';
+import { PipelineChainingEngine } from '../../engine/orchestrator/engines/pipeline-chaining.engine';
+import { ParallelFanoutEngine } from '../../engine/orchestrator/engines/parallel-fanout.engine';
+import { SingleAgentEngine } from '../../engine/orchestrator/engines/single-agent.engine';
 import {
   EExecutionEngineMode,
   EngineRoutingContext,
   IExecutionEngine,
-} from '../../contracts/execution-engine.interface';
+} from '../../contracts/engine/execution-engine.interface';
 import {
   EPipelineStepType,
   PipelineDefinition,
-} from '../../contracts/pipeline-chaining.interface';
-import { FanoutDefinition } from '../../contracts/parallel-fanout.interface';
-import { ApprovalRequiredError } from '../../engine/loop/approval-required.error';
+} from '../../contracts/engine/pipeline-chaining.interface';
+import { FanoutDefinition } from '../../contracts/engine/parallel-fanout.interface';
+import { ApprovalRequiredError } from '../../engine/loop/errors/approval-required.error';
 import { ReactLoopService } from '../../engine/loop/react-loop.service';
 import { AgentCancellationService } from '../../engine/cancellation/agent-cancellation.service';
 import { CheckpointPauseService } from '../../engine/hitl/checkpoint-pause.service';
-import { MetricsRegistryService } from '../../common/metrics-registry.service';
+import { MetricsRegistryService } from '../../infrastructure/resilience/metrics-registry.service';
 import { LlmStrategyFactory } from '../../engine/strategy/llm-strategy.factory';
 import { AvailableAgentDto } from '../../contracts/dtos/supervisor.dto';
 

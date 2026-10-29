@@ -2,8 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { EAgentStreamStepType } from '@agent/core/constants';
 import { CheckpointService } from './checkpoint.service';
-import { MessageClientService } from '../../contracts/message-client.service';
-import { AgentStreamService } from '../../contracts/agent-stream.service';
+import { MessageClientService } from '../streaming/message-client.service';
+import { AgentStreamService } from '../streaming/agent-stream.service';
 import { OrchestrationCheckpointStatus } from '../../contracts';
 import { CheckpointResponseDto } from '../../contracts/dtos/checkpoint.dto';
 

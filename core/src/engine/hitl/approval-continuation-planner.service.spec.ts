@@ -2,7 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ORCHESTRATION_CONSTANTS } from '@agent/core/constants';
 import { ApprovalContinuationPlannerService } from './approval-continuation-planner.service';
 import { LlmStrategyFactory } from '../strategy/llm-strategy.factory';
-import { CircuitBreakerService } from '../../common/circuit-breaker.service';
+import { CircuitBreakerService } from '../../infrastructure/resilience/circuit-breaker.service';
 
 describe('ApprovalContinuationPlannerService (ver3.md mục 3 — quantity-check after approval)', () => {
   let service: ApprovalContinuationPlannerService;

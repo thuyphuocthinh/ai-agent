@@ -3,7 +3,7 @@ import { ModuleRef } from '@nestjs/core';
 import { getQueueToken } from '@nestjs/bullmq';
 import { Queue, JobsOptions } from 'bullmq';
 import { EQueueName } from '../../constants/queue.constant';
-import { TJobData } from './job-data.interface';
+import { TJobData } from '../../contracts/queue/job-data.interface';
 
 @Injectable()
 export class QueueService {

@@ -4,7 +4,7 @@ import {
   NumberedPaginationQueryDto,
   NumberedPageMetaDto,
   PaginatedResult,
-} from '../../../api/presentation/dtos/pagination.dto';
+} from '../../../contracts/dtos/pagination.dto';
 
 export type SortOrder = 'asc' | 'desc';
 

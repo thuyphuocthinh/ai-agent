@@ -1,22 +1,22 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { z } from 'zod';
-import { SingleAgentEngine } from '../../engine/orchestrator/single-agent.engine';
-import { PipelineChainingEngine } from '../../engine/orchestrator/pipeline-chaining.engine';
+import { SingleAgentEngine } from '../../engine/orchestrator/engines/single-agent.engine';
+import { PipelineChainingEngine } from '../../engine/orchestrator/engines/pipeline-chaining.engine';
 import { ReactLoopService } from '../../engine/loop/react-loop.service';
 import { AgentCancellationService } from '../../engine/cancellation/agent-cancellation.service';
 import { CheckpointPauseService } from '../../engine/hitl/checkpoint-pause.service';
-import { MetricsRegistryService } from '../../common/metrics-registry.service';
-import { ToolOutputCompressor } from '../../common/tool-output-compressor';
-import { ClarificationRequiredError } from '../../contracts/clarification.types';
+import { MetricsRegistryService } from '../../infrastructure/resilience/metrics-registry.service';
+import { ToolOutputCompressor } from '../../common/text/tool-output-compressor';
+import { ClarificationRequiredError } from '../../contracts/engine/clarification-required.error';
 import {
   EngineExecutionContext,
-} from '../../contracts/execution-engine.interface';
+} from '../../contracts/engine/execution-engine.interface';
 import {
   PipelineDefinition,
   EPipelineStepFailurePolicy,
-} from '../../contracts/pipeline-chaining.interface';
-import { AnswerResult } from '../../engine/orchestrator/orchestration-answer.types';
+} from '../../contracts/engine/pipeline-chaining.interface';
+import { AnswerResult } from '../../contracts/engine/orchestration-answer.types';
 
 interface ChaosDatasetTestCase {
   id: string;

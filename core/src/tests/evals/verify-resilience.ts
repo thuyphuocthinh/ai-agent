@@ -1,19 +1,19 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { z } from 'zod';
-import { ToolOutputCompressor } from '../../common/tool-output-compressor';
-import { SingleAgentEngine } from '../../engine/orchestrator/single-agent.engine';
-import { PipelineChainingEngine } from '../../engine/orchestrator/pipeline-chaining.engine';
+import { ToolOutputCompressor } from '../../common/text/tool-output-compressor';
+import { SingleAgentEngine } from '../../engine/orchestrator/engines/single-agent.engine';
+import { PipelineChainingEngine } from '../../engine/orchestrator/engines/pipeline-chaining.engine';
 import {
   ECheckpointKind,
   EApprovalAction,
 } from '../../constants/orchestration.enum';
-import { AnswerResult } from '../../engine/orchestrator/orchestration-answer.types';
-import { ClarificationRequiredError } from '../../contracts/clarification.types';
+import { AnswerResult } from '../../contracts/engine/orchestration-answer.types';
+import { ClarificationRequiredError } from '../../contracts/engine/clarification-required.error';
 import { ReactLoopService } from '../../engine/loop/react-loop.service';
 import { AgentCancellationService } from '../../engine/cancellation/agent-cancellation.service';
 import { CheckpointPauseService } from '../../engine/hitl/checkpoint-pause.service';
-import { MetricsRegistryService } from '../../common/metrics-registry.service';
+import { MetricsRegistryService } from '../../infrastructure/resilience/metrics-registry.service';
 
 const BOLD = '\x1b[1m';
 const GREEN = '\x1b[32m';

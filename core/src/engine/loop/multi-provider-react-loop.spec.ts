@@ -2,7 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ReactLoopService } from './react-loop.service';
 import { LlmStrategyFactory } from '../strategy/llm-strategy.factory';
 import { TOOL_PROVIDER, STREAM_SINK } from '../../contracts';
-import { CircuitBreakerService } from '../../common/circuit-breaker.service';
+import { CircuitBreakerService } from '../../infrastructure/resilience/circuit-breaker.service';
 import { AgentCancellationService } from '../cancellation/agent-cancellation.service';
 import { MemoryManagerService } from '../../memory/memory-manager.service';
 import { RunReactLoopRequestDto } from '../../contracts/dtos/react-loop.dto';

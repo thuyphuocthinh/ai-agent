@@ -1,6 +1,5 @@
 packages:
   - 'core'
-  - 'tools'
   - 'cli'
 
 allowBuilds:

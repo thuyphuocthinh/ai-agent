@@ -1,10 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { SupervisorService } from './supervisor.service';
-import { McpAuthClientService } from '../../infrastructure/tools/mcp-auth-client.service';
-import { DynamicProviderDbService } from '../orchestrator/dynamic-provider-db.service';
+import { McpAuthClientService } from '../../infrastructure/tools/mcp/mcp-auth-client.service';
+import { DynamicProviderService } from '../../infrastructure/tools/dynamic/dynamic-provider.service';
 import { LlmStrategyFactory } from '../strategy/llm-strategy.factory';
-import { CircuitBreakerService } from '../../common/circuit-breaker.service';
-import { MetricsRegistryService } from '../../common/metrics-registry.service';
+import { CircuitBreakerService } from '../../infrastructure/resilience/circuit-breaker.service';
+import { MetricsRegistryService } from '../../infrastructure/resilience/metrics-registry.service';
 import { MemoryManagerService } from '../../memory/memory-manager.service';
 import { SkillRetrievalService } from '../../memory/skill-retrieval.service';
 import { AgentRankingService } from './agent-ranking.service';
@@ -88,7 +88,7 @@ describe('SupervisorService — Policy Guard & Intent-Level Protection', () => {
         { provide: McpAuthClientService, useValue: mockMcpAuthClient },
         { provide: LlmStrategyFactory, useValue: mockLlmFactory },
         { provide: CircuitBreakerService, useValue: mockCircuitBreaker },
-        { provide: DynamicProviderDbService, useValue: mockDynamicProviderDb },
+        { provide: DynamicProviderService, useValue: mockDynamicProviderDb },
         { provide: MetricsRegistryService, useValue: mockMetrics },
         { provide: MemoryManagerService, useValue: mockMemoryManager },
         { provide: SkillRetrievalService, useValue: mockSkillRetrieval },

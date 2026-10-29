@@ -2,9 +2,9 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { IProcessApprovalJobData } from '@agent/core/infrastructure/queue';
 import { ECheckpointKind } from '@agent/core/constants';
 import { ApprovalExecutionService } from './approval-execution.service';
-import { MessageClientService } from '../../contracts/message-client.service';
+import { MessageClientService } from '../streaming/message-client.service';
 import { SupervisorService } from '../supervisor/supervisor.service';
-import { AgentStreamService } from '../../contracts/agent-stream.service';
+import { AgentStreamService } from '../streaming/agent-stream.service';
 import { CheckpointService } from './checkpoint.service';
 import {
   TOOL_PROVIDER,
@@ -12,15 +12,15 @@ import {
   ETurnLogStatus,
   TURN_EVENT_LOG,
 } from '../../contracts';
-import { TurnEventRecorderService } from '../orchestrator/turn-event-recorder.service';
+import { TurnEventRecorderService } from '../orchestrator/turn/turn-event-recorder.service';
 import { AgentCancellationService } from '../cancellation/agent-cancellation.service';
-import { TurnCancelledError } from '../loop/turn-cancelled.error';
-import { TurnResolverService } from '../orchestrator/turn-resolver.service';
+import { TurnCancelledError } from '../loop/errors/turn-cancelled.error';
+import { TurnResolverService } from '../orchestrator/turn/turn-resolver.service';
 import { MemoryManagerService } from '../../memory/memory-manager.service';
 import { ApprovalContinuationPlannerService } from './approval-continuation-planner.service';
 import { ApprovalSkillRecorderService } from './approval-skill-recorder.service';
-import { resolveDataCharBudget } from '../../common/token-budget.util';
-import { DynamicSupervisorEngine } from '../orchestrator/dynamic-supervisor.engine';
+import { resolveDataCharBudget } from '../../common/text/token-budget.util';
+import { DynamicSupervisorEngine } from '../orchestrator/engines/dynamic-supervisor.engine';
 
 // approval-execution.service.ts import @agent/core/common ở module scope (extractTextFromMcpResult)
 // — mock thẳng barrel để tránh kéo theo "nanoid" (ESM-only) mà jest không transform được.

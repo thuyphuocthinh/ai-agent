@@ -1,5 +1,5 @@
 import { AgentWorkflowConfig, ChatHistoryTurnDto } from '../../contracts';
-import { IProcessAiTriggerJobData } from '../../infrastructure/queue/job-data.interface';
+import { IProcessAiTriggerJobData } from '../../contracts/queue/job-data.interface';
 
 export interface RunWorkflowOptions {
   workflow: AgentWorkflowConfig;

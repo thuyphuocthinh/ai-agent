@@ -16,15 +16,15 @@ import {
   IStreamSink,
   STREAM_SINK,
 } from '../../contracts';
-import { CircuitBreakerService } from '../../common/circuit-breaker.service';
+import { CircuitBreakerService } from '../../infrastructure/resilience/circuit-breaker.service';
 import { AgentCancellationService } from '../cancellation/agent-cancellation.service';
-import { runCancellable } from '../../common/cancellable-run.util';
-import { TurnCancelledError } from './turn-cancelled.error';
-import { capToolResultSize } from '../../common/token-budget.util';
+import { runCancellable } from '../cancellation/cancellable-run.util';
+import { TurnCancelledError } from './errors/turn-cancelled.error';
+import { capToolResultSize } from '../../common/text/token-budget.util';
 import { MemoryManagerService } from '../../memory/memory-manager.service';
 import { ReactLoopRun } from './react-loop-run';
-import { ToolRepeatGuard } from './tool-repeat-guard';
-import { formatPersonaPrompt } from './persona-prompt.util';
+import { ToolRepeatGuard } from './guards/tool-repeat-guard';
+import { formatPersonaPrompt } from './utils/persona-prompt.util';
 import { PersonaDto } from '../../contracts/dtos/supervisor.dto';
 import {
   ProviderPreflightGuard,

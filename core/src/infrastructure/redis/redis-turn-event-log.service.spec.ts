@@ -6,7 +6,7 @@ import {
   ETurnLogEntryKind,
   ETurnLogStatus,
   TurnLogEntry,
-} from '../../contracts/turn-event-log.interface';
+} from '../../contracts/streaming/turn-event-log.interface';
 import { RedisTurnEventLogService } from './redis-turn-event-log.service';
 
 // Cần Redis thật (Streams). Đặt SKIP_REDIS_TESTS=1 để bỏ qua khi không có Redis.

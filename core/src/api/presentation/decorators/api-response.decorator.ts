@@ -1,7 +1,7 @@
 import { applyDecorators, Type } from '@nestjs/common';
 import { ApiExtraModels, ApiResponse, getSchemaPath } from '@nestjs/swagger';
 import { ApiResponseDto } from '../dtos/api-response.dto';
-import { NumberedPageMetaDto, CursorPageMetaDto } from '../dtos/pagination.dto';
+import { NumberedPageMetaDto, CursorPageMetaDto } from '../../../contracts/dtos/pagination.dto';
 
 export const ApiDataResponse = (
   model: Type<unknown>,

@@ -1,7 +1,7 @@
 import { Module, Global, DynamicModule } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
-import { TURN_EVENT_LOG } from '../../contracts/turn-event-log.interface';
+import { TURN_EVENT_LOG } from '../../contracts/streaming/turn-event-log.interface';
 import { RedisTurnEventLogService } from './redis-turn-event-log.service';
 import { CachedService } from './cached.service';
 import { RateLimitService } from './rate-limit.service';

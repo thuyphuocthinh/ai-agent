@@ -37,13 +37,13 @@ import {
   TURN_EVENT_LOG,
   TurnLogMeta,
 } from '../../contracts';
-import { reduceTurnLog } from '../../contracts/turn-log-reducer';
+import { reduceTurnLog } from '../../contracts/streaming/turn-log-reducer';
 import { ChatHistoryTurnDto } from '../../contracts/dtos/message-client.dto';
 import {
   CursorPaginationQueryDto,
   CursorPageMetaDto,
   PaginatedResult,
-} from '../presentation/dtos/pagination.dto';
+} from '../../contracts/dtos/pagination.dto';
 import { TurnStreamFactory } from './turn-stream.factory';
 import { OrchestrationRpcExceptionFilter } from '../presentation/filters/orchestration-exception.filter';
 import { formatActionSummary } from '../../common/action-summary';
@@ -60,7 +60,7 @@ import {
   StreamReconnectInvalidException,
   ApprovalRequestNotFoundException,
 } from '../../common/errors';
-import { IChatSession } from '../../contracts/chat-session.interface';
+import { IChatSession } from '../../contracts/session/chat-session.interface';
 
 const HISTORY_LIMIT = 200;
 

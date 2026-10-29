@@ -12,23 +12,23 @@ import {
   RunReactLoopRequestDto,
   ToolCallTraceDto,
 } from '../../contracts/dtos/react-loop.dto';
-import { LlmToolCall, LlmToolResult } from '../strategy/llm-strategy.interface';
+import { LlmToolCall, LlmToolResult } from '../../contracts/engine/llm-strategy.interface';
 
-import { ApprovalRequiredError } from './approval-required.error';
+import { ApprovalRequiredError } from './errors/approval-required.error';
 import {
   ClarificationRequiredError,
   IClarificationCandidate,
 } from '../../contracts';
 import { CallToolResponseDto, McpToolDto } from '../../contracts/dtos/mcp.dto';
-import { abortableSleep } from '../../common/abortable-sleep.util';
-import { capToolResultSize } from '../../common/token-budget.util';
-import { classifyToolError, parseInsertValues } from './tool-execution.util';
-import { PiiScrubberUtil } from '../../security/pii/pii-scrubber.util';
+import { abortableSleep } from '../../common/async/abortable-sleep.util';
+import { capToolResultSize } from '../../common/text/token-budget.util';
+import { classifyToolError, parseInsertValues } from './utils/tool-execution.util';
+import { PiiScrubberUtil } from '../../common/text/pii/pii-scrubber.util';
 import { formatActionSummary } from '../../common/action-summary';
 import { MemoryManagerService } from '../../memory/memory-manager.service';
-import { ToolRepeatGuard } from './tool-repeat-guard';
-import { InsertAccumulator } from './insert-accumulator';
-import { ToolRiskGate } from './tool-risk-gate';
+import { ToolRepeatGuard } from './guards/tool-repeat-guard';
+import { InsertAccumulator } from './guards/insert-accumulator';
+import { ToolRiskGate } from './guards/tool-risk-gate';
 import {
   EPolicyStatus,
   EscalationRequiredError,

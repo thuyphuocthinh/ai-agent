@@ -3,7 +3,7 @@ import {
   EWriteQueryCountKind,
   EWriteQueryTargetKind,
   extractWriteQueryPreviewTarget,
-} from '../../../engine/loop/write-query-preview.util';
+} from '../write-query-preview.util';
 
 export class SqlSummaryAdapter implements ActionSummaryAdapter {
   readonly priority = 100;

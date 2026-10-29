@@ -4,7 +4,7 @@ import {
   CHAT_SESSION_MANAGER,
   IChatSessionManager,
   EConversationState,
-} from '../../contracts/chat-session.interface';
+} from '../../contracts/session/chat-session.interface';
 import {
   EEscalationStatus,
   ESCALATION_STORE,

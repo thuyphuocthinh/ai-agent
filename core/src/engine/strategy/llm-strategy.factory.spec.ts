@@ -2,10 +2,10 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { RpcException } from '@nestjs/microservices';
 import { ORCHESTRATION_ERROR } from '@agent/core/constants';
 import { LlmStrategyFactory } from './llm-strategy.factory';
-import { GeminiStrategy } from './gemini.strategy';
-import { OpenAiStrategy } from './openai.strategy';
-import { AnthropicStrategy } from './anthropic.strategy';
-import { MockStrategy } from './mock.strategy';
+import { GeminiStrategy } from './gemini/gemini.strategy';
+import { OpenAiStrategy } from './openai/openai.strategy';
+import { AnthropicStrategy } from './anthropic/anthropic.strategy';
+import { MockStrategy } from './mock/mock.strategy';
 
 describe('LlmStrategyFactory', () => {
   let factory: LlmStrategyFactory;

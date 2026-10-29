@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import type { AuditLogEntry } from '../security.interface';
-import { PiiScrubberUtil } from '../pii/pii-scrubber.util';
+import { PiiScrubberUtil } from '../../common/text/pii/pii-scrubber.util';
 import type { StrictJsonValue } from '../../common/types';
 import { AUDIT_STORE } from '../constants/security.constants';
 import type { IAuditStore } from '../contracts/audit-store.interface';

@@ -10,6 +10,7 @@
     "build": "pnpm -r run build",
     "test": "pnpm -r run test",
     "typecheck": "pnpm -r run typecheck",
+    "arch": "pnpm --filter @agent/core arch",
     "start:cli": "pnpm --filter @agent/cli start",
     "cli": "pnpm --filter @agent/cli start",
     "dev:cli": "pnpm --filter @agent/cli start",

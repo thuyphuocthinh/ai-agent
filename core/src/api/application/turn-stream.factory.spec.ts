@@ -1,8 +1,8 @@
 import type { UIMessageChunk } from 'ai';
 import { CACHE, EMessageRole } from '@agent/core/constants';
 import { IChatSession } from '../../contracts';
-import { AgentStreamService } from '../../contracts/agent-stream.service';
-import { MessageClientService } from '../../contracts/message-client.service';
+import { AgentStreamService } from '../../engine/streaming/agent-stream.service';
+import { MessageClientService } from '../../engine/streaming/message-client.service';
 import { AgentCancellationService } from '../../engine/cancellation/agent-cancellation.service';
 import { RedisPubSubStreamService } from '../../infrastructure/redis/redis-pubsub-stream.service';
 import { TurnStreamFactory } from './turn-stream.factory';

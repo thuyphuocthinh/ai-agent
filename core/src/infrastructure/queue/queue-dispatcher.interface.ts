@@ -1,6 +1,6 @@
 import { JobsOptions } from 'bullmq';
 import { EQueueName } from '../../constants/queue.constant';
-import { TJobData } from './job-data.interface';
+import { TJobData } from '../../contracts/queue/job-data.interface';
 
 export const QUEUE_DISPATCHER = Symbol('QUEUE_DISPATCHER');
 

@@ -5,7 +5,7 @@ import { CACHE } from '../../constants/cache.constant';
 import {
   AgentStreamContext,
   AgentStreamStep,
-} from '../../contracts/stream-sink.interface';
+} from '../../contracts/streaming/stream-sink.interface';
 import {
   ETurnLogEntryKind,
   ETurnLogStatus,
@@ -13,7 +13,7 @@ import {
   TurnLogEntry,
   TurnLogMeta,
   TurnLogStartDto,
-} from '../../contracts/turn-event-log.interface';
+} from '../../contracts/streaming/turn-event-log.interface';
 
 const READ_BATCH = 200;
 const BLOCK_MS = 2000;

@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PromptInspectionResult } from '../security.interface';
 import { PromptInjectionDetectedError } from '../errors/prompt-injection.error';
-import { PiiScrubberUtil } from '../pii/pii-scrubber.util';
+import { PiiScrubberUtil } from '../../common/text/pii/pii-scrubber.util';
 import { ERiskLevel } from '../constants/security.constants';
 
 /**

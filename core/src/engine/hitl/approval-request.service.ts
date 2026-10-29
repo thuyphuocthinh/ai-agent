@@ -7,8 +7,8 @@ import {
   EApprovalAction,
   ECheckpointKind,
 } from '@agent/core/constants';
-import { MessageClientService } from '../../contracts/message-client.service';
-import { AgentStreamService } from '../../contracts/agent-stream.service';
+import { MessageClientService } from '../streaming/message-client.service';
+import { AgentStreamService } from '../streaming/agent-stream.service';
 import { CheckpointService } from './checkpoint.service';
 import {
   OrchestrationCheckpointStatus,
@@ -20,8 +20,8 @@ import {
   ETurnLogStatus,
   ITurnEventLog,
   TURN_EVENT_LOG,
-} from '../../contracts/turn-event-log.interface';
-import { TurnEventRecorderService } from '../orchestrator/turn-event-recorder.service';
+} from '../../contracts/streaming/turn-event-log.interface';
+import { TurnEventRecorderService } from '../orchestrator/turn/turn-event-recorder.service';
 
 @Injectable()
 export class ApprovalRequestService {

@@ -108,7 +108,9 @@ describe('QueueDispatchers', () => {
 
     it('resolves AiOrchestrationProcessor via ModuleRef when no custom handler is registered', async () => {
       const mockProcessor = { process: jest.fn().mockResolvedValue(undefined) };
-      moduleRef.get.mockReturnValue(mockProcessor);
+      moduleRef.get.mockReturnValue({
+        [EQueueName.AI_ORCHESTRATION_QUEUE]: mockProcessor,
+      });
 
       const result = await dispatcher.dispatch(
         EQueueName.AI_ORCHESTRATION_QUEUE,

@@ -2,19 +2,11 @@ import { Logger } from '@nestjs/common';
 import { IStreamSink, IToolProvider } from '../../contracts';
 import { RunReactLoopRequestDto } from '../../contracts/dtos/react-loop.dto';
 import { McpToolDto } from '../../contracts/dtos/mcp.dto';
-import { LlmStrategy } from '../strategy/llm-strategy.interface';
-import { CircuitBreakerService } from '../../common/circuit-breaker.service';
 import { MemoryManagerService } from '../../memory/memory-manager.service';
-import { ToolRepeatGuard } from './tool-repeat-guard';
-import { InsertAccumulator } from './insert-accumulator';
-import { ToolRiskGate } from './tool-risk-gate';
-import {
-  ProviderPreflightGuard,
-  BusinessPolicyEngine,
-  SemanticPolicyEvaluatorService,
-  IdempotencyManager,
-  ActionAuditService,
-} from '../../security';
+import { ToolRepeatGuard } from './guards/tool-repeat-guard';
+import { InsertAccumulator } from './guards/insert-accumulator';
+import { ToolRiskGate } from './guards/tool-risk-gate';
+import { ActionAuditService } from '../../security';
 
 export interface ToolCallExecutorOptions {
   dto: RunReactLoopRequestDto;
@@ -35,20 +27,4 @@ export interface ToolCallExecutorDeps {
   insertAccumulator: InsertAccumulator;
   riskGate: ToolRiskGate;
   actionAudit?: ActionAuditService;
-}
-
-export interface ToolRiskGateOptions {
-  dto: RunReactLoopRequestDto;
-  mcpTools: McpToolDto[];
-  strategy: LlmStrategy;
-  model: string;
-  circuitBreaker: CircuitBreakerService;
-  logger: Logger;
-  signal: AbortSignal;
-  insertAccumulator: InsertAccumulator;
-  preflightGuard?: ProviderPreflightGuard;
-  policyEngine?: BusinessPolicyEngine;
-  semanticPolicyEvaluator?: SemanticPolicyEvaluatorService;
-  idempotencyManager?: IdempotencyManager;
-  toolToProviderMap?: Map<string, string>;
 }

@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { JobsOptions } from 'bullmq';
 import { EQueueName } from '../../constants/queue.constant';
-import { TJobData } from './job-data.interface';
+import { TJobData } from '../../contracts/queue/job-data.interface';
 import {
   DispatchResult,
   IQueueDispatcher,

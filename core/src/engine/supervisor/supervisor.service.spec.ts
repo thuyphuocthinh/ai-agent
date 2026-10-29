@@ -6,11 +6,11 @@ import {
   SUPERVISOR_PLAN_SCHEMA_NO_ANSWER,
 } from '@agent/core/constants';
 import { SupervisorService } from './supervisor.service';
-import { McpAuthClientService } from '../../infrastructure/tools/mcp-auth-client.service';
+import { McpAuthClientService } from '../../infrastructure/tools/mcp/mcp-auth-client.service';
 import { LlmStrategyFactory } from '../strategy/llm-strategy.factory';
-import { CircuitBreakerService } from '../../common/circuit-breaker.service';
-import { DynamicProviderDbService } from '../orchestrator/dynamic-provider-db.service';
-import { MetricsRegistryService } from '../../common/metrics-registry.service';
+import { CircuitBreakerService } from '../../infrastructure/resilience/circuit-breaker.service';
+import { DynamicProviderService } from '../../infrastructure/tools/dynamic/dynamic-provider.service';
+import { MetricsRegistryService } from '../../infrastructure/resilience/metrics-registry.service';
 import { MemoryManagerService } from '../../memory/memory-manager.service';
 import { SkillRetrievalService } from '../../memory/skill-retrieval.service';
 import { AgentRankingService } from './agent-ranking.service';
@@ -19,12 +19,12 @@ import {
   resolveDataCharBudget,
   resolveHistoryCharBudget,
   resolveMemoryCharBudget,
-} from '../../common/token-budget.util';
-import { AGENT_REGISTRY } from './agents.registry';
+} from '../../common/text/token-budget.util';
+import { AGENT_REGISTRY } from '../../infrastructure/tools/dynamic/agents.registry';
 
 // Cô lập test khỏi giá trị thật của process.env.AGENT_SQL_SERVER_URL — mock
 // thẳng registry để chủ động quyết định agent nào có/thiếu hạ tầng thật.
-jest.mock('./agents.registry', () => ({
+jest.mock('../../infrastructure/tools/dynamic/agents.registry', () => ({
   AGENT_REGISTRY: {
     sql_server: { label: 'SQL Server', endpoint: 'http://mcp-server/mcp' },
     notion: { label: 'Notion', endpoint: undefined },
@@ -96,7 +96,7 @@ describe('SupervisorService', () => {
         { provide: McpAuthClientService, useValue: mockMcpAuthClient },
         { provide: LlmStrategyFactory, useValue: mockLlmFactory },
         { provide: CircuitBreakerService, useValue: mockCircuitBreaker },
-        { provide: DynamicProviderDbService, useValue: mockDynamicProviderDb },
+        { provide: DynamicProviderService, useValue: mockDynamicProviderDb },
         { provide: MetricsRegistryService, useValue: mockMetrics },
         { provide: MemoryManagerService, useValue: mockMemoryManager },
         { provide: SkillRetrievalService, useValue: mockSkillRetrieval },
