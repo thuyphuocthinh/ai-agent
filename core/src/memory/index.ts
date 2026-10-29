@@ -5,3 +5,4 @@ export * from './create-tool-heuristic.util';
 export * from './memory-injection-heuristic.util';
 export * from '../common/cosine-similarity.util';
 export * from './skill/skill-catalog.service';
+export * from './skill/skill-match.service';

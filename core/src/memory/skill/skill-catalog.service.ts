@@ -9,67 +9,20 @@ import {
   SkillNotFoundException,
   SkillSlugConflictException,
 } from '../../common/errors/skill.exception';
-import { sanitizePrismaError } from '../../common/errors/prisma-error.util';
+import {
+  isPrismaUniqueViolation,
+  sanitizePrismaError,
+} from '../../common/errors/prisma-error.util';
 import {
   CreateSkillInput,
   SkillRecord,
   UpdateSkillInput,
 } from './skill.interface';
+import { mapPrismaSkillToRecord } from './skill.mapper';
+import { formatSkillCatalog } from './skill-catalog-format.util';
 
 // Skill của tenant này hiển thị cho MỌI tenant (tenant ghi đè theo slug).
 export const DEFAULT_SKILL_TENANT_ID = 'default';
-
-// Ngân sách ký tự cho phần entry đầy đủ của catalog (~150 token). Skill nào
-// vượt ngân sách chỉ liệt kê slug — model vẫn đọc được qua read_skill.
-const CATALOG_ENTRY_CHAR_BUDGET = 600;
-const CATALOG_DESCRIPTION_MAX_CHARS = 80;
-
-const CATALOG_HEADER =
-  'Các skill (playbook nghiệp vụ) có sẵn. Nếu yêu cầu của người dùng liên quan tới một skill dưới đây, bạn BẮT BUỘC gọi tool read_skill({ slug }) để đọc playbook TRƯỚC khi gọi bất kỳ tool nào khác, rồi làm đúng theo playbook:';
-
-function mapPrismaSkillToRecord(skill: {
-  id: string;
-  tenantId: string;
-  slug: string;
-  name: string;
-  description: string;
-  instructions: string;
-  tools: string[];
-  tags: string[];
-  isActive: boolean;
-  metadata: Prisma.JsonValue;
-  createdAt: Date;
-  updatedAt: Date;
-}): SkillRecord {
-  return {
-    id: skill.id,
-    tenantId: skill.tenantId,
-    slug: skill.slug,
-    name: skill.name,
-    description: skill.description,
-    instructions: skill.instructions,
-    tools: skill.tools,
-    tags: skill.tags,
-    isActive: skill.isActive,
-    metadata: (skill.metadata ?? {}) as Record<string, unknown>,
-    createdAt: skill.createdAt,
-    updatedAt: skill.updatedAt,
-  };
-}
-
-function isUniqueViolation(error: unknown): boolean {
-  return (
-    error instanceof Prisma.PrismaClientKnownRequestError &&
-    error.code === 'P2002'
-  );
-}
-
-function truncate(text: string, maxChars: number): string {
-  const singleLine = text.replace(/\s+/g, ' ').trim();
-  return singleLine.length > maxChars
-    ? `${singleLine.slice(0, maxChars - 1)}…`
-    : singleLine;
-}
 
 // Skill = playbook nghiệp vụ do người quản trị tạo (KHÔNG tự học). Cung cấp
 // Level 1 (catalog trong prompt) và Level 2 (đọc chi tiết theo slug) cho mọi engine.
@@ -118,7 +71,7 @@ export class SkillCatalogService implements ISkillCatalogReader {
       this.logger.log(`create() tenantId=${tenantId} slug="${input.slug}"`);
       return mapPrismaSkillToRecord(saved);
     } catch (error) {
-      if (isUniqueViolation(error)) {
+      if (isPrismaUniqueViolation(error)) {
         throw new SkillSlugConflictException(input.slug, tenantId);
       }
       throw sanitizePrismaError(error, 'SkillCatalogService.create');
@@ -148,7 +101,7 @@ export class SkillCatalogService implements ISkillCatalogReader {
       this.logger.log(`update() tenantId=${tenantId} id=${id}`);
       return mapPrismaSkillToRecord(saved);
     } catch (error) {
-      if (isUniqueViolation(error)) {
+      if (isPrismaUniqueViolation(error)) {
         throw new SkillSlugConflictException(input.slug ?? id, tenantId);
       }
       throw sanitizePrismaError(error, 'SkillCatalogService.update');
@@ -185,10 +138,11 @@ export class SkillCatalogService implements ISkillCatalogReader {
     return match ? mapPrismaSkillToRecord(match) : null;
   }
 
-  // Level 1 — chuỗi gọn (slug, name, description) cho prompt; '' nếu chưa có skill.
-  async getCatalogForPrompt(
+  // Skill đang bật hiển thị cho tenant: của tenant + `default`, tenant ghi đè
+  // `default` theo slug, sắp theo slug. Dùng chung cho catalog và skill matcher.
+  async listVisibleActive(
     tenantId = DEFAULT_SKILL_TENANT_ID,
-  ): Promise<string> {
+  ): Promise<SkillRecord[]> {
     const skills = await this.prisma.skill.findMany({
       where: { isActive: true, tenantId: { in: this.visibleTenants(tenantId) } },
       orderBy: { slug: 'asc' },
@@ -199,26 +153,18 @@ export class SkillCatalogService implements ISkillCatalogReader {
       const current = bySlug.get(skill.slug);
       if (!current || skill.tenantId === tenantId) bySlug.set(skill.slug, skill);
     }
-    if (bySlug.size === 0) return '';
+    return [...bySlug.values()].map(mapPrismaSkillToRecord);
+  }
 
-    const detailed: string[] = [];
-    const slugOnly: string[] = [];
-    let usedChars = 0;
-    for (const skill of bySlug.values()) {
-      const line = `- ${skill.slug} (${skill.name}): ${truncate(skill.description, CATALOG_DESCRIPTION_MAX_CHARS)}`;
-      if (usedChars + line.length <= CATALOG_ENTRY_CHAR_BUDGET) {
-        detailed.push(line);
-        usedChars += line.length;
-      } else {
-        slugOnly.push(skill.slug);
-      }
-    }
-
-    const parts = [CATALOG_HEADER, ...detailed];
-    if (slugOnly.length > 0) {
-      parts.push(`- Skill khác (chỉ slug): ${slugOnly.join(', ')}`);
-    }
-    return parts.join('\n');
+  // Level 1 — chuỗi gọn (slug, name, description) cho prompt; '' nếu chưa có skill.
+  // `excludeSlugs`: skill đã được nạp thẳng vào prompt thì không lặp lại ở catalog.
+  async getCatalogForPrompt(
+    tenantId = DEFAULT_SKILL_TENANT_ID,
+    excludeSlugs: readonly string[] = [],
+  ): Promise<string> {
+    const excluded = new Set(excludeSlugs);
+    const skills = await this.listVisibleActive(tenantId);
+    return formatSkillCatalog(skills.filter((s) => !excluded.has(s.slug)));
   }
 
   private visibleTenants(tenantId: string): string[] {

@@ -2,6 +2,7 @@ export * from './tools/tool-provider.interface';
 export * from './streaming/message-sink.interface';
 export * from './memory/conversation-memory-recorder.interface';
 export * from './skill/skill-catalog-reader.interface';
+export * from './skill/skill-matcher.interface';
 export * from './streaming/turn-event-log.interface';
 export * from './streaming/stream-sink.interface';
 export * from './session/chat-session.interface';

@@ -69,4 +69,73 @@ describe('NativeToolRegistryService', () => {
     expect(res.content[0].text).toContain('NATIVE_TOOL_EXECUTION_ERROR');
     expect(res.content[0].text).toContain('Connection refused to customer DB');
   });
+
+  describe('executeFromRequest', () => {
+    const executeSpy = jest.fn();
+    const spyTool: INativeTool = {
+      name: 'spy_tool',
+      description: 'spy',
+      inputSchema: {},
+      toMcpToolDto() {
+        return { name: this.name, description: this.description, inputSchema: this.inputSchema };
+      },
+      async execute(args, context) {
+        executeSpy(args, context);
+        return { isError: false, content: [{ type: 'text', text: 'ok' }] };
+      },
+    };
+
+    beforeEach(() => {
+      registry = new NativeToolRegistryService([spyTool]);
+      executeSpy.mockClear();
+    });
+
+    it('prefers the identity of the tool context over the one in the request', async () => {
+      await registry.executeFromRequest(
+        { name: 'spy_tool', args: { a: 1 }, userId: 'req-user', workspaceId: 'req-ws', tenantId: 'req-tenant' },
+        { userId: 'ctx-user', workspaceId: 'ctx-ws', tenantId: 'ctx-tenant' },
+      );
+
+      expect(executeSpy).toHaveBeenCalledWith(
+        { a: 1 },
+        expect.objectContaining({
+          userId: 'ctx-user',
+          ownerId: 'ctx-user',
+          workspaceId: 'ctx-ws',
+          tenantId: 'ctx-tenant',
+        }),
+      );
+    });
+
+    it('falls back to the identity in the request and to ownerId when there is no user', async () => {
+      await registry.executeFromRequest({
+        name: 'spy_tool',
+        args: {},
+        ownerId: 'owner-1',
+        workspaceId: 'req-ws',
+      });
+
+      expect(executeSpy).toHaveBeenCalledWith(
+        {},
+        expect.objectContaining({ ownerId: 'owner-1', workspaceId: 'req-ws' }),
+      );
+    });
+
+    it('passes the explicit signal, else the signal of the context', async () => {
+      const explicit = new AbortController().signal;
+      const fromContext = new AbortController().signal;
+
+      await registry.executeFromRequest({ name: 'spy_tool', args: {} }, { signal: fromContext }, explicit);
+      await registry.executeFromRequest({ name: 'spy_tool', args: {} }, { signal: fromContext });
+
+      expect(executeSpy.mock.calls[0][1].signal).toBe(explicit);
+      expect(executeSpy.mock.calls[1][1].signal).toBe(fromContext);
+    });
+
+    it('defaults the arguments to an empty object', async () => {
+      await registry.executeFromRequest({ name: 'spy_tool' } as never);
+
+      expect(executeSpy.mock.calls[0][0]).toEqual({});
+    });
+  });
 });

@@ -7,3 +7,4 @@ export * from './async/abortable-sleep.util';
 export * from './pending-action-step.util';
 export * from './action-summary';
 export * from './errors';
+export * from './async/with-timeout.util';

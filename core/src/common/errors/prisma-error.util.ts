@@ -4,6 +4,16 @@ import { DatabaseOperationException } from './database-operation.exception';
 
 const logger = new Logger('PrismaErrorSanitizer');
 
+const PRISMA_UNIQUE_VIOLATION = 'P2002';
+
+// Vi phạm ràng buộc unique — để nơi gọi dịch thành lỗi nghiệp vụ riêng (VD slug trùng).
+export function isPrismaUniqueViolation(error: unknown): boolean {
+  return (
+    error instanceof Prisma.PrismaClientKnownRequestError &&
+    error.code === PRISMA_UNIQUE_VIOLATION
+  );
+}
+
 /**
  * Bóc tách và làm sạch triệt để mọi lỗi từ Prisma/Postgres trước khi quăng ra ngoài.
  * TUYỆT ĐỐI không để lộ SQL query, table name, connection string hoặc internal stack trace ra message client.
@@ -30,7 +40,7 @@ export function sanitizePrismaError(
           },
         );
       }
-      case 'P2002': {
+      case PRISMA_UNIQUE_VIOLATION: {
         // Unique constraint violation
         return new DatabaseOperationException(
           'Dữ liệu yêu cầu đã tồn tại trong hệ thống hoặc bị trùng lặp định danh.',

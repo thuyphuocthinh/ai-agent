@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import {
   ORCHESTRATION_CONSTANTS,
@@ -12,6 +13,7 @@ import {
   TOOL_PROVIDER,
   STREAM_SINK,
   SKILL_CATALOG_READER,
+  SKILL_MATCHER,
 } from '../../contracts';
 import { ApprovalRequiredError } from './errors/approval-required.error';
 import { CircuitBreakerService } from '../../infrastructure/resilience/circuit-breaker.service';
@@ -97,9 +99,11 @@ describe('ReactLoopService', () => {
     getCatalogForPrompt: jest.fn(),
     getSkillBySlug: jest.fn(),
   };
+  const mockSkillMatcher = { match: jest.fn() };
 
   beforeEach(async () => {
     mockSkillCatalog.getCatalogForPrompt.mockResolvedValue('');
+    mockSkillMatcher.match.mockResolvedValue([]);
     mockMcpClient.getTools.mockResolvedValue([
       { name: 'get_database_schema', description: 'desc', inputSchema: {} },
     ]);
@@ -131,6 +135,7 @@ describe('ReactLoopService', () => {
         { provide: AgentCancellationService, useValue: mockCancellation },
         { provide: MemoryManagerService, useValue: mockMemoryManager },
         { provide: SKILL_CATALOG_READER, useValue: mockSkillCatalog },
+        { provide: SKILL_MATCHER, useValue: mockSkillMatcher },
       ],
     }).compile();
 
@@ -593,6 +598,149 @@ describe('ReactLoopService', () => {
       ).toHaveLength(1);
     });
 
+    describe('Nạp skill tự động theo độ khớp (AC-10..AC-13)', () => {
+      const SQL_SKILL = {
+        score: 0.62,
+        skill: {
+          id: 'sk-1',
+          tenantId: 'default',
+          slug: 'sql-safe-write',
+          name: 'Ghi SQL an toàn',
+          description: 'mô tả',
+          instructions: 'BƯỚC 1: xem schema. BƯỚC 2: luôn có WHERE.',
+          tools: [],
+          tags: [],
+          isActive: true,
+        },
+      };
+      const withReadSkill = () =>
+        mockMcpClient.getTools.mockImplementation(async (provider: string) =>
+          provider === 'native'
+            ? [{ name: 'read_skill', description: 'đọc skill', inputSchema: {} }]
+            : [{ name: 'get_database_schema', description: 'desc', inputSchema: {} }],
+        );
+      const sentSystemInstruction = (): string =>
+        mockStrategy.startChat.mock.calls[0][0].systemInstruction;
+
+      beforeEach(() => {
+        mockSession.sendMessage.mockResolvedValueOnce({ text: 'ok', toolCalls: [] });
+      });
+
+      it('asks the matcher with the prompt and the workspace of the run', async () => {
+        await service.run(baseDto);
+
+        expect(mockSkillMatcher.match).toHaveBeenCalledWith(
+          baseDto.prompt,
+          baseDto.workspaceId,
+        );
+      });
+
+      it('appends the instructions of a matched skill to the system instruction', async () => {
+        mockSkillMatcher.match.mockResolvedValue([SQL_SKILL]);
+
+        await service.run(baseDto);
+
+        expect(sentSystemInstruction()).toContain('=== SKILL: Ghi SQL an toàn (sql-safe-write) ===');
+        expect(sentSystemInstruction()).toContain('BƯỚC 1: xem schema. BƯỚC 2: luôn có WHERE.');
+      });
+
+      it('keeps the base system instruction unchanged when nothing matches', async () => {
+        mockSkillMatcher.match.mockResolvedValue([]);
+
+        await service.run(baseDto);
+
+        expect(sentSystemInstruction()).not.toContain('=== SKILL:');
+        expect(sentSystemInstruction()).not.toContain('Các skill sau khớp');
+      });
+
+      it('loads the matched skill even when the agent has no read_skill tool', async () => {
+        mockSkillMatcher.match.mockResolvedValue([SQL_SKILL]);
+
+        await service.run(baseDto);
+
+        expect(sentSystemInstruction()).toContain('BƯỚC 1: xem schema');
+        expect(mockSkillCatalog.getCatalogForPrompt).not.toHaveBeenCalled();
+      });
+
+      it('leaves the loaded skill out of the catalog', async () => {
+        withReadSkill();
+        mockSkillMatcher.match.mockResolvedValue([SQL_SKILL]);
+        mockSkillCatalog.getCatalogForPrompt.mockResolvedValue('CATALOG-REST');
+
+        await service.run(baseDto);
+
+        expect(mockSkillCatalog.getCatalogForPrompt).toHaveBeenCalledWith(
+          baseDto.workspaceId,
+          ['sql-safe-write'],
+        );
+        const instruction = sentSystemInstruction();
+        expect(instruction).toContain('CATALOG-REST');
+        expect(instruction.indexOf('=== SKILL:')).toBeLessThan(
+          instruction.indexOf('CATALOG-REST'),
+        );
+      });
+
+      it('keeps a matched skill that exceeds the budget in the catalog instead', async () => {
+        process.env.SKILL_AUTOLOAD_MAX_CHARS = '10';
+        try {
+          withReadSkill();
+          mockSkillMatcher.match.mockResolvedValue([SQL_SKILL]);
+          mockSkillCatalog.getCatalogForPrompt.mockResolvedValue('CATALOG-REST');
+
+          await service.run(baseDto);
+
+          expect(sentSystemInstruction()).not.toContain('BƯỚC 1');
+          expect(mockSkillCatalog.getCatalogForPrompt).toHaveBeenCalledWith(
+            baseDto.workspaceId,
+            [],
+          );
+        } finally {
+          delete process.env.SKILL_AUTOLOAD_MAX_CHARS;
+        }
+      });
+
+      it('still runs with the catalog only when the matcher fails or times out', async () => {
+        withReadSkill();
+        mockSkillMatcher.match.mockRejectedValue(new Error('skill match timed out after 1500ms'));
+        mockSkillCatalog.getCatalogForPrompt.mockResolvedValue('CATALOG-REST');
+
+        const result = await service.run(baseDto);
+
+        expect(result.answer).toBe('ok');
+        expect(sentSystemInstruction()).not.toContain('=== SKILL:');
+        expect(sentSystemInstruction()).toContain('CATALOG-REST');
+      });
+
+      it('logs the slug and score of the decision but never the instructions', async () => {
+        const logSpy = jest.spyOn(Logger.prototype, 'log').mockImplementation();
+        try {
+          mockSkillMatcher.match.mockResolvedValue([SQL_SKILL]);
+
+          await service.run(baseDto);
+
+          const lines = logSpy.mock.calls.map((c) => String(c[0]));
+          expect(lines).toContainEqual(
+            expect.stringContaining('[skill-autoload] loaded=sql-safe-write(0.62)'),
+          );
+          expect(lines.join(' | ')).not.toContain('BƯỚC 1');
+        } finally {
+          logSpy.mockRestore();
+        }
+      });
+
+      it('logs nothing when no skill matched', async () => {
+        const logSpy = jest.spyOn(Logger.prototype, 'log').mockImplementation();
+        try {
+          await service.run(baseDto);
+
+          const lines = logSpy.mock.calls.map((c) => String(c[0]));
+          expect(lines.join(' | ')).not.toContain('[skill-autoload]');
+        } finally {
+          logSpy.mockRestore();
+        }
+      });
+    });
+
     describe('Level 1 skill catalog trong system instruction', () => {
       const withReadSkill = () =>
         mockMcpClient.getTools.mockImplementation(async (provider: string) =>
@@ -610,6 +758,7 @@ describe('ReactLoopService', () => {
 
         expect(mockSkillCatalog.getCatalogForPrompt).toHaveBeenCalledWith(
           baseDto.workspaceId,
+          [],
         );
         expect(mockStrategy.startChat).toHaveBeenCalledWith(
           expect.objectContaining({

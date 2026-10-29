@@ -34,6 +34,8 @@ import { ConversationMemoryCleanupService } from './memory/conversation-memory-c
 import { MemoryManagerService } from './memory/memory-manager.service';
 import { SkillCatalogService } from './memory/skill/skill-catalog.service';
 import { SKILL_CATALOG_READER } from './contracts/skill/skill-catalog-reader.interface';
+import { SKILL_MATCHER } from './contracts/skill/skill-matcher.interface';
+import { SkillMatchService } from './memory/skill/skill-match.service';
 import { ReadSkillTool } from './infrastructure/tools/native/read-skill.tool';
 import { CheckpointCleanupService } from './engine/hitl/checkpoint-cleanup.service';
 import { ResilienceModule } from './infrastructure/resilience/resilience.module';
@@ -160,6 +162,8 @@ import { SecurityModule } from './security';
     MemoryManagerService,
     SkillCatalogService,
     { provide: SKILL_CATALOG_READER, useExisting: SkillCatalogService },
+    SkillMatchService,
+    { provide: SKILL_MATCHER, useExisting: SkillMatchService },
     ReadSkillTool,
     PrismaTriggerClaimService,
     AgentCancellationService,

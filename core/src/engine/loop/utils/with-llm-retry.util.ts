@@ -1,4 +1,4 @@
-import { withTimeout } from './with-timeout.util';
+import { withTimeout } from '../../../common/async/with-timeout.util';
 import { abortableSleep } from '../../../common/async/abortable-sleep.util';
 import { ORCHESTRATION_CONSTANTS } from '@agent/core/constants';
 

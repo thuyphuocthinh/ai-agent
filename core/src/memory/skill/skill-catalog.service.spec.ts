@@ -241,6 +241,57 @@ describe('SkillCatalogService', () => {
     });
   });
 
+  describe('listVisibleActive (dùng chung cho catalog và matcher)', () => {
+    it('queries only active skills of the tenant and the default tenant, ordered by slug', async () => {
+      mockPrisma.skill.findMany.mockResolvedValue([]);
+
+      await service.listVisibleActive('tenant-a');
+
+      expect(mockPrisma.skill.findMany).toHaveBeenCalledWith({
+        where: { isActive: true, tenantId: { in: ['tenant-a', 'default'] } },
+        orderBy: { slug: 'asc' },
+      });
+    });
+
+    it('only looks at the default tenant when asked for the default tenant', async () => {
+      mockPrisma.skill.findMany.mockResolvedValue([]);
+
+      await service.listVisibleActive();
+
+      expect(mockPrisma.skill.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { isActive: true, tenantId: { in: ['default'] } },
+        }),
+      );
+    });
+
+    it('lets a tenant skill override the default skill with the same slug', async () => {
+      mockPrisma.skill.findMany.mockResolvedValue([
+        buildRow({ id: 'd', tenantId: 'default', name: 'Default Name' }),
+        buildRow({ id: 't', tenantId: 'tenant-a', name: 'Tenant Name' }),
+        buildRow({ id: 'o', tenantId: 'default', slug: 'other' }),
+      ]);
+
+      const result = await service.listVisibleActive('tenant-a');
+
+      expect(result.map((s) => [s.id, s.name])).toEqual([
+        ['t', 'Tenant Name'],
+        ['o', 'Hotel Cancellation'],
+      ]);
+    });
+
+    it('maps rows to SkillRecord including metadata and updatedAt', async () => {
+      mockPrisma.skill.findMany.mockResolvedValue([
+        buildRow({ metadata: { autoLoad: false } }),
+      ]);
+
+      const [skill] = await service.listVisibleActive('tenant-a');
+
+      expect(skill.metadata).toEqual({ autoLoad: false });
+      expect(skill.updatedAt).toEqual(new Date('2026-10-29T00:00:00Z'));
+    });
+  });
+
   describe('getCatalogForPrompt (Level 1)', () => {
     it('returns an empty string when there is no active skill', async () => {
       mockPrisma.skill.findMany.mockResolvedValue([]);
@@ -294,6 +345,28 @@ describe('SkillCatalogService', () => {
       expect(entry).toBeDefined();
       expect(entry).toContain('…');
       expect(entry!.length).toBeLessThan(140);
+    });
+
+    it('leaves out the skills listed in excludeSlugs (already auto-loaded into the prompt)', async () => {
+      mockPrisma.skill.findMany.mockResolvedValue([
+        buildRow({ id: 'a', slug: 'sql-safe-write', name: 'SQL Safe Write' }),
+        buildRow({ id: 'b', slug: 'incident-notify', name: 'Incident Notify' }),
+      ]);
+
+      const catalog = await service.getCatalogForPrompt('tenant-a', ['sql-safe-write']);
+
+      expect(catalog).not.toContain('sql-safe-write');
+      expect(catalog).toContain('incident-notify');
+    });
+
+    it('returns an empty string when every visible skill is excluded', async () => {
+      mockPrisma.skill.findMany.mockResolvedValue([
+        buildRow({ slug: 'sql-safe-write' }),
+      ]);
+
+      await expect(
+        service.getCatalogForPrompt('tenant-a', ['sql-safe-write']),
+      ).resolves.toBe('');
     });
 
     it('keeps the entry section within budget and lists overflow skills as slug only', async () => {

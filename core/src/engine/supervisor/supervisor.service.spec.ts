@@ -497,7 +497,7 @@ describe('SupervisorService', () => {
 
         await service.plan('hủy phòng', agents, [], [], undefined, undefined, 'chan-1', 'ws-1');
 
-        expect(mockSkillCatalog.getCatalogForPrompt).toHaveBeenCalledWith('ws-1');
+        expect(mockSkillCatalog.getCatalogForPrompt).toHaveBeenCalledWith('ws-1', []);
         const sentPrompt = mockStrategy.generateStructured.mock.calls[0][0].prompt;
         expect(sentPrompt).toContain('- hotel-cancellation (Hotel): hủy phòng');
       });

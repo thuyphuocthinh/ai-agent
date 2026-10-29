@@ -263,13 +263,7 @@ export class McpToolConnectorService implements IToolProvider {
     const effectiveSignal = signal ?? context?.signal;
 
     if (this.nativeRegistry?.hasTool(dto.name)) {
-      return this.nativeRegistry.executeTool(dto.name, dto.args ?? {}, {
-        userId: context?.userId ?? dto.userId,
-        ownerId,
-        workspaceId: context?.workspaceId ?? dto.workspaceId,
-        tenantId: context?.tenantId ?? dto.tenantId,
-        signal: effectiveSignal,
-      });
+      return this.nativeRegistry.executeFromRequest(dto, context, effectiveSignal);
     }
 
     if (this.dynamicRegistry && (await this.dynamicRegistry.isDynamicProvider(provider))) {

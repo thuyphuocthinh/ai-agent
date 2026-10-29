@@ -17,6 +17,9 @@ import {
   STREAM_SINK,
   ISkillCatalogReader,
   SKILL_CATALOG_READER,
+  ISkillMatch,
+  ISkillMatcher,
+  SKILL_MATCHER,
 } from '../../contracts';
 import { CircuitBreakerService } from '../../infrastructure/resilience/circuit-breaker.service';
 import { AgentCancellationService } from '../cancellation/agent-cancellation.service';
@@ -28,6 +31,12 @@ import { READ_SKILL_TOOL_NAME } from '../../infrastructure/tools/native/read-ski
 import { ReactLoopRun } from './react-loop-run';
 import { ToolRepeatGuard } from './guards/tool-repeat-guard';
 import { formatPersonaPrompt } from './utils/persona-prompt.util';
+import {
+  buildSkillPlaybookBlock,
+  formatSkillAutoloadLog,
+} from './utils/skill-playbook-prompt.util';
+import { loadSkillCatalogSafely } from './utils/skill-catalog-loader.util';
+import { readSkillAutoloadConfig } from '../../common/skill-autoload.config';
 import { PersonaDto } from '../../contracts/dtos/supervisor.dto';
 import {
   ProviderPreflightGuard,
@@ -72,6 +81,9 @@ export class ReactLoopService {
     @Optional()
     @Inject(SKILL_CATALOG_READER)
     private readonly skillCatalog?: ISkillCatalogReader,
+    @Optional()
+    @Inject(SKILL_MATCHER)
+    private readonly skillMatcher?: ISkillMatcher,
   ) {}
 
   async run(
@@ -118,7 +130,9 @@ export class ReactLoopService {
             : [dto.provider];
         const primaryProvider = targetProviders[0];
 
-        const [{ mcpTools, toolToProviderMap }, systemInstruction] =
+        // Nạp skill tự động chạy song song với nạp tool/prompt để không cộng thêm
+        // độ trễ nối tiếp.
+        const [{ mcpTools, toolToProviderMap }, systemInstruction, skillMatches] =
           await Promise.all([
             this.loadToolsForProviders(
               targetProviders,
@@ -135,6 +149,7 @@ export class ReactLoopService {
               dto.persona,
               dto.prompt,
             ),
+            this.loadSkillMatches(dto.prompt, dto.workspaceId),
           ]);
 
         if (signal.aborted) {
@@ -153,16 +168,35 @@ export class ReactLoopService {
               )
             : mcpTools;
 
+        // Skill khớp prompt được nạp thẳng nội dung hướng dẫn (không phụ thuộc
+        // model có tự gọi read_skill hay không); skill đã nạp bỏ khỏi catalog.
+        const playbook = buildSkillPlaybookBlock(
+          skillMatches,
+          readSkillAutoloadConfig().maxChars,
+        );
+        if (skillMatches.length > 0) {
+          this.logger.log(formatSkillAutoloadLog(skillMatches, playbook));
+        }
+
         // Level 1 của skill chỉ có ý nghĩa khi agent có read_skill — tránh chỉ dẫn
         // gọi tool không có (VD khi không có native tool nào được nạp).
         const skillCatalogText = effectiveTools.some(
           (t) => t.name === READ_SKILL_TOOL_NAME,
         )
-          ? await this.loadSkillCatalog(dto.workspaceId)
+          ? await loadSkillCatalogSafely(
+              this.skillCatalog,
+              this.logger,
+              dto.workspaceId,
+              playbook.loadedSlugs,
+            )
           : '';
-        const fullSystemInstruction = skillCatalogText
-          ? `${systemInstruction}\n\n${skillCatalogText}`
-          : systemInstruction;
+        const fullSystemInstruction = [
+          systemInstruction,
+          playbook.text,
+          skillCatalogText,
+        ]
+          .filter(Boolean)
+          .join('\n\n');
 
         this.logger.log(
           `run() userId=${dto.userId} provider=${dto.provider} providers=${targetProviders.join(',')} model=${model} toolsAvailable=${effectiveTools.length}/${mcpTools.length}`,
@@ -255,16 +289,20 @@ export class ReactLoopService {
     return loaded;
   }
 
-  // Lỗi (VD DB chưa migrate) chỉ làm mất catalog, không được chặn lượt chạy.
-  private async loadSkillCatalog(workspaceId?: string): Promise<string> {
-    if (!this.skillCatalog) return '';
+  // Lỗi/timeout embedding (hoặc DB chưa migrate) chỉ làm mất phần nạp tự động,
+  // rơi về catalog — không được chặn lượt chạy.
+  private async loadSkillMatches(
+    prompt: string,
+    workspaceId?: string,
+  ): Promise<ISkillMatch[]> {
+    if (!this.skillMatcher) return [];
     try {
-      return await this.skillCatalog.getCatalogForPrompt(workspaceId);
+      return await this.skillMatcher.match(prompt, workspaceId);
     } catch (error) {
       this.logger.warn(
-        `Không thể nạp skill catalog: ${(error as Error)?.message}`,
+        `Không thể nạp skill tự động: ${(error as Error)?.message}`,
       );
-      return '';
+      return [];
     }
   }
 

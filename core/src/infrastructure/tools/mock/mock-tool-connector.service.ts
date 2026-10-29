@@ -64,13 +64,7 @@ export class MockToolConnectorService implements IToolProvider {
     context?: ToolContext,
   ): Promise<CallToolResponseDto> {
     if (this.nativeRegistry?.hasTool(dto.name)) {
-      return this.nativeRegistry.executeTool(dto.name, dto.args ?? {}, {
-        userId: context?.userId ?? dto.userId,
-        ownerId: dto.ownerId ?? dto.userId,
-        workspaceId: context?.workspaceId ?? dto.workspaceId,
-        tenantId: context?.tenantId ?? dto.tenantId,
-        signal: signal ?? context?.signal,
-      });
+      return this.nativeRegistry.executeFromRequest(dto, context, signal);
     }
     const id = dto.provider ?? MOCK_PROVIDER_ID;
     const provider = this.providers.get(id);

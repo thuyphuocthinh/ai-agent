@@ -1,6 +1,12 @@
 import { Injectable, Logger, Optional, Inject } from '@nestjs/common';
 import { INativeTool, NativeToolExecutionContext } from './native-tool.interface';
-import { CallToolResponseDto, McpToolDto } from '../../../contracts/dtos/mcp.dto';
+import {
+  CallToolRequestDto,
+  CallToolResponseDto,
+  McpToolDto,
+} from '../../../contracts/dtos/mcp.dto';
+import { ToolContext } from '../../../contracts/tools/tool-provider.interface';
+import { nativeToolError } from './native-tool-response.util';
 
 @Injectable()
 export class NativeToolRegistryService {
@@ -46,20 +52,10 @@ export class NativeToolRegistryService {
   ): Promise<CallToolResponseDto> {
     const tool = this.tools.get(toolName);
     if (!tool) {
-      return {
-        isError: true,
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify({
-              error: true,
-              retryable: false,
-              code: 'NATIVE_TOOL_NOT_FOUND',
-              message: `Native tool "${toolName}" was not found`,
-            }),
-          },
-        ],
-      };
+      return nativeToolError(
+        'NATIVE_TOOL_NOT_FOUND',
+        `Native tool "${toolName}" was not found`,
+      );
     }
 
     try {
@@ -67,20 +63,24 @@ export class NativeToolRegistryService {
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.error(`Error executing native tool "${toolName}": ${message}`);
-      return {
-        isError: true,
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify({
-              error: true,
-              retryable: false,
-              code: 'NATIVE_TOOL_EXECUTION_ERROR',
-              message,
-            }),
-          },
-        ],
-      };
+      return nativeToolError('NATIVE_TOOL_EXECUTION_ERROR', message);
     }
+  }
+
+  // Chạy native tool từ một yêu cầu gọi tool của engine: gộp danh tính từ `context`
+  // (ưu tiên) và `dto`. Dùng chung cho mọi tool connector (MCP, mock).
+  executeFromRequest(
+    dto: CallToolRequestDto,
+    context?: ToolContext,
+    signal?: AbortSignal,
+  ): Promise<CallToolResponseDto> {
+    const userId = context?.userId ?? dto.userId;
+    return this.executeTool(dto.name, dto.args ?? {}, {
+      userId,
+      ownerId: userId ?? dto.ownerId,
+      workspaceId: context?.workspaceId ?? dto.workspaceId,
+      tenantId: context?.tenantId ?? dto.tenantId,
+      signal: signal ?? context?.signal,
+    });
   }
 }

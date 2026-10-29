@@ -24,7 +24,11 @@ export interface ISkillCatalogReader {
 
   /**
    * Generates a lightweight Level 1 catalog string (slug, name, description)
-   * suitable for inclusion in an agent's system prompt.
+   * suitable for inclusion in an agent's system prompt. Skills listed in
+   * `excludeSlugs` (e.g. already auto-loaded into the prompt) are left out.
    */
-  getCatalogForPrompt(tenantId?: string): Promise<string>;
+  getCatalogForPrompt(
+    tenantId?: string,
+    excludeSlugs?: readonly string[],
+  ): Promise<string>;
 }

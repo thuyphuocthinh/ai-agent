@@ -6,21 +6,10 @@ import {
 import { CallToolResponseDto, McpToolDto } from '../../../contracts/dtos/mcp.dto';
 import { INativeTool, NativeToolExecutionContext } from './native-tool.interface';
 import { NativeToolRegistryService } from './native-tool-registry.service';
+import { nativeToolError, nativeToolJson } from './native-tool-response.util';
 
 // Tên tool dùng chung: engine chỉ nối catalog vào prompt khi agent thực sự có tool này.
 export const READ_SKILL_TOOL_NAME = 'read_skill';
-
-function errorResponse(code: string, message: string): CallToolResponseDto {
-  return {
-    isError: true,
-    content: [
-      {
-        type: 'text',
-        text: JSON.stringify({ error: true, retryable: false, code, message }),
-      },
-    ],
-  };
-}
 
 // Level 2 của Progressive Disclosure: agent thấy catalog (slug + mô tả) trong
 // prompt, cần playbook nào thì gọi read_skill({ slug }) để đọc nội dung đầy đủ.
@@ -69,7 +58,7 @@ export class ReadSkillTool implements INativeTool, OnModuleInit {
   ): Promise<CallToolResponseDto> {
     const slug = typeof args.slug === 'string' ? args.slug.trim() : '';
     if (!slug) {
-      return errorResponse(
+      return nativeToolError(
         'INVALID_ARGUMENTS',
         'Thiếu tham số "slug" (chuỗi, không rỗng)',
       );
@@ -79,25 +68,17 @@ export class ReadSkillTool implements INativeTool, OnModuleInit {
     const tenantId = context?.tenantId ?? context?.workspaceId;
     const skill = await this.catalog.getSkillBySlug(slug, tenantId);
     if (!skill) {
-      return errorResponse(
+      return nativeToolError(
         'SKILL_NOT_FOUND',
         `Không tìm thấy skill "${slug}" hoặc skill đã bị tắt`,
       );
     }
 
-    return {
-      isError: false,
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify({
-            slug: skill.slug,
-            name: skill.name,
-            instructions: skill.instructions,
-            tools: skill.tools,
-          }),
-        },
-      ],
-    };
+    return nativeToolJson({
+      slug: skill.slug,
+      name: skill.name,
+      instructions: skill.instructions,
+      tools: skill.tools,
+    });
   }
 }
