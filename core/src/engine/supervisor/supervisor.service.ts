@@ -1,4 +1,4 @@
-import { Injectable, Logger, Optional } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import {
   ORCHESTRATION_CONSTANTS,
   SUPERVISOR_PLANNING_PROMPT,
@@ -23,6 +23,10 @@ import {
 } from '../../contracts/dtos/supervisor.dto';
 import { ChatHistoryTurnDto } from '../../contracts/dtos/message-client.dto';
 import { ToolCallTraceDto } from '../../contracts/dtos/react-loop.dto';
+import {
+  ISkillCatalogReader,
+  SKILL_CATALOG_READER,
+} from '../../contracts/skill/skill-catalog-reader.interface';
 import { LlmStrategyFactory } from '../strategy/llm-strategy.factory';
 import { checkQuantity, QuantityCheckResult } from '../loop/guards/quantity-check.util';
 import { describeExternalServiceError } from '../loop/utils/external-service-error.util';
@@ -40,7 +44,6 @@ import {
 import { hasPendingActionStep } from '../../common/pending-action-step.util';
 import { MetricsRegistryService } from '../../infrastructure/resilience/metrics-registry.service';
 import { MemoryManagerService } from '../../memory/memory-manager.service';
-import { SkillRetrievalService } from '../../memory/skill-retrieval.service';
 import { AgentRankingService } from './agent-ranking.service';
 import { SupervisorPromptBuilder } from './supervisor-prompt.builder';
 import { detectFrustration } from '../loop/utils/detect-frustration.util';
@@ -58,14 +61,29 @@ export class SupervisorService {
     private readonly dynamicProviderDb: DynamicProviderService,
     private readonly metrics: MetricsRegistryService,
     private readonly memoryManager: MemoryManagerService,
-    private readonly skillRetrieval: SkillRetrievalService,
     private readonly agentRanking: AgentRankingService,
     private readonly promptBuilder: SupervisorPromptBuilder,
     @Optional()
     private readonly policyCorpus?: PolicyCorpusService,
     @Optional()
     private readonly semanticPolicyEvaluator?: SemanticPolicyEvaluatorService,
+    @Optional()
+    @Inject(SKILL_CATALOG_READER)
+    private readonly skillCatalog?: ISkillCatalogReader,
   ) {}
+
+  // Lỗi (VD DB chưa migrate) chỉ làm mất catalog, không được chặn plan().
+  private async loadSkillCatalog(workspaceId?: string): Promise<string> {
+    if (!this.skillCatalog) return '';
+    try {
+      return await this.skillCatalog.getCatalogForPrompt(workspaceId);
+    } catch (error) {
+      this.logger.warn(
+        `Không thể nạp skill catalog: ${(error as Error)?.message}`,
+      );
+      return '';
+    }
+  }
 
   private getSystemAgents(): AvailableAgentDto[] {
     const provider = 'compute';
@@ -162,9 +180,7 @@ export class SupervisorService {
       const memories = channelId
         ? await this.memoryManager.getMemories(channelId, planModelId, prompt)
         : [];
-      const matchedSkill = workspaceId
-        ? await this.skillRetrieval.findMatching(prompt, workspaceId)
-        : null;
+      const skillCatalogText = await this.loadSkillCatalog(workspaceId);
       // ver3.md mục 5 — chỉ để harvest thủ công cho eval dataset sau này
       // (grep log theo tag), KHÔNG ảnh hưởng tới prompt (đã xử lý trong
       // buildPrompt() riêng).
@@ -239,7 +255,7 @@ export class SupervisorService {
         history,
         memories,
         planModelId,
-        matchedSkill,
+        skillCatalogText,
       );
       this.logger.log(
         `plan() model=${model} agents=${agents.length} historyTurns=${history.length} prompt=${fullPrompt}`,

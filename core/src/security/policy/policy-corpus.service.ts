@@ -1,6 +1,6 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import { OpenAiEmbeddingProvider } from '../../infrastructure/embedding/openai-embedding.provider';
-import { cosineSimilarity } from '../../common/skill-cosine-similarity.util';
+import { cosineSimilarity } from '../../common/cosine-similarity.util';
 import {
   EPolicySeverity,
   EPolicyVerdict,

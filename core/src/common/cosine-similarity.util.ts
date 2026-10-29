@@ -1,7 +1,6 @@
-// Tách riêng khỏi SkillRetrievalService để test được mà không cần mock
-// embedding provider — SemanticToolIndex (dùng ở conversation-memory/tool-ranking)
-// chỉ xếp hạng, KHÔNG trả điểm số, nên match skill (cần ngưỡng tin cậy thật)
-// phải tự tính similarity từ vector thô.
+// Cosine similarity thuần trên vector thô — SemanticToolIndex chỉ xếp hạng,
+// KHÔNG trả điểm số, nên các nơi cần ngưỡng tin cậy thật (conversation-memory,
+// policy-corpus) tự tính similarity từ vector.
 export function cosineSimilarity(a: number[], b: number[]): number {
   if (a.length !== b.length || a.length === 0) return 0;
 

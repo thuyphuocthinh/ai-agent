@@ -8,7 +8,11 @@ import { McpToolConnectorService } from '../../infrastructure/tools/mcp/mcp-tool
 import { LlmStrategyFactory } from '../strategy/llm-strategy.factory';
 import { AgentStreamService } from '../streaming/agent-stream.service';
 import { RunReactLoopRequestDto } from '../../contracts/dtos/react-loop.dto';
-import { TOOL_PROVIDER, STREAM_SINK } from '../../contracts';
+import {
+  TOOL_PROVIDER,
+  STREAM_SINK,
+  SKILL_CATALOG_READER,
+} from '../../contracts';
 import { ApprovalRequiredError } from './errors/approval-required.error';
 import { CircuitBreakerService } from '../../infrastructure/resilience/circuit-breaker.service';
 import { AgentCancellationService } from '../cancellation/agent-cancellation.service';
@@ -89,7 +93,13 @@ describe('ReactLoopService', () => {
     history: [],
   };
 
+  const mockSkillCatalog = {
+    getCatalogForPrompt: jest.fn(),
+    getSkillBySlug: jest.fn(),
+  };
+
   beforeEach(async () => {
+    mockSkillCatalog.getCatalogForPrompt.mockResolvedValue('');
     mockMcpClient.getTools.mockResolvedValue([
       { name: 'get_database_schema', description: 'desc', inputSchema: {} },
     ]);
@@ -120,6 +130,7 @@ describe('ReactLoopService', () => {
         { provide: CircuitBreakerService, useValue: mockCircuitBreaker },
         { provide: AgentCancellationService, useValue: mockCancellation },
         { provide: MemoryManagerService, useValue: mockMemoryManager },
+        { provide: SKILL_CATALOG_READER, useValue: mockSkillCatalog },
       ],
     }).compile();
 
@@ -536,6 +547,122 @@ describe('ReactLoopService', () => {
         temperature: ORCHESTRATION_CONSTANTS.REACT_LOOP_TEMPERATURE,
       }),
     );
+  });
+
+  describe('native tools (read_skill) dùng chung cho mọi agent', () => {
+    const toolNamesSentToModel = (): string[] =>
+      (
+        mockStrategy.startChat.mock.calls[0][0].tools as Array<{ name: string }>
+      ).map((t) => t.name);
+
+    it('loads the "native" provider tools next to the provider tools', async () => {
+      mockMcpClient.getTools.mockImplementation(async (provider: string) =>
+        provider === 'native'
+          ? [{ name: 'read_skill', description: 'đọc skill', inputSchema: {} }]
+          : [{ name: 'get_database_schema', description: 'desc', inputSchema: {} }],
+      );
+      mockSession.sendMessage.mockResolvedValueOnce({ text: 'ok', toolCalls: [] });
+
+      await service.run(baseDto);
+
+      expect(mockMcpClient.getTools).toHaveBeenCalledWith(
+        'native',
+        baseDto.prompt,
+        expect.any(AbortSignal),
+        baseDto.workspaceId,
+      );
+      expect(toolNamesSentToModel()).toEqual(
+        expect.arrayContaining(['get_database_schema', 'read_skill']),
+      );
+    });
+
+    it('keeps the provider tool when a native tool has the same name', async () => {
+      mockMcpClient.getTools.mockImplementation(async (provider: string) => [
+        {
+          name: 'get_database_schema',
+          description: provider === 'native' ? 'native' : 'provider',
+          inputSchema: {},
+        },
+      ]);
+      mockSession.sendMessage.mockResolvedValueOnce({ text: 'ok', toolCalls: [] });
+
+      await service.run(baseDto);
+
+      expect(
+        toolNamesSentToModel().filter((n) => n === 'get_database_schema'),
+      ).toHaveLength(1);
+    });
+
+    describe('Level 1 skill catalog trong system instruction', () => {
+      const withReadSkill = () =>
+        mockMcpClient.getTools.mockImplementation(async (provider: string) =>
+          provider === 'native'
+            ? [{ name: 'read_skill', description: 'đọc skill', inputSchema: {} }]
+            : [{ name: 'get_database_schema', description: 'desc', inputSchema: {} }],
+        );
+
+      it('appends the catalog of the workspace to the system instruction when read_skill is available', async () => {
+        withReadSkill();
+        mockSkillCatalog.getCatalogForPrompt.mockResolvedValue('CATALOG-TEXT');
+        mockSession.sendMessage.mockResolvedValueOnce({ text: 'ok', toolCalls: [] });
+
+        await service.run(baseDto);
+
+        expect(mockSkillCatalog.getCatalogForPrompt).toHaveBeenCalledWith(
+          baseDto.workspaceId,
+        );
+        expect(mockStrategy.startChat).toHaveBeenCalledWith(
+          expect.objectContaining({
+            systemInstruction: expect.stringContaining('CATALOG-TEXT'),
+          }),
+        );
+      });
+
+      it('keeps read_skill and the catalog when allowedTools restricts the provider tools (native tools are always available)', async () => {
+        withReadSkill();
+        mockSkillCatalog.getCatalogForPrompt.mockResolvedValue('CATALOG-TEXT');
+        mockSession.sendMessage.mockResolvedValueOnce({ text: 'ok', toolCalls: [] });
+
+        await service.run({ ...baseDto, allowedTools: ['unrelated_tool'] });
+
+        const call = mockStrategy.startChat.mock.calls[0][0];
+        expect((call.tools as Array<{ name: string }>).map((t) => t.name)).toEqual([
+          'read_skill',
+        ]);
+        expect(call.systemInstruction).toContain('CATALOG-TEXT');
+      });
+
+      it('skips the catalog when no native tool is available', async () => {
+        mockSession.sendMessage.mockResolvedValueOnce({ text: 'ok', toolCalls: [] });
+
+        await service.run(baseDto);
+
+        expect(mockSkillCatalog.getCatalogForPrompt).not.toHaveBeenCalled();
+      });
+
+      it('still runs without the catalog when loading it fails (VD DB chưa migrate)', async () => {
+        withReadSkill();
+        mockSkillCatalog.getCatalogForPrompt.mockRejectedValue(new Error('db down'));
+        mockSession.sendMessage.mockResolvedValueOnce({ text: 'ok', toolCalls: [] });
+
+        const result = await service.run(baseDto);
+
+        expect(result.answer).toBe('ok');
+      });
+    });
+
+    it('still runs with the provider tools when loading native tools fails', async () => {
+      mockMcpClient.getTools.mockImplementation(async (provider: string) => {
+        if (provider === 'native') throw new Error('native down');
+        return [{ name: 'get_database_schema', description: 'desc', inputSchema: {} }];
+      });
+      mockSession.sendMessage.mockResolvedValueOnce({ text: 'ok', toolCalls: [] });
+
+      const result = await service.run(baseDto);
+
+      expect(result.answer).toBe('ok');
+      expect(toolNamesSentToModel()).toEqual(['get_database_schema']);
+    });
   });
 
   it('passes dto.history straight through to startChat without fetching it itself (Step 7 — caller fetches once, shared with Supervisor)', async () => {

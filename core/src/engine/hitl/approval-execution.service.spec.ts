@@ -18,7 +18,6 @@ import { TurnCancelledError } from '../loop/errors/turn-cancelled.error';
 import { TurnResolverService } from '../orchestrator/turn/turn-resolver.service';
 import { MemoryManagerService } from '../../memory/memory-manager.service';
 import { ApprovalContinuationPlannerService } from './approval-continuation-planner.service';
-import { ApprovalSkillRecorderService } from './approval-skill-recorder.service';
 import { resolveDataCharBudget } from '../../common/text/token-budget.util';
 import { DynamicSupervisorEngine } from '../orchestrator/engines/dynamic-supervisor.engine';
 
@@ -52,7 +51,6 @@ describe('ApprovalExecutionService', () => {
     })),
   };
   const mockContinuationPlanner = { resolveRemainingSteps: jest.fn() };
-  const mockSkillRecorder = { record: jest.fn() };
   const mockEventLog = {
     start: jest.fn(),
     finish: jest.fn(),
@@ -71,7 +69,6 @@ describe('ApprovalExecutionService', () => {
       content: 'ok',
       toolCalls: undefined,
     });
-    mockSkillRecorder.record.mockResolvedValue(undefined);
     mockEventLog.start.mockResolvedValue(undefined);
     mockEventLog.finish.mockResolvedValue(undefined);
     mockEventLog.startHeartbeat.mockReturnValue(jest.fn());
@@ -116,7 +113,6 @@ describe('ApprovalExecutionService', () => {
           provide: ApprovalContinuationPlannerService,
           useValue: mockContinuationPlanner,
         },
-        { provide: ApprovalSkillRecorderService, useValue: mockSkillRecorder },
         { provide: TURN_EVENT_LOG, useValue: mockEventLog },
         { provide: TurnEventRecorderService, useValue: mockTurnRecorder },
         {
@@ -243,13 +239,6 @@ describe('ApprovalExecutionService', () => {
       expect(mockCheckpoint.markToolExecuted).toHaveBeenCalledWith({
         id: 'checkpoint-1',
       });
-      expect(mockSkillRecorder.record).toHaveBeenCalledWith({
-        checkpointId: 'checkpoint-1',
-        workspaceId: 'workspace-1',
-        pendingTask: 'cập nhật status đơn OrderId=1',
-        pendingTool: checkpoint.pendingTool,
-        riskLevel: undefined,
-      });
     });
 
     it('caps an oversized tool result before folding it into the rounds passed to the Supervisor loop', async () => {
@@ -373,13 +362,6 @@ describe('ApprovalExecutionService', () => {
       // ghi đè thông báo lỗi (đã đúng) này bằng cảnh báo sai.
       expect(mockCheckpoint.markToolExecuted).toHaveBeenCalledWith({
         id: 'checkpoint-1',
-      });
-      expect(mockSkillRecorder.record).toHaveBeenCalledWith({
-        checkpointId: 'checkpoint-1',
-        workspaceId: 'workspace-1',
-        pendingTask: 'cập nhật status đơn OrderId=1',
-        pendingTool: checkpoint.pendingTool,
-        riskLevel: undefined,
       });
     });
 

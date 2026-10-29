@@ -218,18 +218,21 @@ model ConversationMemory {
 }
 
 model Skill {
-  id                  String   @id(map: "PK_orchestration_skills") @default(uuid(7)) @db.Uuid
-  tenantId            String   @map("tenant_id")
-  taskDescription     String   @map("task_description") @db.Text
-  summaryMarkdown     String   @map("summary_markdown") @db.Text
-  steps               Json     @db.JsonB
-  sourceCheckpointIds Json     @default("[]") @map("source_checkpoint_ids") @db.JsonB
-  approvedRunCount    Int      @default(1) @map("approved_run_count")
-  riskLevel           String?  @map("risk_level")
-  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt           DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  id           String   @id(map: "PK_orchestration_skills") @default(uuid(7)) @db.Uuid
+  tenantId     String   @default("default") @map("tenant_id") @db.VarChar(100)
+  slug         String   @db.VarChar(100)
+  name         String   @db.VarChar(150)
+  description  String   @db.Text
+  instructions String   @db.Text
+  tools        String[] @default([])
+  tags         String[] @default([])
+  isActive     Boolean  @default(true) @map("is_active")
+  metadata     Json     @default("{}") @db.JsonB
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
-  @@index([tenantId], map: "IDX_orchestration_skills_tenant_id")
+  @@unique([tenantId, slug], map: "UQ_orchestration_skills_tenant_slug")
+  @@index([tenantId, isActive], map: "IDX_orchestration_skills_tenant_active")
   @@map("orchestration_skills")
 }
 

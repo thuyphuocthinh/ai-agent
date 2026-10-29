@@ -12,8 +12,8 @@ import { CircuitBreakerService } from '../../infrastructure/resilience/circuit-b
 import { DynamicProviderService } from '../../infrastructure/tools/dynamic/dynamic-provider.service';
 import { MetricsRegistryService } from '../../infrastructure/resilience/metrics-registry.service';
 import { MemoryManagerService } from '../../memory/memory-manager.service';
-import { SkillRetrievalService } from '../../memory/skill-retrieval.service';
 import { AgentRankingService } from './agent-ranking.service';
+import { SKILL_CATALOG_READER } from '../../contracts/skill/skill-catalog-reader.interface';
 import { SupervisorPromptBuilder } from './supervisor-prompt.builder';
 import {
   resolveDataCharBudget,
@@ -66,11 +66,7 @@ describe('SupervisorService', () => {
       historyCharBudget: resolveHistoryCharBudget(modelId),
     })),
   };
-  // Mặc định null, giữ nguyên hành vi mọi test đã có trước Skill Library
-  // (buildPrompt() chỉ thêm section khi có skill match).
-  const mockSkillRetrieval = {
-    findMatching: jest.fn().mockResolvedValue(null),
-  };
+  const mockSkillCatalog = { getCatalogForPrompt: jest.fn().mockResolvedValue(''), getSkillBySlug: jest.fn() };
   // Instance THẬT (không mock hành vi) — AgentRankingService/SupervisorPromptBuilder
   // chỉ cần đúng 1 dependency đã mock sẵn ở trên, dùng lại instance thật giữ
   // nguyên mọi assertion cũ (VD mockEmbeddingProvider.embed) không đổi.
@@ -88,7 +84,7 @@ describe('SupervisorService', () => {
     );
     mockDynamicProviderDb.getProvidersByUser.mockResolvedValue([]);
     mockMemoryManager.getMemories.mockResolvedValue([]);
-    mockSkillRetrieval.findMatching.mockResolvedValue(null);
+    mockSkillCatalog.getCatalogForPrompt.mockResolvedValue('');
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -99,7 +95,7 @@ describe('SupervisorService', () => {
         { provide: DynamicProviderService, useValue: mockDynamicProviderDb },
         { provide: MetricsRegistryService, useValue: mockMetrics },
         { provide: MemoryManagerService, useValue: mockMemoryManager },
-        { provide: SkillRetrievalService, useValue: mockSkillRetrieval },
+        { provide: SKILL_CATALOG_READER, useValue: mockSkillCatalog },
         { provide: AgentRankingService, useValue: agentRanking },
         { provide: SupervisorPromptBuilder, useValue: promptBuilder },
       ],
@@ -494,87 +490,27 @@ describe('SupervisorService', () => {
       });
     });
 
-    describe('Skill Library — gợi ý cách làm cũ theo workspace', () => {
-      it('fetches a matching skill by workspaceId and folds its summaryMarkdown into the prompt AFTER channel_memory', async () => {
-        mockMemoryManager.getMemories.mockResolvedValue([
-          { content: 'notion.create_page: Page "Roadmap" (id=abc123)' },
-        ]);
-        mockSkillRetrieval.findMatching.mockResolvedValue({
-          summaryMarkdown:
-            '## Tạo sản phẩm\nGọi execute_write_query để INSERT.',
-        });
-        mockStrategy.generateStructured.mockResolvedValue({
-          action: 'respond',
-          answer: 'ok',
-        });
+    describe('Skill catalog (Level 1)', () => {
+      it('asks the catalog for the workspace and folds it into the planning prompt', async () => {
+        mockSkillCatalog.getCatalogForPrompt.mockResolvedValue('- hotel-cancellation (Hotel): hủy phòng');
+        mockStrategy.generateStructured.mockResolvedValue({ action: 'respond', answer: 'ok' });
 
-        await service.plan(
-          'tạo 5 sản phẩm ngẫu nhiên',
-          agents,
-          [],
-          [],
-          undefined,
-          undefined,
-          'chan-1',
-          'ws-1',
-        );
+        await service.plan('hủy phòng', agents, [], [], undefined, undefined, 'chan-1', 'ws-1');
 
-        expect(mockSkillRetrieval.findMatching).toHaveBeenCalledWith(
-          'tạo 5 sản phẩm ngẫu nhiên',
-          'ws-1',
-        );
-        const sentPrompt =
-          mockStrategy.generateStructured.mock.calls[0][0].prompt;
-        expect(sentPrompt).toContain('Gợi ý từ 1 lần làm việc tương tự');
-        expect(sentPrompt).toContain('Gọi execute_write_query để INSERT.');
-        expect(
-          sentPrompt.indexOf('Thông tin đã xác nhận trước đó'),
-        ).toBeLessThan(sentPrompt.indexOf('Gợi ý từ 1 lần làm việc tương tự'));
+        expect(mockSkillCatalog.getCatalogForPrompt).toHaveBeenCalledWith('ws-1');
+        const sentPrompt = mockStrategy.generateStructured.mock.calls[0][0].prompt;
+        expect(sentPrompt).toContain('- hotel-cancellation (Hotel): hủy phòng');
       });
 
-      it('does not fetch a skill or add the section when workspaceId is not provided (existing call sites unaffected)', async () => {
-        mockStrategy.generateStructured.mockResolvedValue({
-          action: 'respond',
-          answer: 'ok',
-        });
+      it('still plans without the catalog when loading it fails', async () => {
+        mockSkillCatalog.getCatalogForPrompt.mockRejectedValue(new Error('db down'));
+        mockStrategy.generateStructured.mockResolvedValue({ action: 'respond', answer: 'ok' });
 
-        await service.plan(
-          'câu hỏi',
-          agents,
-          [],
-          [],
-          undefined,
-          undefined,
-          'chan-1',
-        );
+        const plan = await service.plan('câu hỏi', agents, [], [], undefined, undefined, 'chan-1', 'ws-1');
 
-        expect(mockSkillRetrieval.findMatching).not.toHaveBeenCalled();
-        const sentPrompt =
-          mockStrategy.generateStructured.mock.calls[0][0].prompt;
-        expect(sentPrompt).not.toContain('Gợi ý từ 1 lần làm việc tương tự');
-      });
-
-      it('omits the section entirely when no skill matches (findMatching returns null)', async () => {
-        mockSkillRetrieval.findMatching.mockResolvedValue(null);
-        mockStrategy.generateStructured.mockResolvedValue({
-          action: 'respond',
-          answer: 'ok',
-        });
-
-        await service.plan(
-          'câu hỏi',
-          agents,
-          [],
-          [],
-          undefined,
-          undefined,
-          'chan-1',
-          'ws-1',
-        );
-
-        const sentPrompt =
-          mockStrategy.generateStructured.mock.calls[0][0].prompt;
-        expect(sentPrompt).not.toContain('Gợi ý từ 1 lần làm việc tương tự');
+        expect(plan.action).toBe('respond');
+        const sentPrompt = mockStrategy.generateStructured.mock.calls[0][0].prompt;
+        expect(sentPrompt).not.toContain('read_skill');
       });
     });
 

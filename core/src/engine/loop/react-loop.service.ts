@@ -15,6 +15,8 @@ import {
   TOOL_PROVIDER,
   IStreamSink,
   STREAM_SINK,
+  ISkillCatalogReader,
+  SKILL_CATALOG_READER,
 } from '../../contracts';
 import { CircuitBreakerService } from '../../infrastructure/resilience/circuit-breaker.service';
 import { AgentCancellationService } from '../cancellation/agent-cancellation.service';
@@ -22,6 +24,7 @@ import { runCancellable } from '../cancellation/cancellable-run.util';
 import { TurnCancelledError } from './errors/turn-cancelled.error';
 import { capToolResultSize } from '../../common/text/token-budget.util';
 import { MemoryManagerService } from '../../memory/memory-manager.service';
+import { READ_SKILL_TOOL_NAME } from '../../infrastructure/tools/native/read-skill.tool';
 import { ReactLoopRun } from './react-loop-run';
 import { ToolRepeatGuard } from './guards/tool-repeat-guard';
 import { formatPersonaPrompt } from './utils/persona-prompt.util';
@@ -34,6 +37,9 @@ import {
   IdempotencyManager,
   ActionAuditService,
 } from '../../security';
+
+// Provider đặc biệt của McpToolConnectorService trả các native tool dùng chung.
+const NATIVE_PROVIDER = 'native';
 
 // Ghi chú thiết kế đầy đủ (WHY): docs/orchestration/code-notes/react-loop.service.md
 // Logic chi tiết 1 lượt chạy (tool call, self-check, quantity-nudge...) nằm
@@ -63,6 +69,9 @@ export class ReactLoopService {
     private readonly idempotencyManager?: IdempotencyManager,
     @Optional()
     private readonly actionAudit?: ActionAuditService,
+    @Optional()
+    @Inject(SKILL_CATALOG_READER)
+    private readonly skillCatalog?: ISkillCatalogReader,
   ) {}
 
   async run(
@@ -133,10 +142,27 @@ export class ReactLoopService {
         }
 
         const { strategy, model } = this.llmFactory.resolve(reactModelId);
+        // allowedTools chỉ giới hạn tool của provider; native tool (VD read_skill,
+        // chỉ đọc) luôn có sẵn cho mọi engine.
         const effectiveTools =
           dto.allowedTools && dto.allowedTools.length > 0 && !dto.allowedTools.includes('*')
-            ? mcpTools.filter((t) => dto.allowedTools!.includes(t.name))
+            ? mcpTools.filter(
+                (t) =>
+                  dto.allowedTools!.includes(t.name) ||
+                  toolToProviderMap.get(t.name) === NATIVE_PROVIDER,
+              )
             : mcpTools;
+
+        // Level 1 của skill chỉ có ý nghĩa khi agent có read_skill — tránh chỉ dẫn
+        // gọi tool không có (VD khi không có native tool nào được nạp).
+        const skillCatalogText = effectiveTools.some(
+          (t) => t.name === READ_SKILL_TOOL_NAME,
+        )
+          ? await this.loadSkillCatalog(dto.workspaceId)
+          : '';
+        const fullSystemInstruction = skillCatalogText
+          ? `${systemInstruction}\n\n${skillCatalogText}`
+          : systemInstruction;
 
         this.logger.log(
           `run() userId=${dto.userId} provider=${dto.provider} providers=${targetProviders.join(',')} model=${model} toolsAvailable=${effectiveTools.length}/${mcpTools.length}`,
@@ -144,7 +170,7 @@ export class ReactLoopService {
 
         const session = strategy.startChat({
           model,
-          systemInstruction,
+          systemInstruction: fullSystemInstruction,
           tools: effectiveTools.map((t) => ({
             name: t.name,
             description: t.description,
@@ -189,7 +215,60 @@ export class ReactLoopService {
     );
   }
 
+  // Native tool (VD read_skill) dùng chung cho mọi agent, không thuộc provider
+  // nào — nạp thêm sau tool của provider; tool provider trùng tên được ưu tiên.
   private async loadToolsForProviders(
+    providers: string[],
+    prompt: string,
+    signal?: AbortSignal,
+    workspaceId?: string,
+  ): Promise<{
+    mcpTools: McpToolDto[];
+    toolToProviderMap: Map<string, string>;
+  }> {
+    const loaded = await this.loadProviderTools(
+      providers,
+      prompt,
+      signal,
+      workspaceId,
+    );
+    if (providers.includes(NATIVE_PROVIDER)) return loaded;
+
+    try {
+      const nativeTools = await this.toolProvider.getTools(
+        NATIVE_PROVIDER,
+        prompt,
+        signal,
+        workspaceId,
+      );
+      const taken = new Set(loaded.mcpTools.map((t) => t.name));
+      for (const tool of nativeTools ?? []) {
+        if (taken.has(tool.name)) continue;
+        loaded.mcpTools.push(tool);
+        loaded.toolToProviderMap.set(tool.name, NATIVE_PROVIDER);
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Không thể nạp native tool: ${(error as Error)?.message}`,
+      );
+    }
+    return loaded;
+  }
+
+  // Lỗi (VD DB chưa migrate) chỉ làm mất catalog, không được chặn lượt chạy.
+  private async loadSkillCatalog(workspaceId?: string): Promise<string> {
+    if (!this.skillCatalog) return '';
+    try {
+      return await this.skillCatalog.getCatalogForPrompt(workspaceId);
+    } catch (error) {
+      this.logger.warn(
+        `Không thể nạp skill catalog: ${(error as Error)?.message}`,
+      );
+      return '';
+    }
+  }
+
+  private async loadProviderTools(
     providers: string[],
     prompt: string,
     signal?: AbortSignal,

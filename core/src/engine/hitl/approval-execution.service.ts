@@ -11,7 +11,6 @@ import { CheckpointService } from './checkpoint.service';
 import { CheckpointResponseDto } from '../../contracts/dtos/checkpoint.dto';
 import { AgentCancellationService } from '../cancellation/agent-cancellation.service';
 import { TurnCancelledError } from '../loop/errors/turn-cancelled.error';
-import { ApprovalSkillRecorderService } from './approval-skill-recorder.service';
 import { AnswerResult } from '../../contracts/engine/orchestration-answer.types';
 import { TurnEventRecorderService } from '../orchestrator/turn/turn-event-recorder.service';
 import {
@@ -32,8 +31,7 @@ import { ActionAuditService, EReviewerType, EPolicyVerdict } from '../../securit
  * Điều phối xử lý job phê duyệt HITL (Human-in-the-Loop) từ hàng đợi.
  * Nhiệm vụ duy nhất:
  * 1. Claim checkpoint để chống trùng lặp thực thi (idempotency).
- * 2. Ghi nhận kỹ năng học hỏi (Skill Recorder) khi người dùng duyệt tool.
- * 3. Ủy quyền tiếp tục phiên làm việc (resume) cho Execution Engine tương ứng
+ * 2. Ủy quyền tiếp tục phiên làm việc (resume) cho Execution Engine tương ứng
  *    (SingleAgentEngine, PipelineChainingEngine, hoặc DynamicSupervisorEngine).
  */
 @Injectable()
@@ -45,7 +43,6 @@ export class ApprovalExecutionService {
     private readonly agentStream: AgentStreamService,
     private readonly checkpoint: CheckpointService,
     private readonly cancellation: AgentCancellationService,
-    private readonly skillRecorder: ApprovalSkillRecorderService,
     @Inject(EXECUTION_ENGINE_REGISTRY)
     private readonly engineRegistry: IExecutionEngineRegistry,
     @Optional()
@@ -79,14 +76,6 @@ export class ApprovalExecutionService {
     }
 
     if (checkpoint.kind === ECheckpointKind.APPROVAL && checkpoint.pendingTool) {
-      await this.skillRecorder.record({
-        checkpointId: checkpoint.id,
-        workspaceId: checkpoint.workspaceId,
-        pendingTask: checkpoint.pendingTask,
-        pendingTool: checkpoint.pendingTool,
-        riskLevel: checkpoint.riskLevel,
-      });
-
       if (this.actionAudit) {
         const toolName =
           checkpoint.pendingTool.name ||

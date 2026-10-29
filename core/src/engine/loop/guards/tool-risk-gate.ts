@@ -85,6 +85,14 @@ export class ToolRiskGate {
     return this.toolToProviderMap?.get(name) ?? this.dto.provider;
   }
 
+  private isInternalReadOnlyTool(name: string): boolean {
+    const tool = this.mcpTools.find((t) => t.name === name);
+    return (
+      tool?.authType === EProviderAuthType.SYSTEM &&
+      tool.annotations?.readOnlyHint === true
+    );
+  }
+
   isDestructive(name: string): boolean {
     const tool = this.mcpTools.find((t) => t.name === name);
     return Boolean(
@@ -118,6 +126,10 @@ export class ToolRiskGate {
     name: string,
     args: Record<string, unknown>,
   ): Promise<PolicyEvaluationResult | null> {
+    // Tool nội bộ chỉ-đọc (VD read_skill: playbook do admin soạn) không chạm dữ liệu
+    // nghiệp vụ — để LLM judge đánh giá chỉ gây từ chối nhầm theo ý định của người dùng.
+    if (this.isInternalReadOnlyTool(name)) return null;
+
     // 1. Ưu tiên Semantic Policy Evaluator (Domain-Agnostic Hybrid Gate)
     if (this.semanticPolicyEvaluator) {
       const semantic = await this.semanticPolicyEvaluator.evaluate(

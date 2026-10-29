@@ -1,2 +1,1 @@
-// Future HTTP guards (e.g. ApiKeyGuard, SessionGuard, AuthGuard)
-export {};
+export * from './admin-api-key.guard';

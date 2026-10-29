@@ -31,8 +31,8 @@ describe('SupervisorPromptBuilder', () => {
 
   afterEach(() => jest.clearAllMocks());
 
-  it('only includes the original prompt when there is no memory, skill, history, or round yet', () => {
-    const result = builder.build('câu hỏi', [], [], [], MODEL_ID, null);
+  it('only includes the original prompt when there is no memory, history, or round yet', () => {
+    const result = builder.build('câu hỏi', [], [], [], MODEL_ID);
 
     expect(result).toBe('Câu hỏi gốc của user: câu hỏi');
   });
@@ -44,21 +44,11 @@ describe('SupervisorPromptBuilder', () => {
       [],
       [{ content: 'notion.create_page: Page "Roadmap" (id=abc123)' } as any],
       MODEL_ID,
-      null,
     );
 
     expect(result).toContain('Thông tin đã xác nhận trước đó');
     expect(result).toContain('GỢI Ý tham khảo');
     expect(result).toContain('notion.create_page: Page "Roadmap" (id=abc123)');
-  });
-
-  it('includes the matched skill summary framed as optional guidance', () => {
-    const result = builder.build('câu hỏi', [], [], [], MODEL_ID, {
-      summaryMarkdown: '## Tạo sản phẩm\nGọi execute_write_query để INSERT.',
-    } as any);
-
-    expect(result).toContain('Gợi ý từ 1 lần làm việc tương tự');
-    expect(result).toContain('Gọi execute_write_query để INSERT.');
   });
 
   it('redacts old AI answers in history so stale data cannot be reused as fact', () => {
@@ -71,7 +61,6 @@ describe('SupervisorPromptBuilder', () => {
       ],
       [],
       MODEL_ID,
-      null,
     );
 
     expect(result).toContain('User: Bảng Orders có bao nhiêu dòng?');
@@ -84,7 +73,7 @@ describe('SupervisorPromptBuilder', () => {
       { agent: 'sql_server', task: 'đếm dòng', result: 'kết quả: 42' } as any,
     ];
 
-    const result = builder.build('câu hỏi', rounds, [], [], MODEL_ID, null);
+    const result = builder.build('câu hỏi', rounds, [], [], MODEL_ID);
 
     expect(mockMemoryManager.buildBudget).toHaveBeenCalledWith(MODEL_ID);
     expect(result).toContain('Các bước đã thực hiện trong turn này');
@@ -99,7 +88,6 @@ describe('SupervisorPromptBuilder', () => {
       [],
       [{ content: 'fact cũ' } as any],
       MODEL_ID,
-      null,
     );
 
     expect(result).toContain('dấu hiệu không hài lòng/bực bội');
@@ -108,25 +96,53 @@ describe('SupervisorPromptBuilder', () => {
     );
   });
 
-  it('orders sections as: memory, then matched skill, then history, then original prompt, then rounds', () => {
+  it('orders sections as: memory, then history, then original prompt, then rounds', () => {
     const result = builder.build(
       'câu hỏi',
       [{ agent: 'sql_server', task: 't', result: 'r' } as any],
       [{ role: 'user', text: 'trước đó' } as any],
       [{ content: 'fact cũ' } as any],
       MODEL_ID,
-      { summaryMarkdown: 'skill cũ' } as any,
     );
 
     const memoryIdx = result.indexOf('Thông tin đã xác nhận trước đó');
-    const skillIdx = result.indexOf('Gợi ý từ 1 lần làm việc tương tự');
     const historyIdx = result.indexOf('Lịch sử hội thoại gần đây');
     const promptIdx = result.indexOf('Câu hỏi gốc của user');
     const roundsIdx = result.indexOf('Các bước đã thực hiện trong turn này');
 
-    expect(memoryIdx).toBeLessThan(skillIdx);
-    expect(skillIdx).toBeLessThan(historyIdx);
+    expect(memoryIdx).toBeLessThan(historyIdx);
     expect(historyIdx).toBeLessThan(promptIdx);
     expect(promptIdx).toBeLessThan(roundsIdx);
+  });
+
+  it('includes the skill catalog framed so the planner names the slug instead of calling read_skill itself', () => {
+    const result = builder.build('câu hỏi', [], [], [], MODEL_ID, '- hotel-cancellation (Hotel): hủy phòng');
+
+    expect(result).toContain('- hotel-cancellation (Hotel): hủy phòng');
+    expect(result).toContain('KHÔNG gọi read_skill');
+    expect(result).toContain('ghi rõ slug');
+  });
+
+  it('omits the skill section when the catalog is empty or not provided', () => {
+    expect(builder.build('câu hỏi', [], [], [], MODEL_ID, '')).not.toContain('read_skill');
+    expect(builder.build('câu hỏi', [], [], [], MODEL_ID)).not.toContain('read_skill');
+  });
+
+  it('places the skill catalog after memory and before history', () => {
+    const result = builder.build(
+      'câu hỏi',
+      [],
+      [{ role: 'user', text: 'trước đó' } as any],
+      [{ content: 'fact cũ' } as any],
+      MODEL_ID,
+      '- a (A): mô tả',
+    );
+
+    const memoryIdx = result.indexOf('Thông tin đã xác nhận trước đó');
+    const skillIdx = result.indexOf('Skill (playbook nghiệp vụ)');
+    const historyIdx = result.indexOf('Lịch sử hội thoại gần đây');
+
+    expect(memoryIdx).toBeLessThan(skillIdx);
+    expect(skillIdx).toBeLessThan(historyIdx);
   });
 });

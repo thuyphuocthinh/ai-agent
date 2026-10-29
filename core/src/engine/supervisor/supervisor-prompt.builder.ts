@@ -2,12 +2,11 @@ import { Injectable } from '@nestjs/common';
 import { SupervisorRoundDto } from '../../contracts/dtos/supervisor.dto';
 import { ChatHistoryTurnDto } from '../../contracts/dtos/message-client.dto';
 import { ConversationMemoryRecord as ConversationMemoryEntity } from '../../memory/memory.interface';
-import { SkillRecord } from '../../memory/memory.interface';
 import { MemoryManagerService } from '../../memory/memory-manager.service';
 import { capRoundResults } from '../../common/text/token-budget.util';
 import { detectFrustration } from '../loop/utils/detect-frustration.util';
 
-// Ghép conversation_memory + skill gợi ý + lịch sử hội thoại + prompt gốc + các round đã chạy
+// Ghép conversation_memory + skill catalog + lịch sử hội thoại + prompt gốc + các round đã chạy
 // thành 1 prompt duy nhất, đúng thứ tự.
 @Injectable()
 export class SupervisorPromptBuilder {
@@ -19,7 +18,7 @@ export class SupervisorPromptBuilder {
     history: ChatHistoryTurnDto[],
     memories: ConversationMemoryEntity[],
     modelId: string,
-    matchedSkill: SkillRecord | null,
+    skillCatalog = '',
   ): string {
     const sections: string[] = [];
 
@@ -42,12 +41,12 @@ export class SupervisorPromptBuilder {
       );
     }
 
-    // Đúc ra từ các lần làm ĐÚNG y việc này trước đó (xem SkillService) — CHỈ
-    // là tham khảo cách làm cũ, KHÔNG bắt buộc theo, KHÔNG thay thế việc tự
-    // đánh giá agent/tool phù hợp cho yêu cầu hiện tại.
-    if (matchedSkill) {
+    // Level 1 của skill: Supervisor chỉ lập kế hoạch (không gọi tool), nên catalog
+    // để nó nêu slug trong task giao cho agent — agent tự đọc bằng read_skill.
+    if (skillCatalog) {
       sections.push(
-        `Gợi ý từ 1 lần làm việc tương tự trước đó trong workspace này (CHỈ tham khảo cách tiếp cận, KHÔNG bắt buộc làm y hệt — vẫn tự đánh giá lại yêu cầu hiện tại):\n${matchedSkill.summaryMarkdown}`,
+        `Skill (playbook nghiệp vụ) mà agent thực thi có thể đọc. Bạn KHÔNG gọi read_skill; nếu yêu cầu khớp một skill, hãy ghi rõ slug skill đó trong task giao cho agent để agent tự đọc và làm theo:
+${skillCatalog}`,
       );
     }
 

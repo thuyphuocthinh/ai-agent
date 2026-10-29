@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import {
   IToolProvider,
   ToolContext,
@@ -10,6 +10,7 @@ import {
   McpResourceDto,
   McpToolDto,
 } from '../../../contracts/dtos/mcp.dto';
+import { NativeToolRegistryService } from '../native/native-tool-registry.service';
 import { MockProvider, errorResult } from './mock-provider';
 import { MOCK_PROVIDER_ID, createMockSqlProvider } from './mock-sql.provider';
 import { createMockSheetsProvider } from './mock-sheets.provider';
@@ -41,20 +42,36 @@ export class MockToolConnectorService implements IToolProvider {
     createMockProviders().map((p) => [p.id, p]),
   );
 
+  // Native tool (VD read_skill) vẫn dùng được ở chế độ mock — cùng cách McpToolConnectorService.
+  constructor(
+    @Optional()
+    private readonly nativeRegistry?: NativeToolRegistryService,
+  ) {}
+
   async getTools(
     provider: string,
     _query?: string,
     _signal?: AbortSignal,
     _workspaceId?: string,
   ): Promise<McpToolDto[]> {
+    if (provider === 'native') return this.nativeRegistry?.getAllTools() ?? [];
     return this.providers.get(provider)?.tools ?? [];
   }
 
   async callTool(
     dto: CallToolRequestDto,
-    _signal?: AbortSignal,
-    _context?: ToolContext,
+    signal?: AbortSignal,
+    context?: ToolContext,
   ): Promise<CallToolResponseDto> {
+    if (this.nativeRegistry?.hasTool(dto.name)) {
+      return this.nativeRegistry.executeTool(dto.name, dto.args ?? {}, {
+        userId: context?.userId ?? dto.userId,
+        ownerId: dto.ownerId ?? dto.userId,
+        workspaceId: context?.workspaceId ?? dto.workspaceId,
+        tenantId: context?.tenantId ?? dto.tenantId,
+        signal: signal ?? context?.signal,
+      });
+    }
     const id = dto.provider ?? MOCK_PROVIDER_ID;
     const provider = this.providers.get(id);
     if (!provider) {

@@ -14,7 +14,7 @@ import { ToolCallTraceDto } from '../contracts/dtos/react-loop.dto';
 import { isLikelyCreateToolCall } from './create-tool-heuristic.util';
 import { looksLikeInjection } from './memory-injection-heuristic.util';
 import { attachEmbeddingCostMetadata } from '../common/text/llm-cost.util';
-import { cosineSimilarity } from '../common/skill-cosine-similarity.util';
+import { cosineSimilarity } from '../common/cosine-similarity.util';
 
 const FACT_SUPERSEDE_SIMILARITY_THRESHOLD = 0.85;
 

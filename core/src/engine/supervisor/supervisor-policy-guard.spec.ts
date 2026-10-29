@@ -6,7 +6,6 @@ import { LlmStrategyFactory } from '../strategy/llm-strategy.factory';
 import { CircuitBreakerService } from '../../infrastructure/resilience/circuit-breaker.service';
 import { MetricsRegistryService } from '../../infrastructure/resilience/metrics-registry.service';
 import { MemoryManagerService } from '../../memory/memory-manager.service';
-import { SkillRetrievalService } from '../../memory/skill-retrieval.service';
 import { AgentRankingService } from './agent-ranking.service';
 import { SupervisorPromptBuilder } from './supervisor-prompt.builder';
 import { PolicyCorpusService } from '../../security/policy/policy-corpus.service';
@@ -52,10 +51,6 @@ describe('SupervisorService — Policy Guard & Intent-Level Protection', () => {
     }),
   };
 
-  const mockSkillRetrieval = {
-    findMatching: jest.fn().mockResolvedValue(null),
-  };
-
   const mockMetrics = {
     incrementBehaviorSignal: jest.fn(),
   };
@@ -91,7 +86,6 @@ describe('SupervisorService — Policy Guard & Intent-Level Protection', () => {
         { provide: DynamicProviderService, useValue: mockDynamicProviderDb },
         { provide: MetricsRegistryService, useValue: mockMetrics },
         { provide: MemoryManagerService, useValue: mockMemoryManager },
-        { provide: SkillRetrievalService, useValue: mockSkillRetrieval },
         { provide: AgentRankingService, useValue: agentRanking },
         { provide: SupervisorPromptBuilder, useValue: promptBuilder },
         { provide: PolicyCorpusService, useValue: corpus },

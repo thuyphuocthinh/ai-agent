@@ -1,4 +1,4 @@
-import { cosineSimilarity } from './skill-cosine-similarity.util';
+import { cosineSimilarity } from './cosine-similarity.util';
 
 describe('cosineSimilarity', () => {
   it('returns 1 for identical vectors', () => {

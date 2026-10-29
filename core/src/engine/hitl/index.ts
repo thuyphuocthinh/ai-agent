@@ -4,5 +4,4 @@ export * from './trigger-claim.service';
 export * from './approval-request.service';
 export * from './approval-execution.service';
 export * from './approval-continuation-planner.service';
-export * from './approval-skill-recorder.service';
 export * from './checkpoint-pause.service';

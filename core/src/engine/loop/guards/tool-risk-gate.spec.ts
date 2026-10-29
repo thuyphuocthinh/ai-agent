@@ -324,6 +324,47 @@ describe('ToolRiskGate', () => {
       );
     });
 
+    it('evaluatePolicy() bỏ qua judge với tool nội bộ chỉ-đọc (SYSTEM + readOnlyHint), vẫn đánh giá tool khác', async () => {
+      const mockSemanticEvaluator = {
+        evaluate: jest.fn().mockResolvedValue({
+          verdict: EPolicyVerdict.DENY,
+          reason: 'vi phạm',
+          matchingPolicies: [],
+        }),
+      };
+      const gate = new ToolRiskGate({
+        dto: baseDto,
+        mcpTools: [
+          {
+            name: 'read_skill',
+            inputSchema: {},
+            authType: EProviderAuthType.SYSTEM,
+            annotations: { readOnlyHint: true },
+          },
+          {
+            name: 'system_write',
+            inputSchema: {},
+            authType: EProviderAuthType.SYSTEM,
+          },
+          { name: 'read_only_oauth', inputSchema: {}, annotations: { readOnlyHint: true } },
+        ],
+        strategy: createStrategy(),
+        model: 'gemini-2.0-flash',
+        circuitBreaker,
+        logger,
+        signal: new AbortController().signal,
+        insertAccumulator: new InsertAccumulator(),
+        semanticPolicyEvaluator: mockSemanticEvaluator as never,
+      });
+
+      await expect(gate.evaluatePolicy('read_skill', { slug: 'a' })).resolves.toBeNull();
+      expect(mockSemanticEvaluator.evaluate).not.toHaveBeenCalled();
+
+      await gate.evaluatePolicy('system_write', {});
+      await gate.evaluatePolicy('read_only_oauth', {});
+      expect(mockSemanticEvaluator.evaluate).toHaveBeenCalledTimes(2);
+    });
+
     it('evaluatePolicy() fallback đến BusinessPolicyEngine theo action type', async () => {
       const mockPolicyEngine = {
         evaluate: jest.fn().mockReturnValue({

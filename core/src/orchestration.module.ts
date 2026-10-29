@@ -32,8 +32,9 @@ import {
 } from './contracts/queue/queue-processor.interface';
 import { ConversationMemoryCleanupService } from './memory/conversation-memory-cleanup.service';
 import { MemoryManagerService } from './memory/memory-manager.service';
-import { SkillService } from './memory/skill.service';
-import { SkillRetrievalService } from './memory/skill-retrieval.service';
+import { SkillCatalogService } from './memory/skill/skill-catalog.service';
+import { SKILL_CATALOG_READER } from './contracts/skill/skill-catalog-reader.interface';
+import { ReadSkillTool } from './infrastructure/tools/native/read-skill.tool';
 import { CheckpointCleanupService } from './engine/hitl/checkpoint-cleanup.service';
 import { ResilienceModule } from './infrastructure/resilience/resilience.module';
 import { ToolsInfrastructureModule } from './infrastructure/tools/tools-infrastructure.module';
@@ -59,7 +60,6 @@ import { CheckpointPauseService } from './engine/hitl/checkpoint-pause.service';
 import { ApprovalRequestService } from './engine/hitl/approval-request.service';
 import { ApprovalExecutionService } from './engine/hitl/approval-execution.service';
 import { ApprovalContinuationPlannerService } from './engine/hitl/approval-continuation-planner.service';
-import { ApprovalSkillRecorderService } from './engine/hitl/approval-skill-recorder.service';
 import { MessageClientService } from './engine/streaming/message-client.service';
 import { AgentStreamService } from './engine/streaming/agent-stream.service';
 import {
@@ -74,6 +74,7 @@ import {
   ChatController,
   WorkflowController,
   IntegrationsController,
+  SkillController,
   MetricsController,
   HealthController,
   ChatService,
@@ -107,6 +108,7 @@ import { SecurityModule } from './security';
     ChatController,
     WorkflowController,
     IntegrationsController,
+    SkillController,
     MetricsController,
     HealthController,
   ],
@@ -156,8 +158,9 @@ import { SecurityModule } from './security';
     },
     ConversationMemoryCleanupService,
     MemoryManagerService,
-    SkillService,
-    SkillRetrievalService,
+    SkillCatalogService,
+    { provide: SKILL_CATALOG_READER, useExisting: SkillCatalogService },
+    ReadSkillTool,
     PrismaTriggerClaimService,
     AgentCancellationService,
     TurnResolverService,
@@ -198,7 +201,6 @@ import { SecurityModule } from './security';
     ApprovalRequestService,
     ApprovalExecutionService,
     ApprovalContinuationPlannerService,
-    ApprovalSkillRecorderService,
     PrismaMessageSink,
     {
       provide: MessageClientService,
