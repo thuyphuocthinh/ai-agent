@@ -16,3 +16,4 @@ export * from './engine/pipeline-chaining.interface';
 export * from './engine/parallel-fanout.interface';
 export * from './dtos';
 export * from './streaming/vercel-ui-stream.adapter';
+export * from './observability';

@@ -24,6 +24,7 @@ import {
   IExecutionEngineRegistry,
   EExecutionEngineMode,
 } from '../../contracts/engine/execution-engine.interface';
+import { ActionAuditService, EReviewerType, EPolicyVerdict } from '../../security';
 
 /**
  * ApprovalExecutionService
@@ -52,6 +53,8 @@ export class ApprovalExecutionService {
     private readonly eventLog?: ITurnEventLog,
     @Optional()
     private readonly turnRecorder?: TurnEventRecorderService,
+    @Optional()
+    private readonly actionAudit?: ActionAuditService,
   ) {}
 
   async processApprovalJob(data: IProcessApprovalJobData): Promise<void> {
@@ -83,6 +86,35 @@ export class ApprovalExecutionService {
         pendingTool: checkpoint.pendingTool,
         riskLevel: checkpoint.riskLevel,
       });
+
+      if (this.actionAudit) {
+        const toolName =
+          checkpoint.pendingTool.name ||
+          checkpoint.pendingTask ||
+          ECheckpointKind.APPROVAL;
+        await this.actionAudit
+          .record({
+            userId: data.userId,
+            tenantId: checkpoint.workspaceId,
+            actionType: toolName,
+            evaluationStatus: EPolicyVerdict.ALLOW,
+            reviewer: EReviewerType.HUMAN,
+            idempotencyKey: checkpoint.id,
+            metadata: {
+              approverUserId: data.userId,
+              checkpointId: checkpoint.id,
+              replyMessageId: checkpoint.replyMessageId,
+              channelId: checkpoint.channelId,
+              pendingTool: checkpoint.pendingTool,
+              riskLevel: checkpoint.riskLevel,
+            },
+          })
+          .catch((error: unknown) => {
+            this.logger.warn(
+              `Không thể ghi nhận nhật ký kiểm toán cho checkpoint ${checkpoint.id}: ${(error as Error)?.message}`,
+            );
+          });
+      }
     }
 
     const engineMode = checkpoint.engineMode || EExecutionEngineMode.DYNAMIC_SUPERVISOR;

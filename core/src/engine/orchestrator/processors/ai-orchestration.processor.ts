@@ -35,6 +35,11 @@ import { AgentCancellationService } from '../../cancellation/agent-cancellation.
 import { TurnCancelledError } from '../../loop/errors/turn-cancelled.error';
 import { TurnResolverService } from '../turn/turn-resolver.service';
 import { ApprovalExecutionService } from '../../hitl/approval-execution.service';
+import {
+  ITracerService,
+  TRACER_SERVICE,
+  GEN_AI_ATTRIBUTES,
+} from '../../../contracts/observability';
 
 type AiOrchestrationJobData =
   | IProcessAiTriggerJobData
@@ -67,6 +72,9 @@ export class AiOrchestrationProcessor extends BaseProcessor<
     private readonly eventLog?: ITurnEventLog,
     @Optional()
     private readonly turnRecorder?: TurnEventRecorderService,
+    @Optional()
+    @Inject(TRACER_SERVICE)
+    private readonly tracer?: ITracerService,
   ) {
     super();
   }
@@ -104,7 +112,22 @@ export class AiOrchestrationProcessor extends BaseProcessor<
             metadata: { checkpointId: data.checkpointId, userId: data.userId },
           },
         );
-        await traced(data);
+        if (this.tracer) {
+          await this.tracer.withSpan(
+            'ai-orchestration-approval',
+            async (span) => {
+              span.setAttributes({
+                [GEN_AI_ATTRIBUTES.AGENT_USER_ID]: data.userId,
+                [GEN_AI_ATTRIBUTES.AGENT_MESSAGE_ID]: data.checkpointId,
+                [GEN_AI_ATTRIBUTES.OPERATION_NAME]: 'ai-orchestration-approval',
+              });
+              await traced(data);
+            },
+            { root: true },
+          );
+        } else {
+          await traced(data);
+        }
         break;
       }
       default:
@@ -193,7 +216,25 @@ export class AiOrchestrationProcessor extends BaseProcessor<
     const startTimeMs = Date.now();
     let finalStatus = ETurnLogStatus.DONE;
     try {
-      const result = await traced(data, reply.id);
+      const executeTurn = () => traced(data, reply.id);
+      const result = this.tracer
+        ? await this.tracer.withSpan(
+            'ai-orchestration-turn',
+            async (span) => {
+              span.setAttributes({
+                [GEN_AI_ATTRIBUTES.AGENT_USER_ID]: userId,
+                [GEN_AI_ATTRIBUTES.AGENT_CONVERSATION_ID]: channelId,
+                [GEN_AI_ATTRIBUTES.AGENT_WORKSPACE_ID]: workspaceId,
+                [GEN_AI_ATTRIBUTES.AGENT_MESSAGE_ID]: reply.id,
+                [GEN_AI_ATTRIBUTES.AGENT_TURN_ID]: messageId,
+                [GEN_AI_ATTRIBUTES.OPERATION_NAME]: 'ai-orchestration-turn',
+              });
+              return executeTurn();
+            },
+            { root: true },
+          )
+        : await executeTurn();
+
       await this.batchFlushSuccess(
         reply.id,
         botUserId,

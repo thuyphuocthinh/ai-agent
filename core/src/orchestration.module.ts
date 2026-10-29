@@ -37,6 +37,7 @@ import { SkillRetrievalService } from './memory/skill-retrieval.service';
 import { CheckpointCleanupService } from './engine/hitl/checkpoint-cleanup.service';
 import { ResilienceModule } from './infrastructure/resilience/resilience.module';
 import { ToolsInfrastructureModule } from './infrastructure/tools/tools-infrastructure.module';
+import { ObservabilityModule } from './infrastructure/observability/observability.module';
 import { EmbeddingModule } from './infrastructure/embedding/embedding.module';
 import { AgentCancellationService } from './engine/cancellation/agent-cancellation.service';
 import { TurnResolverService } from './engine/orchestrator/turn/turn-resolver.service';
@@ -73,6 +74,8 @@ import {
   ChatController,
   WorkflowController,
   IntegrationsController,
+  MetricsController,
+  HealthController,
   ChatService,
   IntegrationsService,
   ChatSessionManager,
@@ -96,10 +99,17 @@ import { SecurityModule } from './security';
     ]),
     SecurityModule,
     ResilienceModule,
+    ObservabilityModule,
     EmbeddingModule,
     ToolsInfrastructureModule,
   ],
-  controllers: [ChatController, WorkflowController, IntegrationsController],
+  controllers: [
+    ChatController,
+    WorkflowController,
+    IntegrationsController,
+    MetricsController,
+    HealthController,
+  ],
   providers: [
     PrismaChatSessionManager,
     InMemoryChatSessionManager,
