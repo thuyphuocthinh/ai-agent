@@ -11,6 +11,7 @@
     "test": "pnpm -r run test",
     "typecheck": "pnpm -r run typecheck",
     "arch": "pnpm --filter @agent/core arch",
+    "boot:check": "pnpm --filter @agent/core boot:check",
     "start:cli": "pnpm --filter @agent/cli start",
     "cli": "pnpm --filter @agent/cli start",
     "dev:cli": "pnpm --filter @agent/cli start",
@@ -18,6 +19,10 @@
     "dev": "pnpm --parallel --filter @agent/core --filter @agent/cli run \"/^(start:dev|web)$/\"",
     "local:up": "docker compose -f docker-compose.local.yml up -d --wait",
     "local:down": "docker compose -f docker-compose.local.yml down",
-    "local:reset": "docker compose -f docker-compose.local.yml down -v"
+    "local:reset": "docker compose -f docker-compose.local.yml down -v",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "husky": "^9.1.7"
   }
 }

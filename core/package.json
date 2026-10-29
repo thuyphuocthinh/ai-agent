@@ -11,6 +11,7 @@
     "lint": "eslint \"{src}/**/*.ts\" --fix",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "arch": "depcruise src --config .dependency-cruiser.cjs",
+    "boot:check": "node scripts/boot-check.js",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
