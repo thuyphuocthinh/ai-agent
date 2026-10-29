@@ -88,44 +88,67 @@ export class DynamicSupervisorEngine implements IExecutionEngine {
   }
 
   async resume(checkpoint: CheckpointResponseDto): Promise<AnswerResult> {
-    const { userId, replyMessageId, workspaceId } = checkpoint;
+    const { userId, workspaceId } = checkpoint;
     const agents = await this.supervisor.getAvailableAgents(userId, workspaceId);
-    const triggerData: IProcessAiTriggerJobData = {
-      userId,
+    const triggerData = this.buildTriggerData(checkpoint);
+
+    // 1. Trường hợp Clarification (chọn giữa 2 agents mập mờ, VD: Notion vs Google Docs)
+    if (checkpoint.kind === ECheckpointKind.CLARIFICATION) {
+      return this.resumeClarification(checkpoint, triggerData, agents);
+    }
+
+    // 2. Trường hợp Approval (duyệt thao tác ghi/xóa rủi ro của Sub-Agent)
+    return this.resumeApproval(checkpoint, triggerData, agents);
+  }
+
+  private buildTriggerData(
+    checkpoint: CheckpointResponseDto,
+  ): IProcessAiTriggerJobData {
+    return {
+      userId: checkpoint.userId,
       channelId: checkpoint.channelId,
-      workspaceId,
-      messageId: replyMessageId,
+      workspaceId: checkpoint.workspaceId,
+      messageId: checkpoint.replyMessageId,
       botUserId: checkpoint.botUserId,
       channelType: checkpoint.channelType,
       sessionType: checkpoint.sessionType,
       conversationId: checkpoint.conversationId,
     };
+  }
 
-    // 1. Trường hợp Clarification (chọn giữa 2 agents mập mờ, VD: Notion vs Google Docs)
-    if (checkpoint.kind === ECheckpointKind.CLARIFICATION) {
-      const forcedStep: DelegationDto = {
-        agent: checkpoint.selectedProvider!,
-        task: checkpoint.pendingTask,
-      };
+  private resumeClarification(
+    checkpoint: CheckpointResponseDto,
+    triggerData: IProcessAiTriggerJobData,
+    agents: AvailableAgentDto[],
+  ): Promise<AnswerResult> {
+    const forcedStep: DelegationDto = {
+      agent: checkpoint.selectedProvider!,
+      task: checkpoint.pendingTask,
+    };
 
-      this.logger.log(
-        `[DynamicSupervisorEngine] Resume Clarification cho turn ${replyMessageId}: ép agent ${forcedStep.agent}`,
-      );
+    this.logger.log(
+      `[DynamicSupervisorEngine] Resume Clarification cho turn ${checkpoint.replyMessageId}: ép agent ${forcedStep.agent}`,
+    );
 
-      return this.continueRounds(
-        triggerData,
-        replyMessageId,
-        checkpoint.originalPrompt,
-        agents,
-        checkpoint.history,
-        checkpoint.roundsSoFar,
-        [],
-        forcedStep,
-        checkpoint.remainingSteps,
-      );
-    }
+    return this.continueRounds(
+      triggerData,
+      checkpoint.replyMessageId,
+      checkpoint.originalPrompt,
+      agents,
+      checkpoint.history,
+      checkpoint.roundsSoFar,
+      [],
+      forcedStep,
+      checkpoint.remainingSteps,
+    );
+  }
 
-    // 2. Trường hợp Approval (duyệt thao tác ghi/xóa rủi ro của Sub-Agent)
+  private async resumeApproval(
+    checkpoint: CheckpointResponseDto,
+    triggerData: IProcessAiTriggerJobData,
+    agents: AvailableAgentDto[],
+  ): Promise<AnswerResult> {
+    const { userId, replyMessageId, workspaceId } = checkpoint;
     const pendingTool = checkpoint.pendingTool;
     if (!pendingTool) {
       throw new Error('Checkpoint approval thiếu thông tin pendingTool');

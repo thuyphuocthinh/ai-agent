@@ -305,19 +305,58 @@ export class ToolCallExecutor {
       this.logger.warn(
         `tool_call ${displayName} bị từ chối bởi Preflight Guard: ${preflightError}`,
       );
-      await this.emitToolCall(displayName, argsPreview, toolCallId, friendlySummary);
-      await this.recordResult(
+      return this.rejectCall(
         displayName,
-        EStepExecutionStatus.ERROR,
+        argsPreview,
+        toolCallId,
+        friendlySummary,
         preflightError,
+      );
+    }
+
+    // 2. Thẩm định chính sách kinh doanh (Declarative Policy Engine / Semantic RAG)
+    const policyRejection = await this.applyPolicy(
+      name,
+      args,
+      displayName,
+      argsPreview,
+      toolCallId,
+      friendlySummary,
+    );
+    if (policyRejection !== undefined) return policyRejection;
+
+    if (this.riskGate.isDestructive(name)) {
+      return this.handleDestructiveToolCall(
+        name,
+        args,
+        displayName,
         argsPreview,
         toolCallId,
         friendlySummary,
       );
-      return preflightError;
     }
 
-    // 2. Thẩm định chính sách kinh doanh (Declarative Policy Engine / Semantic RAG)
+    return this.executeTrackedToolCall(
+      name,
+      args,
+      displayName,
+      argsPreview,
+      toolCallId,
+      friendlySummary,
+    );
+  }
+
+  // Thẩm định chính sách kinh doanh: trả thông báo từ chối nếu vi phạm, ném lỗi escalation/
+  // approval nếu cần; undefined nghĩa là được đi tiếp.
+  private async applyPolicy(
+    name: string,
+    args: Record<string, unknown>,
+    displayName: string,
+    argsPreview: string,
+    toolCallId: string,
+    friendlySummary?: string,
+  ): Promise<string | undefined> {
+    const { provider, rawName } = this.resolveToolCall(name);
     const policyResult = this.riskGate.evaluatePolicy
       ? await this.riskGate.evaluatePolicy(name, args)
       : null;
@@ -325,16 +364,13 @@ export class ToolCallExecutor {
       if (policyResult.status === EPolicyStatus.POLICY_VIOLATION) {
         const violationMsg = `[Chính sách kinh doanh] Từ chối thực thi: ${policyResult.reason}`;
         this.logger.warn(`tool_call ${displayName} vi phạm chính sách: ${policyResult.reason}`);
-        await this.emitToolCall(displayName, argsPreview, toolCallId, friendlySummary);
-        await this.recordResult(
+        return this.rejectCall(
           displayName,
-          EStepExecutionStatus.ERROR,
-          violationMsg,
           argsPreview,
           toolCallId,
           friendlySummary,
+          violationMsg,
         );
-        return violationMsg;
       }
       if (policyResult.status === EPolicyStatus.EXCEEDS_AI_AUTHORITY) {
         this.logger.warn(
@@ -361,26 +397,7 @@ export class ToolCallExecutor {
         );
       }
     }
-
-    if (this.riskGate.isDestructive(name)) {
-      return this.handleDestructiveToolCall(
-        name,
-        args,
-        displayName,
-        argsPreview,
-        toolCallId,
-        friendlySummary,
-      );
-    }
-
-    return this.executeTrackedToolCall(
-      name,
-      args,
-      displayName,
-      argsPreview,
-      toolCallId,
-      friendlySummary,
-    );
+    return undefined;
   }
 
   private async executeTrackedToolCall(
@@ -425,16 +442,13 @@ export class ToolCallExecutor {
     if (!idempotency.success) {
       const msg = buildIdempotencyBlockedMessage(idempotency.reason);
       this.logger.warn(`tool_call ${displayName} bị khóa bởi Idempotency: ${idempotency.reason}`);
-      await this.emitToolCall(displayName, argsPreview, toolCallId, friendlySummary);
-      await this.recordResult(
+      return this.rejectCall(
         displayName,
-        EStepExecutionStatus.ERROR,
-        msg,
         argsPreview,
         toolCallId,
         friendlySummary,
+        msg,
       );
-      return msg;
     }
 
     try {
@@ -451,19 +465,7 @@ export class ToolCallExecutor {
         await this.riskGate.completeIdempotency(idempotency.key, result);
       }
 
-      if (this.actionAudit) {
-        await this.actionAudit.record({
-          userId: this.dto.userId,
-          tenantId: this.dto.workspaceId,
-          actionType: name,
-          entityId: String(args.orderId ?? args.id ?? args.order_id ?? ''),
-          amount: typeof args.amount === 'number' ? args.amount : undefined,
-          evaluationStatus: 'SUCCESS',
-          reviewer: 'AI',
-          idempotencyKey: idempotency.key,
-          metadata: args,
-        });
-      }
+      await this.auditSuccess(name, args, idempotency.key);
 
       return result;
     } catch (error) {
@@ -472,6 +474,25 @@ export class ToolCallExecutor {
       }
       throw error;
     }
+  }
+
+  private async auditSuccess(
+    name: string,
+    args: Record<string, unknown>,
+    idempotencyKey: string | undefined,
+  ): Promise<void> {
+    if (!this.actionAudit) return;
+    await this.actionAudit.record({
+      userId: this.dto.userId,
+      tenantId: this.dto.workspaceId,
+      actionType: name,
+      entityId: String(args.orderId ?? args.id ?? args.order_id ?? ''),
+      amount: typeof args.amount === 'number' ? args.amount : undefined,
+      evaluationStatus: 'SUCCESS',
+      reviewer: 'AI',
+      idempotencyKey,
+      metadata: args,
+    });
   }
 
   /** Risk Gate (Giai đoạn 3, HITL) — chặn TRƯỚC KHI thực thi, trừ khi model
@@ -493,16 +514,13 @@ export class ToolCallExecutor {
       this.logger.warn(
         `tool_call ${displayName} bị chặn TRƯỚC approval: ${shortfallMessage}`,
       );
-      await this.emitToolCall(displayName, argsPreview, toolCallId, friendlySummary);
-      await this.recordResult(
+      return this.rejectCall(
         displayName,
-        EStepExecutionStatus.ERROR,
-        shortfallMessage,
         argsPreview,
         toolCallId,
         friendlySummary,
+        shortfallMessage,
       );
-      return shortfallMessage;
     }
 
     if (this.riskGate.isAutoApprovableInsert(name, args)) {
@@ -573,16 +591,13 @@ export class ToolCallExecutor {
     this.logger.warn(
       `tool_call ${displayName} bị chặn — lặp lại quá ${ORCHESTRATION_CONSTANTS.MAX_SAME_TOOL_CALL_REPEATS} lần với cùng tham số`,
     );
-    await this.emitToolCall(displayName, argsPreview, toolCallId, friendlySummary);
-    await this.recordResult(
+    return this.rejectCall(
       displayName,
-      EStepExecutionStatus.ERROR,
-      resultPreview,
       argsPreview,
       toolCallId,
       friendlySummary,
+      resultPreview,
     );
-    return resultPreview;
   }
 
   private async runToolCall(
@@ -618,42 +633,12 @@ export class ToolCallExecutor {
           this.signal,
         );
       } catch (error) {
-        if (this.signal?.aborted) {
-          throw error;
-        }
-        if (
-          error instanceof ClarificationRequiredError ||
-          (error as Error)?.name === 'ClarificationRequiredError'
-        ) {
-          if (error instanceof ClarificationRequiredError) {
-            throw error;
-          }
-          const e = error as Error & { candidates?: IClarificationCandidate[]; parameterName?: string };
-          throw new ClarificationRequiredError(
-            e.message,
-            e.candidates ?? [],
-            this.toolCalls,
-            e.parameterName,
-          );
-        }
-        const errorMessage = PiiScrubberUtil.scrub(
-          (error as Error).message,
-        ) as string;
-        this.logger.warn(
-          `tool_result ${displayName} FAILED (exception): ${errorMessage}`,
-        );
-        await this.recordResult(
+        return this.handleCallFailure(
+          error,
           displayName,
-          EStepExecutionStatus.ERROR,
-          errorMessage,
           argsPreview,
           toolCallId,
           friendlySummary,
-        );
-        return capToolResultSize(
-          errorMessage,
-          this.memoryManager.buildBudget(this.reactModelId)
-            .toolResultCharBudget,
         );
       }
 
@@ -693,14 +678,90 @@ export class ToolCallExecutor {
       toolCallId,
       friendlySummary,
     );
-    const feedText = capToolResultSize(
-      text,
-      this.memoryManager.buildBudget(this.reactModelId).toolResultCharBudget,
-    );
+    const feedText = this.capForFeed(text);
     if (status === 'success') {
       this.repeatGuard.cacheSuccess(signature, resultPreview, feedText);
     }
     return feedText;
+  }
+
+  // Tool ném exception: huỷ/hỏi-lại thì ném tiếp; còn lại ghi tool_result ERROR (đã scrub PII)
+  // và trả thông báo lỗi (đã cắt theo ngân sách) cho LLM.
+  private async handleCallFailure(
+    error: unknown,
+    displayName: string,
+    argsPreview: string,
+    toolCallId: string,
+    friendlySummary?: string,
+  ): Promise<string> {
+    if (this.signal?.aborted) {
+      throw error;
+    }
+    this.rethrowIfClarification(error);
+    const errorMessage = PiiScrubberUtil.scrub(
+      (error as Error).message,
+    ) as string;
+    this.logger.warn(
+      `tool_result ${displayName} FAILED (exception): ${errorMessage}`,
+    );
+    await this.recordResult(
+      displayName,
+      EStepExecutionStatus.ERROR,
+      errorMessage,
+      argsPreview,
+      toolCallId,
+      friendlySummary,
+    );
+    return this.capForFeed(errorMessage);
+  }
+
+  // Tool call bị từ chối trước khi gọi thật (preflight/policy/idempotency/lặp/thiếu dòng):
+  // emit tool_call + ghi tool_result ERROR, rồi trả chính thông báo đó cho LLM.
+  private async rejectCall(
+    displayName: string,
+    argsPreview: string,
+    toolCallId: string,
+    friendlySummary: string | undefined,
+    message: string,
+  ): Promise<string> {
+    await this.emitToolCall(displayName, argsPreview, toolCallId, friendlySummary);
+    await this.recordResult(
+      displayName,
+      EStepExecutionStatus.ERROR,
+      message,
+      argsPreview,
+      toolCallId,
+      friendlySummary,
+    );
+    return message;
+  }
+
+  // Lỗi hỏi lại người dùng (kể cả bản sao khác module, nhận diện qua name) được ném lại
+  // kèm toolCalls đã ghi; lỗi khác thì bỏ qua để nơi gọi xử lý như lỗi tool thường.
+  private rethrowIfClarification(error: unknown): void {
+    if (
+      error instanceof ClarificationRequiredError ||
+      (error as Error)?.name === 'ClarificationRequiredError'
+    ) {
+      if (error instanceof ClarificationRequiredError) {
+        throw error;
+      }
+      const e = error as Error & { candidates?: IClarificationCandidate[]; parameterName?: string };
+      throw new ClarificationRequiredError(
+        e.message,
+        e.candidates ?? [],
+        this.toolCalls,
+        e.parameterName,
+      );
+    }
+  }
+
+  // Cắt kết quả tool theo ngân sách ký tự của model trước khi đưa lại cho LLM.
+  private capForFeed(text: string): string {
+    return capToolResultSize(
+      text,
+      this.memoryManager.buildBudget(this.reactModelId).toolResultCharBudget,
+    );
   }
 
   // Mọi tool_result (kể cả bị chặn/dùng lại cache) đều phải có tool_call đi trước,

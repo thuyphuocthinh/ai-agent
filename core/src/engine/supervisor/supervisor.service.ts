@@ -179,10 +179,7 @@ export class SupervisorService {
     }
     const agentListText = formatAgentList(shown, omittedCount);
 
-    const planSchema =
-      rounds.length > 0
-        ? SUPERVISOR_PLAN_SCHEMA_NO_ANSWER
-        : SUPERVISOR_PLAN_SCHEMA;
+    const planSchema = this.selectPlanSchema(rounds);
 
     try {
       const planModelId = resolveSupervisorModelId('plan');
@@ -198,60 +195,11 @@ export class SupervisorService {
       // ver3.md mục 5 — chỉ để harvest thủ công cho eval dataset sau này
       // (grep log theo tag), KHÔNG ảnh hưởng tới prompt (đã xử lý trong
       // buildPrompt() riêng).
-      const frustrationPattern = detectFrustration(prompt);
-      if (frustrationPattern) {
-        this.logger.warn(
-          `[frustration-signal] channelId=${channelId ?? 'unknown'} pattern="${frustrationPattern}"`,
-        );
-      }
-      // Policy Guard: Thẩm định chính sách ngữ nghĩa trước khi phân công SubAgent
-      if (this.semanticPolicyEvaluator && rounds.length === 0) {
-        try {
-          const evalResult = await this.semanticPolicyEvaluator.evaluatePrompt(prompt);
-          if (evalResult.verdict === EPolicyVerdict.REQUIRE_APPROVAL) {
-            const hasAuthorizedTool = agents.some(
-              (a) => a.provider === 'k8s_ops' || a.provider === 'ingress_manager',
-            );
-            if (!hasAuthorizedTool) {
-              this.logger.warn(`[Supervisor Policy Guard] Chặn yêu cầu Ingress rủi ro cao không có tool: ${prompt}`);
-              return {
-                action: 'respond',
-                answer: buildIngressApprovalRequiredAnswer(evalResult.citedRuleId),
-              };
-            }
-          } else if (evalResult.verdict === EPolicyVerdict.DENY) {
-            this.logger.warn(`[Supervisor Policy Guard] Chặn yêu cầu vi phạm chính sách cấm: ${prompt}`);
-            return {
-              action: 'respond',
-              answer: buildPolicyDeniedAnswer(evalResult.reason, evalResult.citedRuleId),
-            };
-          } else if (evalResult.verdict === EPolicyVerdict.ESCALATE) {
-            this.logger.warn(`[Supervisor Policy Guard] Chuyển tiếp sự vụ vượt thẩm quyền AI: ${prompt}`);
-            return {
-              action: 'respond',
-              answer: buildPolicyEscalatedAnswer(evalResult.reason, evalResult.citedRuleId),
-            };
-          }
-        } catch (err) {
-          this.logger.warn(`Lỗi thẩm định policy ở Supervisor: ${(err as Error)?.message}`);
-        }
-      }
+      this.logFrustrationSignal(prompt, channelId);
+      const blocked = await this.applyPolicyGuard(prompt, agents, rounds);
+      if (blocked) return blocked;
 
-      let policyGuidance = '';
-      if (this.policyCorpus) {
-        try {
-          const relevant = await this.policyCorpus.findRelevantPolicies(prompt, {
-            limit: 3,
-            minScore: 0.15,
-          });
-
-          policyGuidance = buildSupervisorPolicyGuidance(
-            relevant.map((r) => r.chunk),
-          );
-        } catch (err) {
-          this.logger.warn(`Lỗi truy xuất policy grounding ở Supervisor: ${(err as Error)?.message}`);
-        }
-      }
+      const policyGuidance = await this.buildPolicyGuidance(prompt);
 
       const fullPrompt = this.promptBuilder.build(
         prompt,
@@ -279,30 +227,16 @@ export class SupervisorService {
         signal,
       );
       this.logger.log(`plan() result=${JSON.stringify(plan)}`);
-      if (plan.action === 'plan' && plan.steps?.[0]) {
-        const cluster = this.agentRanking.findAmbiguousAgentCluster(
-          prompt,
-          shown,
-          plan.steps[0].agent,
-        );
-        if (cluster) {
-          this.logger.warn(
-            `[ambiguous-agent-cluster] plan() chọn "${plan.steps[0].agent}" giữa ${cluster.length} agent mô tả tương tự nhau — candidates=${cluster.map((a) => a.provider).join(',')}`,
-          );
-          this.metrics.incrementBehaviorSignal('ambiguous_cluster');
-          plan.ambiguousCandidates = cluster;
-          return this.escalateIfAmbiguous(
-            plan,
-            fullPrompt,
-            agentListText,
-            planSchema,
-            shown,
-            prompt,
-            signal,
-          );
-        }
-      }
-      return plan;
+      // await (không return thẳng promise) để lỗi đồng bộ trong bước này vẫn rơi vào catch bên dưới như cũ.
+      return await this.resolveAmbiguousPlan(
+        plan,
+        fullPrompt,
+        agentListText,
+        planSchema,
+        shown,
+        prompt,
+        signal,
+      );
     } catch (error) {
       if (signal?.aborted) {
         throw error;
@@ -313,6 +247,119 @@ export class SupervisorService {
       );
       return { action: 'respond', answer: describeExternalServiceError(error) };
     }
+  }
+
+  // Đã có round trước đó thì Supervisor không được "respond" trực tiếp ngay từ đầu turn (schema không có answer).
+  private selectPlanSchema(rounds: SupervisorRoundDto[]) {
+    return rounds.length > 0
+      ? SUPERVISOR_PLAN_SCHEMA_NO_ANSWER
+      : SUPERVISOR_PLAN_SCHEMA;
+  }
+
+  private logFrustrationSignal(prompt: string, channelId?: string): void {
+    const frustrationPattern = detectFrustration(prompt);
+    if (frustrationPattern) {
+      this.logger.warn(
+        `[frustration-signal] channelId=${channelId ?? 'unknown'} pattern="${frustrationPattern}"`,
+      );
+    }
+  }
+
+  // Nếu bước đầu của plan chọn giữa các agent mô tả tương tự nhau thì ghi nhận
+  // cluster mơ hồ và (nếu bật) escalate sang model mạnh hơn; ngược lại giữ nguyên plan.
+  private async resolveAmbiguousPlan(
+    plan: SupervisorPlanDto,
+    fullPrompt: string,
+    agentListText: string,
+    planSchema: Record<string, unknown>,
+    shown: AvailableAgentDto[],
+    prompt: string,
+    signal?: AbortSignal,
+  ): Promise<SupervisorPlanDto> {
+    if (plan.action === 'plan' && plan.steps?.[0]) {
+      const cluster = this.agentRanking.findAmbiguousAgentCluster(
+        prompt,
+        shown,
+        plan.steps[0].agent,
+      );
+      if (cluster) {
+        this.logger.warn(
+          `[ambiguous-agent-cluster] plan() chọn "${plan.steps[0].agent}" giữa ${cluster.length} agent mô tả tương tự nhau — candidates=${cluster.map((a) => a.provider).join(',')}`,
+        );
+        this.metrics.incrementBehaviorSignal('ambiguous_cluster');
+        plan.ambiguousCandidates = cluster;
+        return this.escalateIfAmbiguous(
+          plan,
+          fullPrompt,
+          agentListText,
+          planSchema,
+          shown,
+          prompt,
+          signal,
+        );
+      }
+    }
+    return plan;
+  }
+
+  // Policy Guard: thẩm định chính sách ngữ nghĩa trước khi phân công SubAgent.
+  // Trả về câu trả lời chặn (respond) hoặc undefined nếu được phép đi tiếp.
+  private async applyPolicyGuard(
+    prompt: string,
+    agents: AvailableAgentDto[],
+    rounds: SupervisorRoundDto[],
+  ): Promise<SupervisorPlanDto | undefined> {
+    if (this.semanticPolicyEvaluator && rounds.length === 0) {
+      try {
+        const evalResult = await this.semanticPolicyEvaluator.evaluatePrompt(prompt);
+        if (evalResult.verdict === EPolicyVerdict.REQUIRE_APPROVAL) {
+          const hasAuthorizedTool = agents.some(
+            (a) => a.provider === 'k8s_ops' || a.provider === 'ingress_manager',
+          );
+          if (!hasAuthorizedTool) {
+            this.logger.warn(`[Supervisor Policy Guard] Chặn yêu cầu Ingress rủi ro cao không có tool: ${prompt}`);
+            return {
+              action: 'respond',
+              answer: buildIngressApprovalRequiredAnswer(evalResult.citedRuleId),
+            };
+          }
+        } else if (evalResult.verdict === EPolicyVerdict.DENY) {
+          this.logger.warn(`[Supervisor Policy Guard] Chặn yêu cầu vi phạm chính sách cấm: ${prompt}`);
+          return {
+            action: 'respond',
+            answer: buildPolicyDeniedAnswer(evalResult.reason, evalResult.citedRuleId),
+          };
+        } else if (evalResult.verdict === EPolicyVerdict.ESCALATE) {
+          this.logger.warn(`[Supervisor Policy Guard] Chuyển tiếp sự vụ vượt thẩm quyền AI: ${prompt}`);
+          return {
+            action: 'respond',
+            answer: buildPolicyEscalatedAnswer(evalResult.reason, evalResult.citedRuleId),
+          };
+        }
+      } catch (err) {
+        this.logger.warn(`Lỗi thẩm định policy ở Supervisor: ${(err as Error)?.message}`);
+      }
+    }
+    return undefined;
+  }
+
+  private async buildPolicyGuidance(prompt: string): Promise<string> {
+    let policyGuidance = '';
+    if (this.policyCorpus) {
+      try {
+        const relevant = await this.policyCorpus.findRelevantPolicies(prompt, {
+          limit: 3,
+          minScore: 0.15,
+        });
+
+        policyGuidance = buildSupervisorPolicyGuidance(
+          relevant.map((r) => r.chunk),
+        );
+      } catch (err) {
+        this.logger.warn(`Lỗi truy xuất policy grounding ở Supervisor: ${(err as Error)?.message}`);
+      }
+    }
+    return policyGuidance;
   }
 
   // ver3.md — model rẻ bị bias theo vị trí khi 2 agent mô tả giống nhau (đo

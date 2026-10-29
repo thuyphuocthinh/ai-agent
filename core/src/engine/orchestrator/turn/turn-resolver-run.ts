@@ -19,6 +19,7 @@ import {
   buildReplanRoundResult,
   buildUnknownAgentAnswer,
 } from './utils/turn-resolver-prompt.util';
+import { normalizePlanStepAgents } from './utils/plan-step.util';
 import { buildQuantityMismatchAnswer } from '../../loop/utils/react-loop-prompt.util';
 import { ToolRepeatGuard } from '../../loop/guards/tool-repeat-guard';
 import { SupervisorService } from '../../supervisor/supervisor.service';
@@ -247,13 +248,7 @@ export class TurnResolverRun {
       return { done: true, answer: await this.finalizeAnswer() };
     }
     if (outcome === 'replan') {
-      this.nonProgressRounds++;
-      this.metrics.incrementBehaviorSignal('replan');
-      this.rounds.push({
-        agent: lastRound.agent,
-        task: lastRound.task,
-        result: buildReplanRoundResult(),
-      });
+      this.applyReplanVerdict(lastRound);
       return { done: false, steps: [], needsPlan: true };
     }
     return { done: false, steps, needsPlan: false };
@@ -287,17 +282,7 @@ export class TurnResolverRun {
 
     if (plan.action === 'respond') {
       if (plan.rememberFact) {
-        this.memoryManager
-          .recordUserDeclaredFact(
-            conversationId,
-            this.replyMessageId,
-            plan.rememberFact,
-          )
-          .catch((error) =>
-            this.logger.warn(
-              `recordUserDeclaredFact() failed: ${(error as Error).message}`,
-            ),
-          );
+        this.recordDeclaredFact(conversationId, plan.rememberFact);
       }
       const answerHint =
         plan.answer ||
@@ -308,20 +293,7 @@ export class TurnResolverRun {
     }
 
     const steps = plan.steps ?? [];
-
-    steps.forEach((s) => {
-      const safeAgent = s.agent || '';
-      const matchedAgent = this.agents.find(
-        (a) =>
-          a.provider === safeAgent ||
-          a.label.toLowerCase() === safeAgent.toLowerCase() ||
-          a.label.toLowerCase().replace(/[^a-z0-9]/g, '') ===
-            safeAgent.toLowerCase().replace(/[^a-z0-9]/g, ''),
-      );
-      if (matchedAgent && matchedAgent.provider !== s.agent) {
-        s.agent = matchedAgent.provider;
-      }
-    });
+    normalizePlanStepAgents(steps, this.agents);
 
     if (steps.every((s) => !this.agents.some((a) => a.provider === s.agent))) {
       const attemptedAgents = steps.map((s) => s.agent || 'unknown').join(', ');
@@ -355,6 +327,17 @@ export class TurnResolverRun {
     }
 
     return { done: false, steps };
+  }
+
+  // Fire-and-forget: ghi nhớ fact người dùng tự khai báo, lỗi chỉ cảnh báo.
+  private recordDeclaredFact(conversationId: string, fact: string): void {
+    this.memoryManager
+      .recordUserDeclaredFact(conversationId, this.replyMessageId, fact)
+      .catch((error) =>
+        this.logger.warn(
+          `recordUserDeclaredFact() failed: ${(error as Error).message}`,
+        ),
+      );
   }
 
   /** true nghĩa là ĐÃ push round guardrail + cần re-plan — gọi nơi gọi tự
@@ -399,24 +382,9 @@ export class TurnResolverRun {
       );
     } catch (error) {
       if (error instanceof ClarificationRequiredError) {
-        this.metrics.incrementBehaviorSignal('clarification_required');
-        const candidates: AvailableAgentDto[] = error.candidates.map((c) => ({
-          provider: c.id,
-          label: c.label,
-          description: c.description ?? '',
-        }));
         return {
           done: true,
-          answer: await this.checkpointPause.pauseForClarification(
-            this.data,
-            this.prompt,
-            this.rounds,
-            this.toolCalls,
-            this.history,
-            error.question,
-            candidates,
-            remainingSteps,
-          ),
+          answer: await this.handleClarification(error, remainingSteps),
         };
       }
       throw error;
@@ -426,56 +394,14 @@ export class TurnResolverRun {
       (r) => r && 'approvalRequired' in r,
     );
     if (approvalIdx !== -1) {
-      for (let i = 0; i < approvalIdx; i++) {
-        const s = batch[i];
-        const res = results[i] as DelegateRoundResult | null;
-        this.rounds.push(
-          res?.round ?? {
-            agent: s.agent,
-            task: s.task,
-            result:
-              AGENT_UNAVAILABLE_RESULT,
-          },
-        );
-        if (res) this.toolCalls.push(...res.toolCalls);
-        this.executionSteps.push({
-          agent: s.agent,
-          task: s.task,
-          persona: sanitizePersona(s.persona),
-          toolCalls: res?.toolCalls ?? [],
-          result: res?.round?.result,
-        });
-      }
-
-      const approvalResult = results[approvalIdx] as ApprovalRequiredDelegateResult;
-      const pendingStep = batch[approvalIdx];
-      const unexecutedSteps = [...batch.slice(approvalIdx + 1), ...remainingSteps];
-
-      this.realStepsRun = startRealSteps + approvalIdx + 1;
-      this.toolCalls.push(...approvalResult.toolCalls);
-      this.executionSteps.push({
-        agent: pendingStep.agent,
-        task: pendingStep.task,
-        persona: sanitizePersona(pendingStep.persona),
-        toolCalls: approvalResult.toolCalls,
-      });
-      const preApproval = this.buildPreApprovalRound(
-        pendingStep,
-        approvalResult.toolCalls,
-      );
-      if (preApproval) this.rounds.push(preApproval);
-
-      this.metrics.incrementBehaviorSignal('approval_required');
       return {
         done: true,
-        answer: await this.checkpointPause.pauseForApproval(
-          this.data,
-          this.prompt,
-          this.rounds,
-          this.toolCalls,
-          this.history,
-          approvalResult,
-          unexecutedSteps,
+        answer: await this.handleApprovalResult(
+          batch,
+          results,
+          approvalIdx,
+          remainingSteps,
+          startRealSteps,
         ),
       };
     }
@@ -483,29 +409,11 @@ export class TurnResolverRun {
     this.realStepsRun = startRealSteps + batch.length;
 
     for (let i = 0; i < batch.length; i++) {
-      const step = batch[i];
-      const result = results[i] as DelegateRoundResult | null;
-      let completedRound: SupervisorRoundDto;
-      if (result) {
-        completedRound = result.round;
-      } else {
-        completedRound = {
-          agent: step.agent,
-          task: step.task,
-          result:
-            AGENT_UNAVAILABLE_RESULT,
-        };
-      }
-
-      this.rounds.push(completedRound);
-      if (result) this.toolCalls.push(...result.toolCalls);
-      this.executionSteps.push({
-        agent: step.agent,
-        task: step.task,
-        persona: sanitizePersona(step.persona),
-        toolCalls: result?.toolCalls ?? [],
-        result: completedRound.result,
-      });
+      this.recordRound(
+        batch[i],
+        results[i] as DelegateRoundResult | null,
+        true,
+      );
     }
 
     const lastRound = this.rounds[this.rounds.length - 1];
@@ -515,26 +423,147 @@ export class TurnResolverRun {
       return { done: true, answer: await this.finalizeAnswer() };
     }
     if (outcome === 'replan') {
-      this.nonProgressRounds++;
-      this.metrics.incrementBehaviorSignal('replan');
-      this.rounds.push({
-        agent: lastRound.agent,
-        task: lastRound.task,
-        result: buildReplanRoundResult(),
-      });
+      this.applyReplanVerdict(lastRound);
       return { done: false, replan: true };
     }
 
     return { done: false, replan: false };
   }
 
+  // Ghi lại kết quả 1 bước vào rounds/toolCalls/executionSteps (đúng thứ tự push cũ).
+  // Agent không khả dụng (res = null) được ghi round "chưa khả dụng"; executionSteps chỉ
+  // mang chuỗi đó khi reportUnavailableResult (nhánh chạy bình thường), còn nhánh
+  // trước-approval giữ result undefined như cũ.
+  private recordRound(
+    step: DelegationDto,
+    res: DelegateRoundResult | null,
+    reportUnavailableResult: boolean,
+  ): SupervisorRoundDto {
+    const round: SupervisorRoundDto = res?.round ?? {
+      agent: step.agent,
+      task: step.task,
+      result: AGENT_UNAVAILABLE_RESULT,
+    };
+    this.rounds.push(round);
+    if (res) this.toolCalls.push(...res.toolCalls);
+    this.executionSteps.push({
+      agent: step.agent,
+      task: step.task,
+      persona: sanitizePersona(step.persona),
+      toolCalls: res?.toolCalls ?? [],
+      result: reportUnavailableResult ? round.result : res?.round?.result,
+    });
+    return round;
+  }
+
+  // Verdict REPLAN: tính 1 round không tiến triển và ghi dấu để lượt plan sau biết.
+  private applyReplanVerdict(lastRound: SupervisorRoundDto): void {
+    this.nonProgressRounds++;
+    this.metrics.incrementBehaviorSignal('replan');
+    this.rounds.push({
+      agent: lastRound.agent,
+      task: lastRound.task,
+      result: buildReplanRoundResult(),
+    });
+  }
+
+  // Tool cần người dùng hỏi lại: dừng turn, lưu checkpoint kèm các ứng viên.
+  private async handleClarification(
+    error: ClarificationRequiredError,
+    remainingSteps: DelegationDto[],
+  ): Promise<AnswerResult> {
+    this.metrics.incrementBehaviorSignal('clarification_required');
+    const candidates: AvailableAgentDto[] = error.candidates.map((c) => ({
+      provider: c.id,
+      label: c.label,
+      description: c.description ?? '',
+    }));
+    return this.checkpointPause.pauseForClarification(
+      this.data,
+      this.prompt,
+      this.rounds,
+      this.toolCalls,
+      this.history,
+      error.question,
+      candidates,
+      remainingSteps,
+    );
+  }
+
+  // Một bước trong batch cần duyệt: ghi các bước đứng trước nó, rồi dừng turn chờ approval.
+  private async handleApprovalResult(
+    batch: DelegationDto[],
+    results: Array<DelegateRoundResult | ApprovalRequiredDelegateResult | null>,
+    approvalIdx: number,
+    remainingSteps: DelegationDto[],
+    startRealSteps: number,
+  ): Promise<AnswerResult> {
+    for (let i = 0; i < approvalIdx; i++) {
+      this.recordRound(batch[i], results[i] as DelegateRoundResult | null, false);
+    }
+
+    const approvalResult = results[approvalIdx] as ApprovalRequiredDelegateResult;
+    const pendingStep = batch[approvalIdx];
+    const unexecutedSteps = [...batch.slice(approvalIdx + 1), ...remainingSteps];
+
+    this.realStepsRun = startRealSteps + approvalIdx + 1;
+    this.toolCalls.push(...approvalResult.toolCalls);
+    this.executionSteps.push({
+      agent: pendingStep.agent,
+      task: pendingStep.task,
+      persona: sanitizePersona(pendingStep.persona),
+      toolCalls: approvalResult.toolCalls,
+    });
+    const preApproval = this.buildPreApprovalRound(
+      pendingStep,
+      approvalResult.toolCalls,
+    );
+    if (preApproval) this.rounds.push(preApproval);
+
+    this.metrics.incrementBehaviorSignal('approval_required');
+    return this.checkpointPause.pauseForApproval(
+      this.data,
+      this.prompt,
+      this.rounds,
+      this.toolCalls,
+      this.history,
+      approvalResult,
+      unexecutedSteps,
+    );
+  }
+
   private async runNonConvergenceFallback(): Promise<AnswerResult> {
     const { userId } = this.data;
-    const { conversationId, sessionType } = resolveTurnChannel(this.data);
     this.logger.warn(
       `Supervisor chưa hội tụ (realSteps=${this.realStepsRun}/${ORCHESTRATION_CONSTANTS.MAX_REAL_STEPS_PER_TURN}, nonProgress=${this.nonProgressRounds}/${ORCHESTRATION_CONSTANTS.MAX_SUPERVISOR_ROUNDS}) cho user ${userId}, tổng hợp lại kết quả đã có`,
     );
     this.metrics.incrementBehaviorSignal('non_convergence');
+    return this.synthesizeFinalAnswer();
+  }
+
+  private async finalizeAnswer(answerHint?: string): Promise<AnswerResult> {
+    if (this.rounds.length === 1) {
+      return buildAnswer(
+        await this.appendDisclaimers(this.rounds[0].result),
+        this.toolCalls,
+        this.executionSteps,
+      );
+    }
+    if (this.rounds.length > 1) {
+      return this.synthesizeFinalAnswer();
+    }
+    return buildAnswer(
+      answerHint || DEFAULT_EMPTY_ANSWER,
+      this.toolCalls,
+      this.executionSteps,
+    );
+  }
+
+  // Tổng hợp câu trả lời cuối từ các round đã có, stream token ra client. Bị huỷ giữa
+  // chừng thì TurnCancelledError mang phần đã stream cộng các round đã xong.
+  private async synthesizeFinalAnswer(): Promise<AnswerResult> {
+    const { userId } = this.data;
+    const { conversationId, sessionType } = resolveTurnChannel(this.data);
     await this.agentStream
       .emitStep(
         buildStreamContext(this.data, this.replyMessageId),
@@ -545,7 +574,7 @@ export class TurnResolverRun {
         },
       )
       .catch(() => {});
-    const fallbackAccumulator = { text: '' };
+    const accumulator = { text: '' };
     const finalAnswer = await runCancellable(
       this.replyMessageId,
       this.cancellation,
@@ -559,77 +588,18 @@ export class TurnResolverRun {
             conversationId,
             this.replyMessageId,
             sessionType,
-            fallbackAccumulator,
+            accumulator,
           ),
           sig,
         ),
       () =>
         new TurnCancelledError(
-          buildCancelledPartialText(this.rounds, fallbackAccumulator.text),
+          buildCancelledPartialText(this.rounds, accumulator.text),
         ),
       this.signal,
     );
     return buildAnswer(
       await this.appendDisclaimers(finalAnswer),
-      this.toolCalls,
-      this.executionSteps,
-    );
-  }
-
-  private async finalizeAnswer(answerHint?: string): Promise<AnswerResult> {
-    const { userId } = this.data;
-    const { conversationId, sessionType } = resolveTurnChannel(this.data);
-
-    if (this.rounds.length === 1) {
-      return buildAnswer(
-        await this.appendDisclaimers(this.rounds[0].result),
-        this.toolCalls,
-        this.executionSteps,
-      );
-    }
-    if (this.rounds.length > 1) {
-      await this.agentStream
-        .emitStep(
-          buildStreamContext(this.data, this.replyMessageId),
-          {
-            type: EAgentStreamStepType.STEP_START,
-            label: 'Tổng hợp câu trả lời',
-            kind: EAgentStreamStepKind.SYNTHESIZE,
-          },
-        )
-        .catch(() => {});
-      const accumulator = { text: '' };
-      const finalAnswer = await runCancellable(
-        this.replyMessageId,
-        this.cancellation,
-        (sig) =>
-          this.supervisor.synthesize(
-            this.prompt,
-            this.rounds,
-            buildOnToken(
-              this.agentStream,
-              userId,
-              conversationId,
-              this.replyMessageId,
-              sessionType,
-              accumulator,
-            ),
-            sig,
-          ),
-        () =>
-          new TurnCancelledError(
-            buildCancelledPartialText(this.rounds, accumulator.text),
-          ),
-        this.signal,
-      );
-      return buildAnswer(
-        await this.appendDisclaimers(finalAnswer),
-        this.toolCalls,
-        this.executionSteps,
-      );
-    }
-    return buildAnswer(
-      answerHint || DEFAULT_EMPTY_ANSWER,
       this.toolCalls,
       this.executionSteps,
     );
@@ -787,25 +757,7 @@ export class TurnResolverRun {
     }
 
     const task = delegation.task || this.prompt;
-    const reactModelId =
-      process.env.DEFAULT_REACT_MODEL ??
-      ORCHESTRATION_CONSTANTS.DEFAULT_REACT_MODEL;
-    const realRoundsSoFar = this.rounds.filter((r) => !isNonProgressRound(r));
-    // Chỉ khi kế hoạch còn bước khác (đã chạy hoặc sắp chạy) mới giới hạn phạm vi:
-    // không có dòng này, worker thấy cả yêu cầu gốc và làm luôn phần của các bước kia
-    // (bước 1 gọi đủ SQL cho cả 4 bước), khiến các bước sau chỉ chép lại nhau.
-    const promptWithContext = buildDelegationPrompt({
-      task,
-      originalPrompt: this.prompt,
-      limitScope: remainingSteps.length > 0 || realRoundsSoFar.length > 0,
-      priorRounds:
-        realRoundsSoFar.length > 0
-          ? capRoundResultsWeighted(
-              realRoundsSoFar,
-              this.memoryManager.buildBudget(reactModelId).toolResultCharBudget,
-            )
-          : [],
-    });
+    const promptWithContext = this.buildWorkerPrompt(task, remainingSteps);
     const streamKey = `r${round}-${targetAgent.provider}`;
     // Persona do LLM sinh nên sanitize trước khi đưa ra client (giống khi tiêm prompt).
     const persona = sanitizePersona(delegation.persona);
@@ -843,35 +795,71 @@ export class TurnResolverRun {
         toolCalls,
       };
     } catch (error) {
-      if (error instanceof TurnCancelledError) {
-        // ReactLoop's own partialText chỉ là phần dở của round NÀY — gộp
-        // thêm các round TRƯỚC đã xong (xem buildCancelledPartialText).
-        throw new TurnCancelledError(
-          buildCancelledPartialText(this.rounds, error.partialText),
-        );
-      }
-      if (error instanceof ApprovalRequiredError) {
-        return {
-          approvalRequired: error.pendingTool,
-          task,
-          toolCalls: error.toolCalls,
-        };
-      }
-      if (error instanceof ClarificationRequiredError) {
-        throw error;
-      }
-      this.logger.error(
-        `ReactLoop failed for agent "${targetAgent.provider}": ${(error as Error).message}`,
-        (error as Error).stack,
+      return this.handleDelegateError(error, targetAgent, task);
+    }
+  }
+
+  // Prompt đưa cho worker: task + (nếu có bước khác) ràng buộc phạm vi và kết quả các round trước.
+  private buildWorkerPrompt(
+    task: string,
+    remainingSteps: DelegationDto[],
+  ): string {
+    const reactModelId =
+      process.env.DEFAULT_REACT_MODEL ??
+      ORCHESTRATION_CONSTANTS.DEFAULT_REACT_MODEL;
+    const realRoundsSoFar = this.rounds.filter((r) => !isNonProgressRound(r));
+    // Chỉ khi kế hoạch còn bước khác (đã chạy hoặc sắp chạy) mới giới hạn phạm vi:
+    // không có dòng này, worker thấy cả yêu cầu gốc và làm luôn phần của các bước kia
+    // (bước 1 gọi đủ SQL cho cả 4 bước), khiến các bước sau chỉ chép lại nhau.
+    return buildDelegationPrompt({
+      task,
+      originalPrompt: this.prompt,
+      limitScope: remainingSteps.length > 0 || realRoundsSoFar.length > 0,
+      priorRounds:
+        realRoundsSoFar.length > 0
+          ? capRoundResultsWeighted(
+              realRoundsSoFar,
+              this.memoryManager.buildBudget(reactModelId).toolResultCharBudget,
+            )
+          : [],
+    });
+  }
+
+  // Lỗi từ ReactLoop của 1 worker: huỷ/hỏi-lại ném tiếp, cần duyệt trả kết quả pending,
+  // còn lại biến thành round lỗi để turn vẫn chạy tiếp.
+  private handleDelegateError(
+    error: unknown,
+    targetAgent: AvailableAgentDto,
+    task: string,
+  ): DelegateRoundResult | ApprovalRequiredDelegateResult {
+    if (error instanceof TurnCancelledError) {
+      // ReactLoop's own partialText chỉ là phần dở của round NÀY — gộp
+      // thêm các round TRƯỚC đã xong (xem buildCancelledPartialText).
+      throw new TurnCancelledError(
+        buildCancelledPartialText(this.rounds, error.partialText),
       );
+    }
+    if (error instanceof ApprovalRequiredError) {
       return {
-        round: {
-          agent: targetAgent.provider,
-          task,
-          result: describeExternalServiceError(error),
-        },
-        toolCalls: [],
+        approvalRequired: error.pendingTool,
+        task,
+        toolCalls: error.toolCalls,
       };
     }
+    if (error instanceof ClarificationRequiredError) {
+      throw error;
+    }
+    this.logger.error(
+      `ReactLoop failed for agent "${targetAgent.provider}": ${(error as Error).message}`,
+      (error as Error).stack,
+    );
+    return {
+      round: {
+        agent: targetAgent.provider,
+        task,
+        result: describeExternalServiceError(error),
+      },
+      toolCalls: [],
+    };
   }
 }

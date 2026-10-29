@@ -3,12 +3,14 @@ import {
   ORCHESTRATION_CONSTANTS,
   ORCHESTRATION_SYSTEM_PROMPT,
   EAgentStreamStepType,
+  NATIVE_TOOL_PROVIDER,
 } from '@agent/core/constants';
 import {
   RunReactLoopRequestDto,
   RunReactLoopResponseDto,
 } from '../../contracts/dtos/react-loop.dto';
 import { McpToolDto } from '../../contracts/dtos/mcp.dto';
+import { ReactLoopRunDeps } from './react-loop.interface';
 import { LlmStrategyFactory } from '../strategy/llm-strategy.factory';
 import {
   IToolProvider,
@@ -32,6 +34,7 @@ import { READ_SKILL_TOOL_NAME } from '../../infrastructure/tools/native/read-ski
 import { ReactLoopRun } from './react-loop-run';
 import { ToolRepeatGuard } from './guards/tool-repeat-guard';
 import { formatPersonaPrompt } from './utils/persona-prompt.util';
+import { resolveEffectiveTools } from './utils/effective-tools.util';
 import {
   buildPolicyGroundingPrompt,
   buildResourcesPrompt,
@@ -53,9 +56,6 @@ import {
   IdempotencyManager,
   ActionAuditService,
 } from '../../security';
-
-// Provider đặc biệt của McpToolConnectorService trả các native tool dùng chung.
-const NATIVE_PROVIDER = 'native';
 
 // Ghi chú thiết kế đầy đủ (WHY): docs/orchestration/code-notes/react-loop.service.md
 // Logic chi tiết 1 lượt chạy (tool call, self-check, quantity-nudge...) nằm
@@ -126,116 +126,20 @@ export class ReactLoopService {
       dto.messageId,
       this.cancellation,
       async (signal) => {
-        const reactModelId =
-          dto.model ??
-          process.env.DEFAULT_REACT_MODEL ??
-          ORCHESTRATION_CONSTANTS.DEFAULT_REACT_MODEL;
-
-        const targetProviders =
-          dto.providers && dto.providers.length > 0
-            ? dto.providers
-            : [dto.provider];
-        const primaryProvider = targetProviders[0];
-
-        // Skill gán cứng (workflow/pipeline) thì không dò theo độ khớp. Dò khớp chạy
-        // song song với nạp tool/prompt để không cộng thêm độ trễ nối tiếp.
-        const forcedSkillSlugs = dto.skills ?? [];
-        const [{ mcpTools, toolToProviderMap }, systemInstruction, skillMatches] =
-          await Promise.all([
-            this.loadToolsForProviders(
-              targetProviders,
-              dto.prompt,
-              signal,
-              dto.workspaceId,
-            ),
-            this.buildSystemInstruction(
-              primaryProvider,
-              dto.userId,
-              reactModelId,
-              signal,
-              dto.workspaceId,
-              dto.persona,
-              dto.prompt,
-            ),
-            forcedSkillSlugs.length > 0
-              ? Promise.resolve<ISkillMatch[]>([])
-              : this.loadSkillMatches(dto.prompt, dto.workspaceId),
-          ]);
-
-        if (signal.aborted) {
-          throw new TurnCancelledError(undefined);
-        }
-
-        const { strategy, model } = this.llmFactory.resolve(reactModelId);
-        // allowedTools chỉ giới hạn tool của provider; native tool (VD read_skill,
-        // chỉ đọc) luôn có sẵn cho mọi engine.
-        const effectiveTools =
-          dto.allowedTools && dto.allowedTools.length > 0 && !dto.allowedTools.includes('*')
-            ? mcpTools.filter(
-                (t) =>
-                  dto.allowedTools!.includes(t.name) ||
-                  toolToProviderMap.get(t.name) === NATIVE_PROVIDER,
-              )
-            : mcpTools;
-
-        const skillPromptText =
-          forcedSkillSlugs.length > 0
-            ? await this.buildExplicitSkillPrompt(forcedSkillSlugs, dto.workspaceId)
-            : await this.buildMatchedSkillPrompt(
-                skillMatches,
-                dto.workspaceId,
-                effectiveTools.some((t) => t.name === READ_SKILL_TOOL_NAME),
-              );
-
-        const fullSystemInstruction = [
-          systemInstruction,
-          skillPromptText,
-        ]
-          .filter(Boolean)
-          .join('\n\n');
-
-        this.logger.log(
-          `run() userId=${dto.userId} provider=${dto.provider} providers=${targetProviders.join(',')} model=${model} toolsAvailable=${effectiveTools.length}/${mcpTools.length}`,
-        );
-
-        const session = strategy.startChat({
-          model,
-          systemInstruction: fullSystemInstruction,
-          tools: effectiveTools.map((t) => ({
-            name: t.name,
-            description: t.description,
-            parameters: t.inputSchema,
-          })),
-          history: dto.history,
-          temperature: ORCHESTRATION_CONSTANTS.REACT_LOOP_TEMPERATURE,
-        });
-
+        const prepared = await this.prepareLoop(dto, signal);
         const reactLoopRun = new ReactLoopRun(
           {
             dto,
-            mcpTools: effectiveTools,
-            strategy,
-            model,
-            reactModelId,
-            session,
+            mcpTools: prepared.effectiveTools,
+            strategy: prepared.strategy,
+            model: prepared.model,
+            reactModelId: prepared.reactModelId,
+            session: prepared.session,
             signal,
             repeatGuard,
-            toolToProviderMap,
+            toolToProviderMap: prepared.toolToProviderMap,
           },
-          {
-            toolProvider: this.toolProvider,
-            streamSink: this.streamSink,
-            mcpClient: this.toolProvider,
-            agentStream: this.streamSink,
-            circuitBreaker: this.circuitBreaker,
-            memoryManager: this.memoryManager,
-            logger: this.logger,
-            preflightGuard: this.preflightGuard,
-            policyEngine: this.policyEngine,
-            semanticPolicyEvaluator: this.semanticPolicyEvaluator,
-            idempotencyManager: this.idempotencyManager,
-            actionAudit: this.actionAudit,
-          },
+          this.buildRunDeps(),
         );
 
         return reactLoopRun.execute(onToken, resync);
@@ -243,6 +147,115 @@ export class ReactLoopService {
       () => new TurnCancelledError(confirmedText || undefined),
       parentSignal,
     );
+  }
+
+  // Nạp tool + system instruction + dò khớp skill SONG SONG (không cộng độ trễ nối tiếp),
+  // rồi dựng chat session cho lượt chạy.
+  private async prepareLoop(dto: RunReactLoopRequestDto, signal: AbortSignal) {
+    const reactModelId =
+      dto.model ??
+      process.env.DEFAULT_REACT_MODEL ??
+      ORCHESTRATION_CONSTANTS.DEFAULT_REACT_MODEL;
+
+    const targetProviders =
+      dto.providers && dto.providers.length > 0
+        ? dto.providers
+        : [dto.provider];
+    const primaryProvider = targetProviders[0];
+
+    // Skill gán cứng (workflow/pipeline) thì không dò theo độ khớp. Dò khớp chạy
+    // song song với nạp tool/prompt để không cộng thêm độ trễ nối tiếp.
+    const forcedSkillSlugs = dto.skills ?? [];
+    const [{ mcpTools, toolToProviderMap }, systemInstruction, skillMatches] =
+      await Promise.all([
+        this.loadToolsForProviders(
+          targetProviders,
+          dto.prompt,
+          signal,
+          dto.workspaceId,
+        ),
+        this.buildSystemInstruction(
+          primaryProvider,
+          dto.userId,
+          reactModelId,
+          signal,
+          dto.workspaceId,
+          dto.persona,
+          dto.prompt,
+        ),
+        forcedSkillSlugs.length > 0
+          ? Promise.resolve<ISkillMatch[]>([])
+          : this.loadSkillMatches(dto.prompt, dto.workspaceId),
+      ]);
+
+    if (signal.aborted) {
+      throw new TurnCancelledError(undefined);
+    }
+
+    const { strategy, model } = this.llmFactory.resolve(reactModelId);
+    const effectiveTools = resolveEffectiveTools(
+      mcpTools,
+      toolToProviderMap,
+      dto.allowedTools,
+    );
+
+    const skillPromptText =
+      forcedSkillSlugs.length > 0
+        ? await this.buildExplicitSkillPrompt(forcedSkillSlugs, dto.workspaceId)
+        : await this.buildMatchedSkillPrompt(
+            skillMatches,
+            dto.workspaceId,
+            effectiveTools.some((t) => t.name === READ_SKILL_TOOL_NAME),
+          );
+
+    const fullSystemInstruction = [
+      systemInstruction,
+      skillPromptText,
+    ]
+      .filter(Boolean)
+      .join('\n\n');
+
+    this.logger.log(
+      `run() userId=${dto.userId} provider=${dto.provider} providers=${targetProviders.join(',')} model=${model} toolsAvailable=${effectiveTools.length}/${mcpTools.length}`,
+    );
+
+    const session = strategy.startChat({
+      model,
+      systemInstruction: fullSystemInstruction,
+      tools: effectiveTools.map((t) => ({
+        name: t.name,
+        description: t.description,
+        parameters: t.inputSchema,
+      })),
+      history: dto.history,
+      temperature: ORCHESTRATION_CONSTANTS.REACT_LOOP_TEMPERATURE,
+    });
+
+    return {
+      reactModelId,
+      strategy,
+      model,
+      session,
+      effectiveTools,
+      toolToProviderMap,
+    };
+  }
+
+  private buildRunDeps(): ReactLoopRunDeps {
+    return {
+      toolProvider: this.toolProvider,
+      streamSink: this.streamSink,
+      mcpClient: this.toolProvider,
+      agentStream: this.streamSink,
+      circuitBreaker: this.circuitBreaker,
+      memoryManager: this.memoryManager,
+      logger: this.logger,
+      preflightGuard: this.preflightGuard,
+      policyEngine: this.policyEngine,
+      semanticPolicyEvaluator: this.semanticPolicyEvaluator,
+      idempotencyManager: this.idempotencyManager,
+      actionAudit: this.actionAudit,
+    };
   }
 
   // Native tool (VD read_skill) dùng chung cho mọi agent, không thuộc provider
@@ -262,11 +275,11 @@ export class ReactLoopService {
       signal,
       workspaceId,
     );
-    if (providers.includes(NATIVE_PROVIDER)) return loaded;
+    if (providers.includes(NATIVE_TOOL_PROVIDER)) return loaded;
 
     try {
       const nativeTools = await this.toolProvider.getTools(
-        NATIVE_PROVIDER,
+        NATIVE_TOOL_PROVIDER,
         prompt,
         signal,
         workspaceId,
@@ -275,7 +288,7 @@ export class ReactLoopService {
       for (const tool of nativeTools ?? []) {
         if (taken.has(tool.name)) continue;
         loaded.mcpTools.push(tool);
-        loaded.toolToProviderMap.set(tool.name, NATIVE_PROVIDER);
+        loaded.toolToProviderMap.set(tool.name, NATIVE_TOOL_PROVIDER);
       }
     } catch (error) {
       this.logger.warn(
@@ -432,12 +445,40 @@ export class ReactLoopService {
     persona?: PersonaDto,
     userPrompt?: string,
   ): Promise<string> {
+    const resourceContents = await this.buildResourcesBlock(
+      provider,
+      userId,
+      modelId,
+      signal,
+      workspaceId,
+    );
+
+    let systemInstruction = ORCHESTRATION_SYSTEM_PROMPT;
+    // Persona chỉ là chỉ dẫn văn bản — tập tool (mcpTools) ở run() không phụ thuộc vào nó.
+    const personaPrompt = formatPersonaPrompt(persona);
+    if (personaPrompt) {
+      systemInstruction += `\n\n${personaPrompt}`;
+    }
+    systemInstruction += buildResourcesPrompt(resourceContents);
+    systemInstruction += await this.buildPolicyGroundingBlock(userPrompt);
+
+    return systemInstruction;
+  }
+
+  // Đọc nội dung MCP resource của provider (cắt theo ngân sách); resource lỗi chỉ bị bỏ qua.
+  private async buildResourcesBlock(
+    provider: string,
+    userId: string,
+    modelId: string,
+    signal?: AbortSignal,
+    workspaceId?: string,
+  ): Promise<string[]> {
     const mcpResources = (await this.toolProvider.getResources?.(
       provider,
       signal,
       workspaceId,
     )) ?? [];
-    const resourceContents = await Promise.all(
+    return Promise.all(
       mcpResources.map(async (r) => {
         try {
           const content = (await this.toolProvider.readResource?.(
@@ -462,31 +503,21 @@ export class ReactLoopService {
         }
       }),
     );
+  }
 
-    let systemInstruction = ORCHESTRATION_SYSTEM_PROMPT;
-    // Persona chỉ là chỉ dẫn văn bản — tập tool (mcpTools) ở run() không phụ thuộc vào nó.
-    const personaPrompt = formatPersonaPrompt(persona);
-    if (personaPrompt) {
-      systemInstruction += `\n\n${personaPrompt}`;
+  // Context-Aware Policy Grounding: Tự động tiêm các quy chế doanh nghiệp liên quan trực tiếp vào System Prompt
+  private async buildPolicyGroundingBlock(userPrompt?: string): Promise<string> {
+    if (!this.policyCorpus || !userPrompt) return '';
+    try {
+      const relevant = await this.policyCorpus.findRelevantPolicies(userPrompt, {
+        limit: 3,
+        minScore: 0.15,
+      });
+
+      return buildPolicyGroundingPrompt(relevant.map((r) => r.chunk));
+    } catch (err) {
+      this.logger.warn(`Lỗi truy xuất policy grounding: ${(err as Error).message}`);
+      return '';
     }
-    systemInstruction += buildResourcesPrompt(resourceContents);
-
-    // Context-Aware Policy Grounding: Tự động tiêm các quy chế doanh nghiệp liên quan trực tiếp vào System Prompt
-    if (this.policyCorpus && userPrompt) {
-      try {
-        const relevant = await this.policyCorpus.findRelevantPolicies(userPrompt, {
-          limit: 3,
-          minScore: 0.15,
-        });
-
-        systemInstruction += buildPolicyGroundingPrompt(
-          relevant.map((r) => r.chunk),
-        );
-      } catch (err) {
-        this.logger.warn(`Lỗi truy xuất policy grounding: ${(err as Error).message}`);
-      }
-    }
-
-    return systemInstruction;
   }
 }

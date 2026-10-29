@@ -35,6 +35,7 @@ import {
   buildClarifiedPrompt,
 } from './utils/engine-prompt.util';
 import { ClarificationRequiredError } from '../../../contracts/engine/clarification-required.error';
+import { IClarificationCandidate } from '../../../contracts';
 import { AvailableAgentDto } from '../../../contracts/dtos/supervisor.dto';
 import { SupervisorService } from '../../supervisor/supervisor.service';
 import {
@@ -116,29 +117,11 @@ export class SingleAgentEngine implements IExecutionEngine {
         this.logger.warn(
           `Single Agent phát hiện yêu cầu làm rõ: "${result.clarificationRequired.question}"`,
         );
-        this.metrics.incrementBehaviorSignal('clarification_required');
-        const candidates: AvailableAgentDto[] =
-          result.clarificationRequired.candidates.map((c) => ({
-            provider: c.id,
-            label: c.label,
-            description: c.description ?? '',
-          }));
-
-        const paused = await this.checkpointPause.pauseForClarification(
-          data,
-          prompt,
-          [],
-          result.toolCalls,
-          history,
-          result.clarificationRequired.question,
-          candidates,
-          [],
-          EExecutionEngineMode.SINGLE_AGENT,
-        );
-        return this.withSingleAgentStep(
-          paused,
-          prompt,
+        return this.pauseForClarification(
+          context,
           connectedProviders,
+          result.clarificationRequired.question,
+          result.clarificationRequired.candidates,
           result.toolCalls,
         );
       }
@@ -155,89 +138,125 @@ export class SingleAgentEngine implements IExecutionEngine {
         this.buildSingleAgentStep(prompt, connectedProviders, allToolCalls, result.answer),
       ]);
     } catch (error) {
-      if (error instanceof TurnCancelledError) {
-        throw error;
-      }
+      return this.handleExecuteError(error, context, connectedProviders);
+    }
+  }
 
-      const priorToolCalls =
-        (context.metadata?.priorToolCalls as ToolCallTraceDto[]) ?? [];
-
-      if (error instanceof ClarificationRequiredError) {
-        this.logger.warn(
-          `Single Agent tạm dừng chờ Clarification HITL: "${error.question}"`,
-        );
-        this.metrics.incrementBehaviorSignal('clarification_required');
-        const candidates: AvailableAgentDto[] = error.candidates.map((c) => ({
-          provider: c.id,
-          label: c.label,
-          description: c.description ?? '',
-        }));
-
-        const toolCalls = [
-          ...priorToolCalls,
-          ...(error.toolCalls ?? []),
-        ];
-
-        const paused = await this.checkpointPause.pauseForClarification(
-          data,
-          prompt,
-          [],
-          toolCalls,
-          history,
-          error.question,
-          candidates,
-          [],
-          EExecutionEngineMode.SINGLE_AGENT,
-        );
-        return this.withSingleAgentStep(
-          paused,
-          prompt,
-          connectedProviders,
-          toolCalls,
-        );
-      }
-
-      if (error instanceof ApprovalRequiredError) {
-        this.logger.warn(
-          `Single Agent tạm dừng chờ HITL approval cho tool "${error.pendingTool.name}" (provider=${error.pendingTool.provider})`,
-        );
-        this.metrics.incrementBehaviorSignal('approval_required');
-
-        const toolCalls = [
-          ...priorToolCalls,
-          ...(error.toolCalls ?? []),
-        ];
-
-        const approvalNeeded: ApprovalRequiredDelegateResult = {
-          approvalRequired: error.pendingTool,
-          task: prompt,
-          toolCalls,
-        };
-
-        const paused = await this.checkpointPause.pauseForApproval(
-          data,
-          prompt,
-          [],
-          toolCalls,
-          history,
-          approvalNeeded,
-          [],
-          EExecutionEngineMode.SINGLE_AGENT,
-        );
-        return this.withSingleAgentStep(
-          paused,
-          prompt,
-          connectedProviders,
-          toolCalls,
-        );
-      }
-
-      this.logger.error(
-        `Lỗi khi thực thi Single Agent cho turn ${replyMessageId}: ${(error as Error)?.message}`,
-        (error as Error)?.stack,
-      );
+  // Lỗi khi chạy ReAct loop: huỷ ném tiếp; cần làm rõ/duyệt thì dừng turn chờ HITL; còn lại log rồi ném tiếp.
+  private async handleExecuteError(
+    error: unknown,
+    context: EngineExecutionContext,
+    connectedProviders: string[],
+  ): Promise<AnswerResult> {
+    if (error instanceof TurnCancelledError) {
       throw error;
     }
+
+    const priorToolCalls =
+      (context.metadata?.priorToolCalls as ToolCallTraceDto[]) ?? [];
+
+    if (error instanceof ClarificationRequiredError) {
+      this.logger.warn(
+        `Single Agent tạm dừng chờ Clarification HITL: "${error.question}"`,
+      );
+      return this.pauseForClarification(
+        context,
+        connectedProviders,
+        error.question,
+        error.candidates,
+        [...priorToolCalls, ...(error.toolCalls ?? [])],
+      );
+    }
+
+    if (error instanceof ApprovalRequiredError) {
+      this.logger.warn(
+        `Single Agent tạm dừng chờ HITL approval cho tool "${error.pendingTool.name}" (provider=${error.pendingTool.provider})`,
+      );
+      return this.pauseForApproval(
+        context,
+        connectedProviders,
+        error,
+        priorToolCalls,
+      );
+    }
+
+    this.logger.error(
+      `Lỗi khi thực thi Single Agent cho turn ${context.replyMessageId}: ${(error as Error)?.message}`,
+      (error as Error)?.stack,
+    );
+    throw error;
+  }
+
+  private async pauseForClarification(
+    context: EngineExecutionContext,
+    connectedProviders: string[],
+    question: string,
+    rawCandidates: readonly IClarificationCandidate[],
+    toolCalls: ToolCallTraceDto[],
+  ): Promise<AnswerResult> {
+    const { data, prompt, history } = context;
+    this.metrics.incrementBehaviorSignal('clarification_required');
+    const candidates: AvailableAgentDto[] = rawCandidates.map((c) => ({
+      provider: c.id,
+      label: c.label,
+      description: c.description ?? '',
+    }));
+
+    const paused = await this.checkpointPause.pauseForClarification(
+      data,
+      prompt,
+      [],
+      toolCalls,
+      history,
+      question,
+      candidates,
+      [],
+      EExecutionEngineMode.SINGLE_AGENT,
+    );
+    return this.withSingleAgentStep(
+      paused,
+      prompt,
+      connectedProviders,
+      toolCalls,
+    );
+  }
+
+  private async pauseForApproval(
+    context: EngineExecutionContext,
+    connectedProviders: string[],
+    error: ApprovalRequiredError,
+    priorToolCalls: ToolCallTraceDto[],
+  ): Promise<AnswerResult> {
+    const { data, prompt, history } = context;
+    this.metrics.incrementBehaviorSignal('approval_required');
+
+    const toolCalls = [
+      ...priorToolCalls,
+      ...(error.toolCalls ?? []),
+    ];
+
+    const approvalNeeded: ApprovalRequiredDelegateResult = {
+      approvalRequired: error.pendingTool,
+      task: prompt,
+      toolCalls,
+    };
+
+    const paused = await this.checkpointPause.pauseForApproval(
+      data,
+      prompt,
+      [],
+      toolCalls,
+      history,
+      approvalNeeded,
+      [],
+      EExecutionEngineMode.SINGLE_AGENT,
+    );
+    return this.withSingleAgentStep(
+      paused,
+      prompt,
+      connectedProviders,
+      toolCalls,
+    );
   }
 
   // Turn dừng giữa chừng (HITL) vẫn phải lưu step + persona của Single Agent để
@@ -272,132 +291,154 @@ export class SingleAgentEngine implements IExecutionEngine {
   }
 
   async resume(checkpoint: CheckpointResponseDto): Promise<AnswerResult> {
-    const userId = checkpoint.userId;
-    const replyMessageId = checkpoint.replyMessageId;
-    const conversationId = checkpoint.conversationId ?? checkpoint.channelId;
-    const workspaceId = checkpoint.workspaceId;
-
     const agents = this.supervisor
-      ? await this.supervisor.getAvailableAgents(userId, workspaceId)
+      ? await this.supervisor.getAvailableAgents(
+          checkpoint.userId,
+          checkpoint.workspaceId,
+        )
       : [];
 
     if (checkpoint.kind === ECheckpointKind.CLARIFICATION) {
-      const candidateId =
-        checkpoint.selectedCandidateId || checkpoint.selectedProvider;
-      const candidate = checkpoint.clarificationCandidates?.find(
-        (c) => c.provider === candidateId || c.id === candidateId,
-      );
-      const candidateLabel = candidate?.label ?? candidateId ?? 'Đã xác nhận';
-      const clarifiedPrompt = buildClarifiedPrompt(
-        checkpoint.originalPrompt,
-        candidateLabel,
-        candidateId,
-      );
-
-      this.logger.log(
-        `[SingleAgentEngine] Resume Clarification cho turn ${replyMessageId}: ${candidateLabel} (${candidateId})`,
-      );
-
-      const priorToolCalls = checkpoint.toolCalls ?? [];
-
-      const context: EngineExecutionContext = {
-        data: {
-          userId,
-          channelId: conversationId,
-          conversationId,
-          messageId: replyMessageId,
-          workspaceId,
-          tenantId: workspaceId,
-          sessionType: checkpoint.sessionType,
-          channelType: checkpoint.channelType,
-        },
-        replyMessageId,
-        prompt: clarifiedPrompt,
-        agents,
-        history: checkpoint.history,
-        metadata: {
-          priorToolCalls,
-        },
-      };
-
-      return this.execute(context);
+      return this.resumeClarification(checkpoint, agents);
     }
 
     if (checkpoint.kind === ECheckpointKind.APPROVAL) {
-      const pendingTool = checkpoint.pendingTool;
-      if (!pendingTool) {
-        throw new Error('Checkpoint approval thiếu thông tin pendingTool');
-      }
-
-      this.logger.log(
-        `[SingleAgentEngine] Resume Approval cho turn ${replyMessageId}: thực thi tool ${pendingTool.provider}.${pendingTool.name}`,
-      );
-
-      if (!this.toolProvider) {
-        throw new Error(
-          'SingleAgentEngine thiếu toolProvider để thực thi tool đã duyệt',
-        );
-      }
-
-      const toolResult = await this.toolProvider.callTool({
-        provider: pendingTool.provider,
-        name: pendingTool.name,
-        args: pendingTool.args,
-        ownerId: userId,
-        workspaceId,
-      });
-
-      const toolResultText = extractTextFromMcpResult(toolResult);
-      if (toolResult.isError) {
-        return buildAnswer(
-          buildApprovedToolFailureMessage(pendingTool.name, toolResultText),
-          [],
-        );
-      }
-
-      const executedPendingTool: ToolCallTraceDto = {
-        tool: `${pendingTool.provider}.${pendingTool.name}`,
-        status: EStepExecutionStatus.SUCCESS,
-        argsPreview: JSON.stringify(pendingTool.args).slice(0, 500),
-        resultPreview: toolResultText.slice(0, 500),
-      };
-
-      const priorToolCalls: ToolCallTraceDto[] = [
-        ...(checkpoint.toolCalls ?? []),
-        executedPendingTool,
-      ];
-
-      const followUpPrompt = buildApprovalFollowUpPrompt({
-        originalPrompt: checkpoint.originalPrompt,
-        provider: pendingTool.provider,
-        toolName: pendingTool.name,
-        resultText: toolResultText,
-      });
-      const context: EngineExecutionContext = {
-        data: {
-          userId,
-          channelId: conversationId,
-          conversationId,
-          messageId: replyMessageId,
-          workspaceId,
-          tenantId: workspaceId,
-          sessionType: checkpoint.sessionType,
-          channelType: checkpoint.channelType,
-        },
-        replyMessageId,
-        prompt: followUpPrompt,
-        agents,
-        history: checkpoint.history,
-        metadata: {
-          priorToolCalls,
-        },
-      };
-
-      return this.execute(context);
+      return this.resumeApproval(checkpoint, agents);
     }
 
     throw new Error(
       `SingleAgentEngine không hỗ trợ checkpoint kind=${checkpoint.kind}`,
     );
+  }
+
+  private async resumeClarification(
+    checkpoint: CheckpointResponseDto,
+    agents: AvailableAgentDto[],
+  ): Promise<AnswerResult> {
+    const userId = checkpoint.userId;
+    const replyMessageId = checkpoint.replyMessageId;
+    const conversationId = checkpoint.conversationId ?? checkpoint.channelId;
+    const workspaceId = checkpoint.workspaceId;
+
+    const candidateId =
+      checkpoint.selectedCandidateId || checkpoint.selectedProvider;
+    const candidate = checkpoint.clarificationCandidates?.find(
+      (c) => c.provider === candidateId || c.id === candidateId,
+    );
+    const candidateLabel = candidate?.label ?? candidateId ?? 'Đã xác nhận';
+    const clarifiedPrompt = buildClarifiedPrompt(
+      checkpoint.originalPrompt,
+      candidateLabel,
+      candidateId,
+    );
+
+    this.logger.log(
+      `[SingleAgentEngine] Resume Clarification cho turn ${replyMessageId}: ${candidateLabel} (${candidateId})`,
+    );
+
+    const priorToolCalls = checkpoint.toolCalls ?? [];
+
+    const context: EngineExecutionContext = {
+      data: {
+        userId,
+        channelId: conversationId,
+        conversationId,
+        messageId: replyMessageId,
+        workspaceId,
+        tenantId: workspaceId,
+        sessionType: checkpoint.sessionType,
+        channelType: checkpoint.channelType,
+      },
+      replyMessageId,
+      prompt: clarifiedPrompt,
+      agents,
+      history: checkpoint.history,
+      metadata: {
+        priorToolCalls,
+      },
+    };
+
+    return this.execute(context);
+  }
+
+  private async resumeApproval(
+    checkpoint: CheckpointResponseDto,
+    agents: AvailableAgentDto[],
+  ): Promise<AnswerResult> {
+    const userId = checkpoint.userId;
+    const replyMessageId = checkpoint.replyMessageId;
+    const conversationId = checkpoint.conversationId ?? checkpoint.channelId;
+    const workspaceId = checkpoint.workspaceId;
+
+    const pendingTool = checkpoint.pendingTool;
+    if (!pendingTool) {
+      throw new Error('Checkpoint approval thiếu thông tin pendingTool');
+    }
+
+    this.logger.log(
+      `[SingleAgentEngine] Resume Approval cho turn ${replyMessageId}: thực thi tool ${pendingTool.provider}.${pendingTool.name}`,
+    );
+
+    if (!this.toolProvider) {
+      throw new Error(
+        'SingleAgentEngine thiếu toolProvider để thực thi tool đã duyệt',
+      );
+    }
+
+    const toolResult = await this.toolProvider.callTool({
+      provider: pendingTool.provider,
+      name: pendingTool.name,
+      args: pendingTool.args,
+      ownerId: userId,
+      workspaceId,
+    });
+
+    const toolResultText = extractTextFromMcpResult(toolResult);
+    if (toolResult.isError) {
+      return buildAnswer(
+        buildApprovedToolFailureMessage(pendingTool.name, toolResultText),
+        [],
+      );
+    }
+
+    const executedPendingTool: ToolCallTraceDto = {
+      tool: `${pendingTool.provider}.${pendingTool.name}`,
+      status: EStepExecutionStatus.SUCCESS,
+      argsPreview: JSON.stringify(pendingTool.args).slice(0, 500),
+      resultPreview: toolResultText.slice(0, 500),
+    };
+
+    const priorToolCalls: ToolCallTraceDto[] = [
+      ...(checkpoint.toolCalls ?? []),
+      executedPendingTool,
+    ];
+
+    const followUpPrompt = buildApprovalFollowUpPrompt({
+      originalPrompt: checkpoint.originalPrompt,
+      provider: pendingTool.provider,
+      toolName: pendingTool.name,
+      resultText: toolResultText,
+    });
+    const context: EngineExecutionContext = {
+      data: {
+        userId,
+        channelId: conversationId,
+        conversationId,
+        messageId: replyMessageId,
+        workspaceId,
+        tenantId: workspaceId,
+        sessionType: checkpoint.sessionType,
+        channelType: checkpoint.channelType,
+      },
+      replyMessageId,
+      prompt: followUpPrompt,
+      agents,
+      history: checkpoint.history,
+      metadata: {
+        priorToolCalls,
+      },
+    };
+
+    return this.execute(context);
   }
 }

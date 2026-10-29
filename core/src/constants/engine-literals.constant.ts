@@ -14,3 +14,6 @@ export const AGENT_UNAVAILABLE_RESULT =
 
 // Id của pipeline mặc định (2 bước): pipeline engine tự đăng ký và workflow registry tham chiếu.
 export const DEFAULT_TWO_STEP_PIPELINE_ID = 'default-two-step-pipeline';
+
+// Provider đặc biệt của McpToolConnectorService: trả các native tool dùng chung cho mọi agent (VD read_skill).
+export const NATIVE_TOOL_PROVIDER = 'native';
