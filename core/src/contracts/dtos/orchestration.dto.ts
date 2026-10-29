@@ -51,6 +51,8 @@ export class ResolveApprovalRequestDto {
   messageId: string;
   action: EApprovalAction;
   selectedProvider?: string;
+  // Id ứng viên được chọn khi làm rõ (ưu tiên hơn selectedProvider).
+  selectedCandidateId?: string;
   editedArgs?: Record<string, any>;
 }
 

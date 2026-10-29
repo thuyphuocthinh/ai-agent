@@ -3,10 +3,12 @@ import { IStreamSink, STREAM_SINK } from '../../contracts';
 import { RunReactLoopRequestDto } from '../../contracts/dtos/react-loop.dto';
 import { ReactLoopService } from '../loop/react-loop.service';
 import { AgentCancellationService } from '../cancellation/agent-cancellation.service';
+import { assertNotCancelled } from '../cancellation/assert-not-cancelled.util';
 import { CheckpointPauseService } from '../hitl/checkpoint-pause.service';
 import { MetricsRegistryService } from '../../infrastructure/resilience/metrics-registry.service';
 import { TurnCancelledError } from '../loop/errors/turn-cancelled.error';
 import { ApprovalRequiredError } from '../loop/errors/approval-required.error';
+import { buildReactRequestIdentity } from '../orchestrator/utils/react-request-identity.util';
 import {
   AnswerResult,
   ApprovalRequiredDelegateResult,
@@ -34,22 +36,13 @@ export class WorkflowRunnerService {
       `Bắt đầu thực thi fixed workflow "${workflow.id}" (${workflow.name}) cho user=${data.userId} messageId=${replyMessageId}`,
     );
 
-    const isCancelled = await this.cancellation.isCancelled(replyMessageId);
-    if (signal?.aborted || isCancelled) {
-      throw new TurnCancelledError(undefined);
-    }
+    await assertNotCancelled(this.cancellation, replyMessageId, signal);
 
     const requestDto: RunReactLoopRequestDto = {
       prompt,
       provider: workflow.provider ?? 'compute',
-      userId: data.userId,
-      channelId: data.conversationId ?? data.channelId,
-      conversationId: data.conversationId,
-      workspaceId: data.tenantId ?? data.workspaceId,
-      tenantId: data.tenantId,
+      ...buildReactRequestIdentity(data),
       messageId: replyMessageId,
-      channelType: data.sessionType ?? data.channelType ?? 'web',
-      sessionType: data.sessionType,
       history,
       model: workflow.model,
       persona: {

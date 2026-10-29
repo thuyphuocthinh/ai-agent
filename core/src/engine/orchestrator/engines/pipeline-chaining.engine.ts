@@ -1,5 +1,16 @@
 import { Injectable, Logger, Inject, Optional } from '@nestjs/common';
-import { ORCHESTRATION_CONSTANTS, EStepExecutionStatus } from '@agent/core/constants';
+import {
+  DEFAULT_PIPELINE_DESCRIPTION,
+  DEFAULT_TWO_STEP_PIPELINE_ID,
+  EXTRACT_STEP_PROMPT_TEMPLATE,
+  EXTRACT_STEP_SYSTEM_PROMPT,
+  ORCHESTRATION_CONSTANTS,
+  EStepExecutionStatus,
+  SYNTHESIZE_STEP_PROMPT_TEMPLATE,
+  SYNTHESIZE_STEP_SYSTEM_PROMPT,
+} from '@agent/core/constants';
+import { buildSchemaCorrectionPrompt } from './utils/pipeline-prompt.util';
+import { buildApprovedToolFailureMessage } from './utils/engine-prompt.util';
 import {
   EngineRoutingContext,
   EngineExecutionContext,
@@ -19,6 +30,7 @@ import {
 } from '../../../contracts/engine/orchestration-answer.types';
 import { ReactLoopService } from '../../loop/react-loop.service';
 import { AgentCancellationService } from '../../cancellation/agent-cancellation.service';
+import { assertNotCancelled } from '../../cancellation/assert-not-cancelled.util';
 import { CheckpointPauseService } from '../../hitl/checkpoint-pause.service';
 import { MetricsRegistryService } from '../../../infrastructure/resilience/metrics-registry.service';
 import { TurnCancelledError } from '../../loop/errors/turn-cancelled.error';
@@ -32,6 +44,7 @@ import {
 import { ExecutedStepDto } from '../../../contracts/dtos/message-client.dto';
 import { TOOL_PROVIDER, IToolProvider } from '../../../contracts';
 import { extractTextFromMcpResult } from '../../../common';
+import { buildReactRequestIdentity } from '../utils/react-request-identity.util';
 import { CheckpointResponseDto } from '../../../contracts/dtos/checkpoint.dto';
 import { PendingToolCall } from '../../../contracts';
 
@@ -145,10 +158,7 @@ export class PipelineChainingEngine implements IPipelineChainingEngine {
       executedStepIds.add(step.id);
 
       // 1. Kiểm tra cờ hủy
-      const isCancelled = await this.cancellation.isCancelled(replyMessageId);
-      if (signal?.aborted || isCancelled) {
-        throw new TurnCancelledError(undefined);
-      }
+      await assertNotCancelled(this.cancellation, replyMessageId, signal);
 
       this.logger.log(
         `[Pipeline: ${pipeline.id}] Đang thực thi Step: "${step.name}" (id=${step.id}, model=${step.model ?? 'default'})`,
@@ -215,14 +225,8 @@ export class PipelineChainingEngine implements IPipelineChainingEngine {
         prompt: stepPrompt,
         provider: step.provider ?? primaryProvider,
         providers: step.provider ? [step.provider] : connectedProviders,
-        userId: data.userId,
-        channelId: data.conversationId ?? data.channelId,
-        conversationId: data.conversationId,
-        workspaceId: data.tenantId ?? data.workspaceId,
-        tenantId: data.tenantId,
+        ...buildReactRequestIdentity(data),
         messageId: stepMessageId,
-        channelType: data.sessionType ?? data.channelType ?? 'web',
-        sessionType: data.sessionType,
         history: [], // Cô lập theo từng step: output step trước được truyền thẳng qua prompt
         model:
           step.model ??
@@ -451,13 +455,10 @@ export class PipelineChainingEngine implements IPipelineChainingEngine {
       );
 
       // Kích hoạt 1-shot correction prompt
-      const correctionPrompt = [
-        'Dữ liệu JSON bạn vừa tạo ra không đúng định dạng schema bắt buộc.',
-        `Chi tiết lỗi: ${JSON.stringify(parseResult.error.issues ?? parseResult.error.message)}`,
-        'Dữ liệu ban đầu của bạn:',
+      const correctionPrompt = buildSchemaCorrectionPrompt(
+        JSON.stringify(parseResult.error.issues ?? parseResult.error.message),
         output,
-        'YÊU CẦU: Hãy sửa lại và trả về DUY NHẤT một chuỗi JSON hợp lệ tuân thủ đúng schema trên. Không giải thích thêm.',
-      ].join('\n\n');
+      );
 
       try {
         const healedResult = await this.reactLoop.run(
@@ -518,15 +519,14 @@ export class PipelineChainingEngine implements IPipelineChainingEngine {
       return this.pipelines.get(workflowId)!;
     }
 
-    return this.pipelines.get('default-two-step-pipeline')!;
+    return this.pipelines.get(DEFAULT_TWO_STEP_PIPELINE_ID)!;
   }
 
   private registerBuiltInPipelines(): void {
     this.registerPipeline({
-      id: 'default-two-step-pipeline',
+      id: DEFAULT_TWO_STEP_PIPELINE_ID,
       name: 'Default Chaining Pipeline',
-      description:
-        'Quy trình chuẩn 2 bước: Bóc tách dữ liệu thô (Model rẻ) -> Phân tích & Tổng hợp (Model xịn)',
+      description: DEFAULT_PIPELINE_DESCRIPTION,
       steps: [
         {
           id: 'step_extract',
@@ -535,10 +535,8 @@ export class PipelineChainingEngine implements IPipelineChainingEngine {
             process.env.CHEAP_TIER_MODEL ??
             process.env.DEFAULT_REACT_MODEL ??
             ORCHESTRATION_CONSTANTS.DEFAULT_REACT_MODEL,
-          systemPrompt:
-            'Bạn là chuyên viên trích xuất dữ liệu. Hãy bóc tách các ý chính, thông số số liệu và thông tin cấu trúc từ yêu cầu của người dùng một cách chính xác, ngắn gọn.',
-          promptTemplate:
-            'Dữ liệu đầu vào từ người dùng:\n{{input}}\n\nHãy trích xuất đầy đủ các thông tin cốt lõi.',
+          systemPrompt: EXTRACT_STEP_SYSTEM_PROMPT,
+          promptTemplate: EXTRACT_STEP_PROMPT_TEMPLATE,
         },
         {
           id: 'step_synthesize',
@@ -547,10 +545,8 @@ export class PipelineChainingEngine implements IPipelineChainingEngine {
             process.env.PREMIUM_TIER_MODEL ??
             process.env.DEFAULT_REACT_MODEL ??
             ORCHESTRATION_CONSTANTS.DEFAULT_REACT_MODEL,
-          systemPrompt:
-            'Bạn là chuyên gia cố vấn cao cấp. Dựa trên dữ liệu đã được trích xuất, hãy đưa ra câu trả lời toàn diện, sâu sắc và các khuyến nghị tối ưu nhất.',
-          promptTemplate:
-            'Dữ liệu đã được bóc tách từ bước trước:\n{{input}}\n\nHãy tổng hợp thành câu trả lời hoàn chỉnh, mạch lạc và chuyên nghiệp.',
+          systemPrompt: SYNTHESIZE_STEP_SYSTEM_PROMPT,
+          promptTemplate: SYNTHESIZE_STEP_PROMPT_TEMPLATE,
         },
       ],
     });
@@ -594,7 +590,7 @@ export class PipelineChainingEngine implements IPipelineChainingEngine {
     const toolResultText = extractTextFromMcpResult(toolResult);
     if (toolResult.isError) {
       return buildAnswer(
-        `⚠️ Hành động "${pendingTool.name}" đã được duyệt nhưng thực thi thất bại:\n${toolResultText}`,
+        buildApprovedToolFailureMessage(pendingTool.name, toolResultText),
         [],
       );
     }
@@ -671,7 +667,7 @@ export class PipelineChainingEngine implements IPipelineChainingEngine {
       }
     }
     return (
-      this.pipelines.get('default-two-step-pipeline') ??
+      this.pipelines.get(DEFAULT_TWO_STEP_PIPELINE_ID) ??
       Array.from(this.pipelines.values())[0]
     );
   }

@@ -3,9 +3,15 @@ import { IProcessAiTriggerJobData } from '@agent/core/infrastructure/queue';
 import { ORCHESTRATION_CONSTANTS } from '@agent/core/constants';
 import { TurnResolverService } from './turn-resolver.service';
 import { SingleAgentEngine } from '../engines/single-agent.engine';
+import { DynamicSupervisorEngine } from '../engines/dynamic-supervisor.engine';
 import { SmartExecutionRouter } from '../engines/smart-execution-router.service';
 import { ExecutionEngineRegistryService } from '../engines/execution-engine-registry.service';
-import { EXECUTION_ENGINE_REGISTRY, EXECUTION_ROUTER } from '../../../contracts';
+import {
+  EXECUTION_ENGINE_REGISTRY,
+  EXECUTION_ROUTER,
+  TOOL_PROVIDER,
+} from '../../../contracts';
+import { ApprovalContinuationPlannerService } from '../../hitl/approval-continuation-planner.service';
 import { MessageClientService } from '../../streaming/message-client.service';
 import { MESSAGE_SINK, STREAM_SINK } from '../../../contracts';
 import { ReactLoopService } from '../../loop/react-loop.service';
@@ -24,6 +30,8 @@ jest.mock('@agent/core/common', () => ({ extractTextFromMcpResult: jest.fn() }))
 
 describe('TurnResolverService (Plan-and-Execute, xem accuracy.md)', () => {
   let service: TurnResolverService;
+  // continueRounds() đã chuyển từ TurnResolverService sang DynamicSupervisorEngine.
+  let dynamicSupervisor: DynamicSupervisorEngine;
 
   const mockMessageClient = {
     getMessageText: jest.fn(),
@@ -85,15 +93,17 @@ describe('TurnResolverService (Plan-and-Execute, xem accuracy.md)', () => {
       providers: [
         TurnResolverService,
         SingleAgentEngine,
+        DynamicSupervisorEngine,
         SmartExecutionRouter,
         {
           provide: EXECUTION_ENGINE_REGISTRY,
-          useFactory: (single: SingleAgentEngine) => {
+          useFactory: (single: SingleAgentEngine, dynamic: DynamicSupervisorEngine) => {
             const registry = new ExecutionEngineRegistryService();
             registry.register(single);
+            registry.register(dynamic);
             return registry;
           },
-          inject: [SingleAgentEngine],
+          inject: [SingleAgentEngine, DynamicSupervisorEngine],
         },
         { provide: EXECUTION_ROUTER, useExisting: SmartExecutionRouter },
         { provide: MESSAGE_SINK, useValue: mockMessageClient },
@@ -106,10 +116,16 @@ describe('TurnResolverService (Plan-and-Execute, xem accuracy.md)', () => {
         { provide: CheckpointPauseService, useValue: mockCheckpointPause },
         { provide: MetricsRegistryService, useValue: mockMetrics },
         { provide: MemoryManagerService, useValue: mockMemoryManager },
+        { provide: TOOL_PROVIDER, useValue: { callTool: jest.fn() } },
+        {
+          provide: ApprovalContinuationPlannerService,
+          useValue: { resolveRemainingSteps: jest.fn() },
+        },
       ],
     }).compile();
 
     service = module.get<TurnResolverService>(TurnResolverService);
+    dynamicSupervisor = module.get<DynamicSupervisorEngine>(DynamicSupervisorEngine);
   });
 
   afterEach(() => {
@@ -132,7 +148,12 @@ describe('TurnResolverService (Plan-and-Execute, xem accuracy.md)', () => {
 
     expect(mockReactLoop.run).not.toHaveBeenCalled();
     expect(mockSupervisor.evaluate).not.toHaveBeenCalled();
-    expect(result).toEqual({ content: 'Chào bạn!', toolCalls: undefined });
+    // Engine được chọn gắn thêm `routing.mode` vào kết quả (Hybrid Orchestration).
+    expect(result).toEqual({
+      content: 'Chào bạn!',
+      toolCalls: undefined,
+      routing: { mode: 'dynamic_supervisor' },
+    });
   });
 
   it('falls back to a default message when Supervisor responds with action="respond" but no answer text', async () => {
@@ -1474,7 +1495,7 @@ describe('TurnResolverService (Plan-and-Execute, xem accuracy.md)', () => {
         ],
       });
 
-      await service.continueRounds(
+      await dynamicSupervisor.continueRounds(
         data,
         replyMessageId,
         'lấy diễn viên rồi chèn vào bảng users',
@@ -1525,7 +1546,7 @@ describe('TurnResolverService (Plan-and-Execute, xem accuracy.md)', () => {
         toolCalls: [],
       });
 
-      await service.continueRounds(
+      await dynamicSupervisor.continueRounds(
         data,
         replyMessageId,
         'có bao nhiêu bảng?',
@@ -1552,7 +1573,7 @@ describe('TurnResolverService (Plan-and-Execute, xem accuracy.md)', () => {
       mockSupervisor.evaluate.mockResolvedValue({ verdict: 'continue' });
       mockReactLoop.run.mockResolvedValue({ answer: 'xong', toolCalls: [] });
 
-      await service.continueRounds(
+      await dynamicSupervisor.continueRounds(
         data,
         replyMessageId,
         'cho biết tổng số đơn và tồn kho thấp nhất',
@@ -1576,7 +1597,7 @@ describe('TurnResolverService (Plan-and-Execute, xem accuracy.md)', () => {
       });
       mockReactLoop.run.mockResolvedValue({ answer: 'Có 2 bảng.', toolCalls: [] });
 
-      await service.continueRounds(
+      await dynamicSupervisor.continueRounds(
         data,
         replyMessageId,
         'có bao nhiêu bảng?',
@@ -1607,7 +1628,7 @@ describe('TurnResolverService (Plan-and-Execute, xem accuracy.md)', () => {
       });
       mockSupervisor.evaluate.mockResolvedValue({ verdict: 'done' });
 
-      await service.continueRounds(
+      await dynamicSupervisor.continueRounds(
         data,
         replyMessageId,
         'lấy diễn viên rồi chèn vào bảng users',
@@ -1662,7 +1683,7 @@ describe('TurnResolverService (Plan-and-Execute, xem accuracy.md)', () => {
         'Đã cập nhật đơn và lấy poster phim liên quan.',
       );
 
-      const result = await service.continueRounds(
+      const result = await dynamicSupervisor.continueRounds(
         data,
         replyMessageId,
         'cập nhật đơn rồi lấy poster phim liên quan',
@@ -1734,7 +1755,7 @@ describe('TurnResolverService (Plan-and-Execute, xem accuracy.md)', () => {
         toolCalls: undefined,
       });
 
-      const result = await service.continueRounds(
+      const result = await dynamicSupervisor.continueRounds(
         data,
         replyMessageId,
         'lấy diễn viên rồi chèn vào bảng users',
@@ -1779,7 +1800,7 @@ describe('TurnResolverService (Plan-and-Execute, xem accuracy.md)', () => {
         'Tổng hợp lại vì đã hết ngân sách vòng.',
       );
 
-      const result = await service.continueRounds(
+      const result = await dynamicSupervisor.continueRounds(
         data,
         replyMessageId,
         'lấy diễn viên rồi chèn vào bảng users',
@@ -1812,7 +1833,7 @@ describe('TurnResolverService (Plan-and-Execute, xem accuracy.md)', () => {
       });
       mockSupervisor.synthesize.mockResolvedValue('Tổng hợp từ 10 bước.');
 
-      const result = await service.continueRounds(
+      const result = await dynamicSupervisor.continueRounds(
         data,
         replyMessageId,
         'chuỗi dài nhiều bước hợp lệ',
@@ -1855,7 +1876,7 @@ describe('TurnResolverService (Plan-and-Execute, xem accuracy.md)', () => {
         'Đành tổng hợp, chưa hội tụ.',
       );
 
-      await service.continueRounds(
+      await dynamicSupervisor.continueRounds(
         data,
         replyMessageId,
         'lấy diễn viên rồi chèn vào bảng users',
@@ -1989,7 +2010,7 @@ describe('TurnResolverService (Plan-and-Execute, xem accuracy.md)', () => {
     it('executes a forcedStep directly, skipping plan() entirely, when resuming after the user answers a clarification', async () => {
       mockReactLoop.run.mockResolvedValue({ answer: 'Đã lưu.', toolCalls: [] });
 
-      const result = await service.continueRounds(
+      const result = await dynamicSupervisor.continueRounds(
         data,
         replyMessageId,
         'lưu thông tin này lại',
@@ -2028,7 +2049,7 @@ describe('TurnResolverService (Plan-and-Execute, xem accuracy.md)', () => {
       mockSupervisor.evaluate.mockResolvedValueOnce({ verdict: 'continue' });
       mockSupervisor.synthesize.mockResolvedValue('Đã lưu và ghi log.');
 
-      const result = await service.continueRounds(
+      const result = await dynamicSupervisor.continueRounds(
         data,
         replyMessageId,
         'lưu thông tin này lại rồi ghi log',

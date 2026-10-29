@@ -1,5 +1,6 @@
 import { EAgentStreamStepType } from '@agent/core/constants';
 import { IStreamSink } from '../../../contracts';
+import { buildChannelStreamContext } from './utils/stream-context.util';
 
 // Dùng chung cho mọi lệnh gọi LLM cần stream ra đúng messageId của bot reply
 // (synthesize() ở nhánh respond multi-agent, ở fallback hết MAX_SUPERVISOR_ROUNDS,
@@ -20,14 +21,7 @@ export function buildOnToken(
     if (accumulator) accumulator.text += chunk;
     agentStream
       .emitStep(
-        {
-          userId,
-          conversationId,
-          channelId: conversationId,
-          messageId,
-          sessionType,
-          channelType: sessionType,
-        },
+        buildChannelStreamContext(userId, conversationId, sessionType, messageId),
         { type: EAgentStreamStepType.TOKEN, text: chunk },
       )
       .catch(() => {});

@@ -18,6 +18,8 @@ export interface PendingToolCall {
 export interface AmbiguousAgentCandidate {
   provider: string;
   label: string;
+  // Định danh riêng của ứng viên (nếu có), ngoài provider.
+  id?: string;
 }
 
 export class CreateCheckpointRequestDto {

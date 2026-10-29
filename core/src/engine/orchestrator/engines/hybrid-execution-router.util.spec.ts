@@ -104,26 +104,4 @@ describe('HybridExecutionRouter', () => {
       expect(decision.reason).toContain('Red-Team vs Blue-Team');
     });
   });
-
-  describe('Forced Mode Overrides', () => {
-    it('forces SINGLE_AGENT when forcedMode is "single"', () => {
-      const decision = decideExecutionMode({
-        prompt: 'Quét đồng thời 5 kênh Slack',
-        forcedMode: 'single',
-      });
-
-      expect(decision.mode).toBe(EExecutionEngineMode.SINGLE_AGENT);
-      expect(decision.reason).toContain('forcedMode=single');
-    });
-
-    it('forces MULTI_AGENT_SUPERVISOR when forcedMode is "supervisor"', () => {
-      const decision = decideExecutionMode({
-        prompt: 'Chào bot, cho xem danh sách sản phẩm',
-        forcedMode: 'supervisor',
-      });
-
-      expect(decision.mode).toBe(EExecutionEngineMode.DYNAMIC_SUPERVISOR);
-      expect(decision.reason).toContain('forcedMode=supervisor');
-    });
-  });
 });

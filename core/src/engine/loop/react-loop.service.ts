@@ -33,6 +33,11 @@ import { ReactLoopRun } from './react-loop-run';
 import { ToolRepeatGuard } from './guards/tool-repeat-guard';
 import { formatPersonaPrompt } from './utils/persona-prompt.util';
 import {
+  buildPolicyGroundingPrompt,
+  buildResourcesPrompt,
+  formatResourceBlock,
+} from './utils/react-loop-prompt.util';
+import {
   buildExplicitPlaybookBlock,
   buildSkillPlaybookBlock,
   formatSkillAutoloadLog,
@@ -442,7 +447,13 @@ export class ReactLoopService {
             signal,
             workspaceId,
           )) ?? '';
-          return `\n--- Resource: ${r.name} ---\n${capToolResultSize(content, this.memoryManager.buildBudget(modelId).toolResultCharBudget)}`;
+          return formatResourceBlock(
+            r.name,
+            capToolResultSize(
+              content,
+              this.memoryManager.buildBudget(modelId).toolResultCharBudget,
+            ),
+          );
         } catch (error) {
           this.logger.warn(
             `Failed to read resource ${r.uri}: ${(error as Error).message}`,
@@ -458,10 +469,7 @@ export class ReactLoopService {
     if (personaPrompt) {
       systemInstruction += `\n\n${personaPrompt}`;
     }
-    const injectedResources = resourceContents.filter(Boolean).join('\n');
-    if (injectedResources) {
-      systemInstruction += `\n\nBạn có sẵn các Context/Resources sau trong bộ nhớ để tham khảo, tuyệt đối ưu tiên sử dụng thông tin này nếu liên quan đến câu hỏi của người dùng:\n${injectedResources}`;
-    }
+    systemInstruction += buildResourcesPrompt(resourceContents);
 
     // Context-Aware Policy Grounding: Tự động tiêm các quy chế doanh nghiệp liên quan trực tiếp vào System Prompt
     if (this.policyCorpus && userPrompt) {
@@ -471,18 +479,9 @@ export class ReactLoopService {
           minScore: 0.15,
         });
 
-        if (relevant.length > 0) {
-          const policiesText = relevant
-            .map((r) => `- [${r.chunk.id}] ${r.chunk.title}:\n  ${r.chunk.content}`)
-            .join('\n\n');
-
-          systemInstruction += `\n\n--- QUY CHẾ DOANH NGHIỆP BẮT BUỘC (ENTERPRISE POLICIES) ---\n` +
-            `Các quy chế sau đây áp dụng trực tiếp cho yêu cầu của người dùng:\n\n${policiesText}\n\n` +
-            `NGUYÊN TẮC THI HÀNH BẮT BUỘC:\n` +
-            `Nếu yêu cầu của người dùng thuộc phạm vi cần phê duyệt (REQUIRE_APPROVAL) hoặc bị nghiêm cấm (DENY), ` +
-            `bạn TUYỆT ĐỐI KHÔNG ĐƯỢC tự ý sinh script, file cấu hình (YAML, JSON), hoặc viết hướng dẫn chi tiết để người dùng tự làm thủ công nhằm lách quy chế. ` +
-            `Hãy thông báo rõ ràng về điều khoản quy định và hướng dẫn người dùng xin phê duyệt từ cấp quản lý có thẩm quyền.`;
-        }
+        systemInstruction += buildPolicyGroundingPrompt(
+          relevant.map((r) => r.chunk),
+        );
       } catch (err) {
         this.logger.warn(`Lỗi truy xuất policy grounding: ${(err as Error).message}`);
       }

@@ -65,8 +65,7 @@ export class ApprovalRequestService {
         : undefined;
 
     const effectiveCandidateId =
-      (dto as unknown as { selectedCandidateId?: string }).selectedCandidateId ??
-      dto.selectedProvider;
+      dto.selectedCandidateId ?? dto.selectedProvider;
 
     const { claimed } = await this.checkpoint.claim({
       id: checkpoint.id,
@@ -115,8 +114,7 @@ export class ApprovalRequestService {
     checkpoint: CheckpointResponseDto,
   ): void {
     const candidateId =
-      (dto as unknown as { selectedCandidateId?: string }).selectedCandidateId ??
-      dto.selectedProvider;
+      dto.selectedCandidateId ?? dto.selectedProvider;
     const kindMatchesAction =
       dto.action === EApprovalAction.CLARIFY
         ? checkpoint.kind === ECheckpointKind.CLARIFICATION && Boolean(candidateId)
@@ -137,13 +135,12 @@ export class ApprovalRequestService {
     const originalArgs = checkpoint.pendingTool.args || {};
     const editedArgs = dto.editedArgs;
     const FORBIDDEN_KEYS = ['id', 'name'];
-    const FORBIDDEN_VALUES = ['', null, undefined];
 
     const hasUnknownKey = Object.keys(editedArgs).some(
       (key) => !(key in originalArgs) || FORBIDDEN_KEYS.includes(key),
     );
-    const hasForbiddenValue = Object.values(editedArgs).some((value) =>
-      FORBIDDEN_VALUES.includes(value as any),
+    const hasForbiddenValue = Object.values(editedArgs).some(
+      (value) => value === '' || value === null || value === undefined,
     );
     if (hasUnknownKey || hasForbiddenValue) {
       throw new RpcException(ORCHESTRATION_ERROR.CHECKPOINT_ACTION_MISMATCH);

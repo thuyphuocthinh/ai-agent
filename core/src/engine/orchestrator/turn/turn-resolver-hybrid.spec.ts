@@ -1,9 +1,16 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { TurnResolverService } from './turn-resolver.service';
 import { SingleAgentEngine } from '../engines/single-agent.engine';
+import { DynamicSupervisorEngine } from '../engines/dynamic-supervisor.engine';
 import { SmartExecutionRouter } from '../engines/smart-execution-router.service';
 import { ExecutionEngineRegistryService } from '../engines/execution-engine-registry.service';
-import { EXECUTION_ENGINE_REGISTRY, EXECUTION_ROUTER, EExecutionEngineMode } from '../../../contracts';
+import {
+  EXECUTION_ENGINE_REGISTRY,
+  EXECUTION_ROUTER,
+  EExecutionEngineMode,
+  TOOL_PROVIDER,
+} from '../../../contracts';
+import { ApprovalContinuationPlannerService } from '../../hitl/approval-continuation-planner.service';
 import { ReactLoopService } from '../../loop/react-loop.service';
 import { SupervisorService } from '../../supervisor/supervisor.service';
 import { AgentCancellationService } from '../../cancellation/agent-cancellation.service';
@@ -77,15 +84,17 @@ describe('TurnResolverService — Hybrid Orchestration Routing (AC-4 & AC-5)', (
       providers: [
         TurnResolverService,
         SingleAgentEngine,
+        DynamicSupervisorEngine,
         SmartExecutionRouter,
         {
           provide: EXECUTION_ENGINE_REGISTRY,
-          useFactory: (single: SingleAgentEngine) => {
+          useFactory: (single: SingleAgentEngine, dynamic: DynamicSupervisorEngine) => {
             const registry = new ExecutionEngineRegistryService();
             registry.register(single);
+            registry.register(dynamic);
             return registry;
           },
-          inject: [SingleAgentEngine],
+          inject: [SingleAgentEngine, DynamicSupervisorEngine],
         },
         { provide: EXECUTION_ROUTER, useExisting: SmartExecutionRouter },
         { provide: MESSAGE_SINK, useValue: mockMessageSink },
@@ -96,6 +105,11 @@ describe('TurnResolverService — Hybrid Orchestration Routing (AC-4 & AC-5)', (
         { provide: CheckpointPauseService, useValue: mockCheckpointPause },
         { provide: MetricsRegistryService, useValue: mockMetrics },
         { provide: MemoryManagerService, useValue: mockMemoryManager },
+        { provide: TOOL_PROVIDER, useValue: { callTool: jest.fn() } },
+        {
+          provide: ApprovalContinuationPlannerService,
+          useValue: { resolveRemainingSteps: jest.fn() },
+        },
       ],
     }).compile();
 
@@ -171,11 +185,11 @@ describe('TurnResolverService — Hybrid Orchestration Routing (AC-4 & AC-5)', (
         [],
       ),
     );
+    // pauseForApproval() trả AnswerResult ({ content, toolCalls, steps }).
     mockCheckpointPause.pauseForApproval.mockResolvedValueOnce({
-      answer: 'Đang chờ phê duyệt lệnh ghi',
+      content: 'Đang chờ phê duyệt lệnh ghi',
       toolCalls: [],
-      executionSteps: [],
-      status: 'awaiting_approval',
+      steps: [],
     });
 
     const result = await service.resolveAnswer(sampleData, 'reply-msg-4');
@@ -183,9 +197,8 @@ describe('TurnResolverService — Hybrid Orchestration Routing (AC-4 & AC-5)', (
     expect(mockCheckpointPause.pauseForApproval).toHaveBeenCalledWith(
       sampleData,
       expect.any(String),
-      expect.arrayContaining([
-        expect.objectContaining({ agent: 'sql_server' }),
-      ]),
+      // Single Agent không có round của Supervisor nên SingleAgentEngine truyền [] (thiết kế hiện tại).
+      [],
       expect.any(Array),
       expect.any(Array),
       expect.objectContaining({
@@ -196,6 +209,6 @@ describe('TurnResolverService — Hybrid Orchestration Routing (AC-4 & AC-5)', (
       [],
       EExecutionEngineMode.SINGLE_AGENT,
     );
-    expect(result.status).toBe('awaiting_approval');
+    expect(result.content).toBe('Đang chờ phê duyệt lệnh ghi');
   });
 });

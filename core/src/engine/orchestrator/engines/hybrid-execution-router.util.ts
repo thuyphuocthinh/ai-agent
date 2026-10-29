@@ -22,7 +22,6 @@ export interface HybridRoutingDecision {
 
 export interface HybridRoutingOptions {
   prompt: string;
-  forcedMode?: 'single' | 'supervisor' | 'auto';
   contextCharBudgetEstimate?: number;
 }
 
@@ -40,21 +39,7 @@ const OVERFLOW_CHAR_THRESHOLD = 30000;
 export function decideExecutionMode(
   options: HybridRoutingOptions,
 ): HybridRoutingDecision {
-  const { prompt, forcedMode = 'auto', contextCharBudgetEstimate = 0 } = options;
-
-  // 0. Ghi đè cưỡng bức (nếu có cấu hình)
-  if (forcedMode === 'supervisor') {
-    return {
-      mode: EExecutionEngineMode.DYNAMIC_SUPERVISOR,
-      reason: 'Cưỡng bức chạy qua Supervisor theo cấu hình (forcedMode=supervisor)',
-    };
-  }
-  if (forcedMode === 'single') {
-    return {
-      mode: EExecutionEngineMode.SINGLE_AGENT,
-      reason: 'Cưỡng bức chạy qua Single Agent theo cấu hình (forcedMode=single)',
-    };
-  }
+  const { prompt, contextCharBudgetEstimate = 0 } = options;
 
   // 1. Điều kiện 1: Tác vụ song song độc lập (Parallel Fan-out)
   if (PARALLEL_FANOUT_REGEX.test(prompt)) {

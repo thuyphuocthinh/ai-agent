@@ -1,3 +1,4 @@
+import { buildInsertShortfallMessage } from '../utils/react-loop-prompt.util';
 import { parseInsertValues } from '../utils/tool-execution.util';
 
 export type InsertShortfallOutcome =
@@ -35,7 +36,7 @@ export class InsertAccumulator {
       return { mergedQuery: `${entry.insertPrefix} ${tuples.join(', ')}` };
     }
     return {
-      shortfallMessage: `Đã ghi nhận ${tuples.length}/${requiredCount} dòng yêu cầu (cộng dồn qua các lần gọi trước nếu có). Viết tiếp các dòng CÒN THIẾU (không lặp lại dòng đã gửi) trong 1 câu ghi duy nhất, rồi gọi lại.`,
+      shortfallMessage: buildInsertShortfallMessage(tuples.length, requiredCount),
     };
   }
 

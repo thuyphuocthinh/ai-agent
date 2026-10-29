@@ -1,5 +1,6 @@
 import { Logger } from '@nestjs/common';
 import {
+  DEFAULT_EMPTY_ANSWER,
   EStepExecutionStatus,
   ORCHESTRATION_CONSTANTS,
   ORCHESTRATION_SELF_CHECK_PROMPT,
@@ -23,6 +24,11 @@ import { ToolRepeatGuard } from './guards/tool-repeat-guard';
 import { InsertAccumulator } from './guards/insert-accumulator';
 import { ToolRiskGate } from './guards/tool-risk-gate';
 import { ToolCallExecutor } from './tool-call-executor';
+import {
+  buildMaxStepsAnswer,
+  buildQuantityMismatchAnswer,
+  buildQuantityNudgePrompt,
+} from './utils/react-loop-prompt.util';
 import {
   ReactLoopRunDeps,
   ReactLoopRunOptions,
@@ -157,7 +163,7 @@ export class ReactLoopRun {
       return {
         done: true,
         response: {
-          answer: turn.text || 'Xin lỗi, mình chưa có câu trả lời phù hợp.',
+          answer: turn.text || DEFAULT_EMPTY_ANSWER,
           toolCalls,
         },
       };
@@ -170,7 +176,7 @@ export class ReactLoopRun {
         `quantity mismatch requiredCount=${requiredCount} achievedCount=${achievedCount} — nudging to continue`,
       );
       const nudgeTurn = await this.sendMessage(
-        `Yêu cầu cần xử lý đúng ${requiredCount} bản ghi, nhưng theo kết quả tool hiện tại mới có ${achievedCount}. Hãy tiếp tục thực hiện phần còn thiếu trước khi trả lời.`,
+        buildQuantityNudgePrompt(requiredCount, achievedCount),
         onToken,
       );
       if (nudgeTurn.toolCalls.length > 0) {
@@ -185,8 +191,12 @@ export class ReactLoopRun {
       // của model ở nhánh này — luôn tự chèn CON SỐ THẬT đã tính được, để user
       // không bị đọc nhầm là đã xong đủ.
       const baseAnswer =
-        answerBeforeSelfCheck || 'Xin lỗi, mình chưa có câu trả lời phù hợp.';
-      const answer = `${baseAnswer}\n\n⚠️ Yêu cầu cần xử lý đúng ${requiredCount}, nhưng theo kết quả tool THẬT chỉ xác nhận được ${achievedCount}.`;
+        answerBeforeSelfCheck || DEFAULT_EMPTY_ANSWER;
+      const answer = buildQuantityMismatchAnswer(
+        baseAnswer,
+        requiredCount,
+        achievedCount,
+      );
       resync(answer);
       return { done: true, response: { answer, toolCalls } };
     }
@@ -198,7 +208,7 @@ export class ReactLoopRun {
         `run() done at step=${step} toolCalls=${toolCalls.length} (fast-path: real data fetched, bypassing self-check)`,
       );
       const answer =
-        answerBeforeSelfCheck || 'Xin lỗi, mình chưa có câu trả lời phù hợp.';
+        answerBeforeSelfCheck || DEFAULT_EMPTY_ANSWER;
       resync(answer);
       return { done: true, response: { answer, toolCalls } };
     }
@@ -216,7 +226,7 @@ export class ReactLoopRun {
       `run() done at step=${step} toolCalls=${toolCalls.length} (giữ câu trả lời TRƯỚC self-check)`,
     );
     const answer =
-      answerBeforeSelfCheck || 'Xin lỗi, mình chưa có câu trả lời phù hợp.';
+      answerBeforeSelfCheck || DEFAULT_EMPTY_ANSWER;
     resync(answer);
     return { done: true, response: { answer, toolCalls } };
   }
@@ -225,14 +235,11 @@ export class ReactLoopRun {
     this.logger.warn(
       `run() hit MAX_REACT_STEPS=${ORCHESTRATION_CONSTANTS.MAX_REACT_STEPS} userId=${this.dto.userId}`,
     );
-    const partialWriteCaveat = this.toolExecutor.hasAnySuccessfulToolCall()
-      ? ' Một số hành động (đọc/ghi dữ liệu) đã thực hiện THÀNH CÔNG trước khi dừng — kiểm tra lại kết quả hiện có trước khi yêu cầu lại, tránh lặp lại đúng thao tác đã làm.'
-      : '';
     return {
-      answer:
-        (turn.text ||
-          'Xin lỗi, câu hỏi này cần nhiều bước hơn mình hỗ trợ được.') +
-        partialWriteCaveat,
+      answer: buildMaxStepsAnswer(
+        turn.text,
+        this.toolExecutor.hasAnySuccessfulToolCall(),
+      ),
       toolCalls: this.toolExecutor.getToolCalls(),
     };
   }

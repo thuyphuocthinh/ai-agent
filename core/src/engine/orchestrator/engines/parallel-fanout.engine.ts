@@ -1,5 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ORCHESTRATION_CONSTANTS } from '@agent/core/constants';
+import {
+  DEFAULT_AGGREGATOR_SYSTEM_PROMPT,
+  ORCHESTRATION_CONSTANTS,
+} from '@agent/core/constants';
 import {
   EngineRoutingContext,
   EngineExecutionContext,
@@ -18,6 +21,7 @@ import {
 } from '../../../contracts/engine/orchestration-answer.types';
 import { ReactLoopService } from '../../loop/react-loop.service';
 import { AgentCancellationService } from '../../cancellation/agent-cancellation.service';
+import { assertNotCancelled } from '../../cancellation/assert-not-cancelled.util';
 import { MetricsRegistryService } from '../../../infrastructure/resilience/metrics-registry.service';
 import { TurnCancelledError } from '../../loop/errors/turn-cancelled.error';
 import {
@@ -26,12 +30,13 @@ import {
 } from '../../../contracts/dtos/react-loop.dto';
 import { ExecutedStepDto } from '../../../contracts/dtos/message-client.dto';
 import { LlmStrategyFactory } from '../../strategy/llm-strategy.factory';
+import { buildReactRequestIdentity } from '../utils/react-request-identity.util';
+import {
+  buildAggregatorNoSuccessMessage,
+  buildFanoutAllFailedAnswer,
+} from './utils/engine-prompt.util';
 
 const DEFAULT_MAX_CONCURRENCY = 8;
-const DEFAULT_AGGREGATOR_SYSTEM_PROMPT =
-  'Bạn là chuyên gia tổng hợp thông tin đa nguồn. ' +
-  'Dựa trên kết quả thu thập được từ nhiều nguồn độc lập, hãy tổng hợp, so sánh ' +
-  'và trình bày một báo cáo hoàn chỉnh, có cấu trúc rõ ràng và khách quan nhất.';
 
 /**
  * ParallelFanoutEngine
@@ -83,10 +88,7 @@ export class ParallelFanoutEngine implements IParallelFanoutEngine {
     );
 
     // 1. Kiểm tra cờ hủy trước khi khởi động bất kỳ worker nào
-    const isCancelled = await this.cancellation.isCancelled(replyMessageId);
-    if (signal?.aborted || isCancelled) {
-      throw new TurnCancelledError(undefined);
-    }
+    await assertNotCancelled(this.cancellation, replyMessageId, signal);
 
     // 2. Phân nhóm workers theo batch concurrency (tránh quá tải rate-limit)
     const workerResults: FanoutWorkerResult[] = [];
@@ -123,10 +125,7 @@ export class ParallelFanoutEngine implements IParallelFanoutEngine {
       this.logger.warn(
         `[Fan-Out: ${fanout.id}] Toàn bộ ${workerResults.length} worker đều thất bại, hủy gọi Aggregator để tiết kiệm token`,
       );
-      const failureSummary = workerResults
-        .map((r) => `- ${r.workerName}: ${r.error ?? 'Lỗi không xác định'}`)
-        .join('\n');
-      const failAnswer = `⚠️ Không thể tổng hợp dữ liệu (không thể cung cấp kết quả) do toàn bộ nguồn worker đều gặp sự cố:\n${failureSummary}`;
+      const failAnswer = buildFanoutAllFailedAnswer(workerResults);
       const failSteps: ExecutedStepDto[] = workerResults.map((r) => ({
         agent: r.workerId,
         task: `[Worker] ${r.workerName}`,
@@ -200,14 +199,8 @@ export class ParallelFanoutEngine implements IParallelFanoutEngine {
       prompt: workerPrompt,
       provider,
       providers: [provider],
-      userId: data.userId,
-      channelId: data.conversationId ?? data.channelId,
-      conversationId: data.conversationId,
-      workspaceId: data.tenantId ?? data.workspaceId,
-      tenantId: data.tenantId,
+      ...buildReactRequestIdentity(data),
       messageId: workerMessageId,
-      channelType: data.sessionType ?? data.channelType ?? 'web',
-      sessionType: data.sessionType,
       history: [], // Mỗi worker cô lập hoàn toàn, không chia sẻ lịch sử
       model: process.env.WORKER_TIER_MODEL ?? process.env.DEFAULT_REACT_MODEL ?? ORCHESTRATION_CONSTANTS.DEFAULT_REACT_MODEL,
       persona: {
@@ -270,7 +263,7 @@ export class ParallelFanoutEngine implements IParallelFanoutEngine {
       this.logger.warn(
         `[Aggregator] Không có worker nào thành công trong fan-out "${fanout.id}", trả về thông báo lỗi`,
       );
-      return `Tất cả ${workerResults.length} nguồn dữ liệu đều gặp lỗi và không thể cung cấp kết quả. Vui lòng thử lại sau.`;
+      return buildAggregatorNoSuccessMessage(workerResults.length);
     }
 
     const aggregatorModel =

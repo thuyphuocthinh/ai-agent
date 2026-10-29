@@ -5,6 +5,11 @@ import { CheckpointResponseDto } from '../../contracts/dtos/checkpoint.dto';
 import { checkQuantity } from '../loop/guards/quantity-check.util';
 import { LlmStrategyFactory } from '../strategy/llm-strategy.factory';
 import { CircuitBreakerService } from '../../infrastructure/resilience/circuit-breaker.service';
+import {
+  buildContinuationTask,
+  buildQuantityCapReachedResult,
+  getRootTask,
+} from './utils/hitl-message.util';
 
 @Injectable()
 export class ApprovalContinuationPlannerService {
@@ -24,12 +29,11 @@ export class ApprovalContinuationPlannerService {
   }> {
     const { pendingTool, pendingTask, roundsSoFar, remainingSteps } =
       checkpoint;
-    const rootTask = (task: string) => task.split('\n\n(Đã xử lý')[0];
     const attempts =
       roundsSoFar.filter(
         (r) =>
           r.agent === pendingTool!.provider &&
-          rootTask(r.task) === rootTask(pendingTask),
+          getRootTask(r.task) === getRootTask(pendingTask),
       ).length + 1;
     const capReached =
       attempts >= ORCHESTRATION_CONSTANTS.MAX_QUANTITY_CONTINUATION_ROUNDS;
@@ -56,7 +60,12 @@ export class ApprovalContinuationPlannerService {
       );
       return {
         remainingSteps,
-        resultText: `${toolResultText}\n\n[Lưu ý: yêu cầu cần ${requiredCount}, mới xử lý được ${achievedCount} sau ${attempts} lần thử — đã dừng lại, KHÔNG tự động thử thêm.]`,
+        resultText: buildQuantityCapReachedResult(
+          toolResultText,
+          requiredCount,
+          achievedCount,
+          attempts,
+        ),
       };
     }
 
@@ -65,7 +74,7 @@ export class ApprovalContinuationPlannerService {
     );
     const continuationStep: DelegationDto = {
       agent: pendingTool!.provider,
-      task: `${pendingTask}\n\n(Đã xử lý ${achievedCount}/${requiredCount} — làm tiếp ${requiredCount - achievedCount} phần còn thiếu, không lặp lại phần đã xong. Nếu tool cho phép nhiều bản ghi trong 1 lần gọi, hãy gộp TOÀN BỘ ${requiredCount - achievedCount} phần còn thiếu vào ĐÚNG 1 lần gọi tool duy nhất — mỗi lần cần duyệt lại tốn thêm 1 vòng chờ user, không chia nhỏ thêm nữa.)`,
+      task: buildContinuationTask(pendingTask, achievedCount, requiredCount),
       mustExecute: true,
     };
     return {

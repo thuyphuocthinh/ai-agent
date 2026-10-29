@@ -5,8 +5,21 @@ import {
   ESupervisorVerdict,
   EAgentStreamStepType,
   EAgentStreamStepKind,
+  AGENT_UNAVAILABLE_RESULT,
+  DEFAULT_EMPTY_ANSWER,
+  GUARDRAIL_BLOCKED_MARKER,
+  REPLAN_MARKER,
 } from '@agent/core/constants';
 import { ReactLoopService } from '../../loop/react-loop.service';
+import { buildStreamContext, resolveTurnChannel } from './utils/stream-context.util';
+import {
+  buildDelegationPrompt,
+  buildGuardrailBlockedResult,
+  buildPartialStepTask,
+  buildReplanRoundResult,
+  buildUnknownAgentAnswer,
+} from './utils/turn-resolver-prompt.util';
+import { buildQuantityMismatchAnswer } from '../../loop/utils/react-loop-prompt.util';
 import { ToolRepeatGuard } from '../../loop/guards/tool-repeat-guard';
 import { SupervisorService } from '../../supervisor/supervisor.service';
 import { AgentRankingCache } from '../../supervisor/supervisor.interface';
@@ -51,9 +64,6 @@ import {
 } from './turn-resolver.interface';
 
 const MIN_AGENT_LABEL_LENGTH_FOR_MISMATCH_CHECK = 3;
-
-const GUARDRAIL_BLOCKED_MARKER = 'Bỏ qua bước này';
-const REPLAN_MARKER = '[re-plan]';
 
 function isNonProgressRound(round: SupervisorRoundDto): boolean {
   return (
@@ -242,7 +252,7 @@ export class TurnResolverRun {
       this.rounds.push({
         agent: lastRound.agent,
         task: lastRound.task,
-        result: `${REPLAN_MARKER} evaluate() cho rằng bước vừa xong không đạt kỳ vọng, đã lập lại kế hoạch.`,
+        result: buildReplanRoundResult(),
       });
       return { done: false, steps: [], needsPlan: true };
     }
@@ -252,19 +262,10 @@ export class TurnResolverRun {
   private async runPlanningStep(
     agentRankingCache: AgentRankingCache,
   ): Promise<PlanOutcome> {
-    const { userId } = this.data;
-    const conversationId = this.data.conversationId ?? this.data.channelId;
-    const sessionType = this.data.sessionType ?? this.data.channelType ?? 'direct';
+    const { conversationId } = resolveTurnChannel(this.data);
     await this.agentStream
       .emitStep(
-        {
-          userId,
-          conversationId,
-          channelId: conversationId,
-          messageId: this.replyMessageId,
-          sessionType,
-          channelType: sessionType,
-        },
+        buildStreamContext(this.data, this.replyMessageId),
         {
           type: EAgentStreamStepType.STEP_START,
           label: '🧠 Đang phân tích yêu cầu và lập kế hoạch...',
@@ -327,8 +328,7 @@ export class TurnResolverRun {
       return {
         done: true,
         answer: buildAnswer(
-          plan.answer ||
-            `Mình chưa thể xử lý yêu cầu này với các kết nối hiện có (Tên hệ thống mà AI đang cố gọi: "${attemptedAgents}" - Vui lòng đổi tên hoặc viết đúng tên). Vào Settings để kết nối agent phù hợp nhé.`,
+          plan.answer || buildUnknownAgentAnswer(attemptedAgents),
           this.toolCalls,
           this.executionSteps,
         ),
@@ -369,7 +369,11 @@ export class TurnResolverRun {
     this.rounds.push({
       agent: step.agent,
       task: step.task,
-      result: `${GUARDRAIL_BLOCKED_MARKER} — kế hoạch chọn hệ thống "${step.agent}" nhưng yêu cầu nhắc rõ tới hệ thống "${misroutedTo.label}" (đã kết nối, provider "${misroutedTo.provider}") — có khả năng chọn sai agent, cần lập lại kế hoạch.`,
+      result: buildGuardrailBlockedResult(
+        step.agent,
+        misroutedTo.label,
+        misroutedTo.provider,
+      ),
     });
     this.nonProgressRounds++;
     this.metrics.incrementBehaviorSignal('misroute_guardrail');
@@ -430,7 +434,7 @@ export class TurnResolverRun {
             agent: s.agent,
             task: s.task,
             result:
-              'Agent này chưa khả dụng (chưa kết nối hoặc chưa có hạ tầng) — bỏ qua, không thực hiện được phần việc này.',
+              AGENT_UNAVAILABLE_RESULT,
           },
         );
         if (res) this.toolCalls.push(...res.toolCalls);
@@ -489,7 +493,7 @@ export class TurnResolverRun {
           agent: step.agent,
           task: step.task,
           result:
-            'Agent này chưa khả dụng (chưa kết nối hoặc chưa có hạ tầng) — bỏ qua, không thực hiện được phần việc này.',
+            AGENT_UNAVAILABLE_RESULT,
         };
       }
 
@@ -516,7 +520,7 @@ export class TurnResolverRun {
       this.rounds.push({
         agent: lastRound.agent,
         task: lastRound.task,
-        result: `${REPLAN_MARKER} evaluate() cho rằng bước vừa xong không đạt kỳ vọng, đã lập lại kế hoạch.`,
+        result: buildReplanRoundResult(),
       });
       return { done: false, replan: true };
     }
@@ -526,22 +530,14 @@ export class TurnResolverRun {
 
   private async runNonConvergenceFallback(): Promise<AnswerResult> {
     const { userId } = this.data;
-    const conversationId = this.data.conversationId ?? this.data.channelId;
-    const sessionType = this.data.sessionType ?? this.data.channelType ?? 'direct';
+    const { conversationId, sessionType } = resolveTurnChannel(this.data);
     this.logger.warn(
       `Supervisor chưa hội tụ (realSteps=${this.realStepsRun}/${ORCHESTRATION_CONSTANTS.MAX_REAL_STEPS_PER_TURN}, nonProgress=${this.nonProgressRounds}/${ORCHESTRATION_CONSTANTS.MAX_SUPERVISOR_ROUNDS}) cho user ${userId}, tổng hợp lại kết quả đã có`,
     );
     this.metrics.incrementBehaviorSignal('non_convergence');
     await this.agentStream
       .emitStep(
-        {
-          userId,
-          conversationId,
-          channelId: conversationId,
-          messageId: this.replyMessageId,
-          sessionType,
-          channelType: sessionType,
-        },
+        buildStreamContext(this.data, this.replyMessageId),
         {
           type: EAgentStreamStepType.STEP_START,
           label: 'Tổng hợp câu trả lời',
@@ -582,8 +578,7 @@ export class TurnResolverRun {
 
   private async finalizeAnswer(answerHint?: string): Promise<AnswerResult> {
     const { userId } = this.data;
-    const conversationId = this.data.conversationId ?? this.data.channelId;
-    const sessionType = this.data.sessionType ?? this.data.channelType ?? 'direct';
+    const { conversationId, sessionType } = resolveTurnChannel(this.data);
 
     if (this.rounds.length === 1) {
       return buildAnswer(
@@ -595,14 +590,7 @@ export class TurnResolverRun {
     if (this.rounds.length > 1) {
       await this.agentStream
         .emitStep(
-          {
-            userId,
-            conversationId,
-            channelId: conversationId,
-            messageId: this.replyMessageId,
-            sessionType,
-            channelType: sessionType,
-          },
+          buildStreamContext(this.data, this.replyMessageId),
           {
             type: EAgentStreamStepType.STEP_START,
             label: 'Tổng hợp câu trả lời',
@@ -641,7 +629,7 @@ export class TurnResolverRun {
       );
     }
     return buildAnswer(
-      answerHint || 'Xin lỗi, mình chưa có câu trả lời phù hợp.',
+      answerHint || DEFAULT_EMPTY_ANSWER,
       this.toolCalls,
       this.executionSteps,
     );
@@ -697,7 +685,7 @@ export class TurnResolverRun {
         this.signal,
       );
     if (requiredCount > 0 && achievedCount !== requiredCount) {
-      return `${answer}\n\n⚠️ Yêu cầu cần xử lý đúng ${requiredCount}, nhưng theo kết quả tool THẬT chỉ xác nhận được ${achievedCount}.`;
+      return buildQuantityMismatchAnswer(answer, requiredCount, achievedCount);
     }
     return answer;
   }
@@ -755,7 +743,7 @@ export class TurnResolverRun {
       .join('\n');
     return {
       agent: step.agent,
-      task: `${step.task} (dữ liệu đã thu thập được TRƯỚC KHI cần duyệt 1 hành động khác trong cùng bước này)`,
+      task: buildPartialStepTask(step.task),
       result,
     };
   }
@@ -785,9 +773,8 @@ export class TurnResolverRun {
     remainingSteps: DelegationDto[],
   ): Promise<DelegateRoundResult | ApprovalRequiredDelegateResult | null> {
     const { userId } = this.data;
-    const conversationId = this.data.conversationId ?? this.data.channelId;
+    const { conversationId, sessionType } = resolveTurnChannel(this.data);
     const workspaceId = this.data.tenantId ?? this.data.workspaceId ?? 'default';
-    const sessionType = this.data.sessionType ?? this.data.channelType ?? 'direct';
     const targetAgent = this.agents.find(
       (a) => a.provider === delegation.agent,
     );
@@ -804,47 +791,27 @@ export class TurnResolverRun {
       process.env.DEFAULT_REACT_MODEL ??
       ORCHESTRATION_CONSTANTS.DEFAULT_REACT_MODEL;
     const realRoundsSoFar = this.rounds.filter((r) => !isNonProgressRound(r));
-    const contextBlocks: string[] = [task];
-    if (task !== this.prompt) {
-      // Chỉ khi kế hoạch còn bước khác (đã chạy hoặc sắp chạy) mới giới hạn phạm vi:
-      // không có dòng này, worker thấy cả yêu cầu gốc và làm luôn phần của các bước kia
-      // (bước 1 gọi đủ SQL cho cả 4 bước), khiến các bước sau chỉ chép lại nhau.
-      const scopeNote =
-        remainingSteps.length > 0 || realRoundsSoFar.length > 0
-          ? ' CHỈ thực hiện phần việc trong task ở trên; các phần khác của yêu cầu gốc là việc của CÁC BƯỚC KHÁC trong kế hoạch — KHÔNG làm thay, KHÔNG gọi tool cho phần đó.'
-          : '';
-      contextBlocks.push(
-        `Yêu cầu gốc đầy đủ của user cho turn này (dùng để lấy đúng dữ liệu/số liệu cụ thể nếu task ở trên chỉ tóm tắt lại, TUYỆT ĐỐI không tự bịa dữ liệu khi task tóm tắt bị thiếu).${scopeNote}\n${this.prompt}`,
-      );
-    }
-    if (realRoundsSoFar.length > 0) {
-      contextBlocks.push(
-        `Dữ liệu THẬT đã thu thập được từ (các) bước trước trong CÙNG yêu cầu này (PHẢI dùng ĐÚNG NGUYÊN VĂN, không tự bịa/diễn giải lại số liệu):\n${capRoundResultsWeighted(
-          realRoundsSoFar,
-          this.memoryManager.buildBudget(reactModelId).toolResultCharBudget,
-        )
-          .map(
-            (r, i) =>
-              `${i + 1}. Agent "${r.agent}" (yêu cầu: "${r.task}") → kết quả: ${r.result}`,
-          )
-          .join('\n')}`,
-      );
-    }
-    const promptWithContext = contextBlocks.join('\n\n');
+    // Chỉ khi kế hoạch còn bước khác (đã chạy hoặc sắp chạy) mới giới hạn phạm vi:
+    // không có dòng này, worker thấy cả yêu cầu gốc và làm luôn phần của các bước kia
+    // (bước 1 gọi đủ SQL cho cả 4 bước), khiến các bước sau chỉ chép lại nhau.
+    const promptWithContext = buildDelegationPrompt({
+      task,
+      originalPrompt: this.prompt,
+      limitScope: remainingSteps.length > 0 || realRoundsSoFar.length > 0,
+      priorRounds:
+        realRoundsSoFar.length > 0
+          ? capRoundResultsWeighted(
+              realRoundsSoFar,
+              this.memoryManager.buildBudget(reactModelId).toolResultCharBudget,
+            )
+          : [],
+    });
     const streamKey = `r${round}-${targetAgent.provider}`;
     // Persona do LLM sinh nên sanitize trước khi đưa ra client (giống khi tiêm prompt).
     const persona = sanitizePersona(delegation.persona);
     await this.agentStream
       .emitStep(
-        {
-          userId,
-          conversationId,
-          channelId: conversationId,
-          messageId: this.replyMessageId,
-          sessionType,
-          channelType: sessionType,
-          streamKey,
-        },
+        buildStreamContext(this.data, this.replyMessageId, streamKey),
         {
           type: EAgentStreamStepType.STEP_START,
           label: `${targetAgent.label}: ${task}`,

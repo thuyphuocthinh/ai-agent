@@ -5,7 +5,15 @@ import {
   ECheckpointRiskLevel,
   EMessageContentType,
   EStepExecutionStatus,
+  EXECUTE_WRITE_QUERY_TOOL,
+  SQL_SERVER_PROVIDER,
 } from '@agent/core/constants';
+import {
+  buildExistingRowsPreview,
+  buildGenericArgsPreview,
+  buildInsertRowsPreview,
+  buildWholeTableDestructivePreview,
+} from './utils/hitl-message.util';
 import { extractTextFromMcpResult } from '@agent/core/common';
 import { MessageClientService } from '../streaming/message-client.service';
 import { IToolProvider, TOOL_PROVIDER } from '../../contracts';
@@ -314,17 +322,19 @@ export class CheckpointPauseService {
     workspaceId: string | undefined,
   ): Promise<{ preview: string; riskLevel: ECheckpointRiskLevel | null }> {
     if (
-      pendingTool.provider === 'sql_server' &&
-      pendingTool.name === 'execute_write_query'
+      pendingTool.provider === SQL_SERVER_PROVIDER &&
+      pendingTool.name === EXECUTE_WRITE_QUERY_TOOL
     ) {
       const target = extractWriteQueryPreviewTarget(
         String(pendingTool.args?.query ?? ''),
       );
       if (target?.kind === EWriteQueryTargetKind.WHOLE_TABLE_DESTRUCTIVE) {
-        const verb =
-          target.operation === EWriteQueryOperation.TRUNCATE ? 'XOÁ TOÀN BỘ DỮ LIỆU' : 'XOÁ HẲN';
         return {
-          preview: `⚠️ Sẽ ${verb} bảng "${target.table}" (${target.operation} — KHÔNG THỂ khôi phục).`,
+          preview: buildWholeTableDestructivePreview(
+            target.table,
+            target.operation,
+            target.operation === EWriteQueryOperation.TRUNCATE,
+          ),
           riskLevel: ECheckpointRiskLevel.HIGH,
         };
       }
@@ -333,10 +343,11 @@ export class CheckpointPauseService {
         // Risk Gate (react-loop-run.ts), không tạo checkpoint. Giữ nhánh này
         // phòng trường hợp pendingTool bị sửa tay qua edit_and_approve.
         return {
-          preview:
-            target.countKind === EWriteQueryCountKind.MAXIMUM
-              ? `Sẽ thêm tối đa ~${target.rowCount} dòng mới vào bảng "${target.table}".`
-              : `Sẽ thêm ~${target.rowCount} dòng mới vào bảng "${target.table}".`,
+          preview: buildInsertRowsPreview(
+            target.rowCount,
+            target.table,
+            target.countKind === EWriteQueryCountKind.MAXIMUM,
+          ),
           riskLevel: ECheckpointRiskLevel.MEDIUM,
         };
       }
@@ -344,9 +355,7 @@ export class CheckpointPauseService {
         const count = await this.countAffectedRows(target, userId, workspaceId);
         if (count !== null) {
           return {
-            preview: target.whereClause
-              ? `Sẽ ảnh hưởng ~${count} dòng.`
-              : `⚠️ Câu lệnh KHÔNG có mệnh đề WHERE — sẽ ảnh hưởng TOÀN BỘ bảng (~${count} dòng).`,
+            preview: buildExistingRowsPreview(count, Boolean(target.whereClause)),
             riskLevel: ECheckpointRiskLevel.MEDIUM,
           };
         }
@@ -366,7 +375,11 @@ export class CheckpointPauseService {
     const argsText = capToolResultSize(
       JSON.stringify(pendingTool.args ?? {}, null, 2),
     );
-    return `Sẽ gọi "${pendingTool.provider}.${pendingTool.name}" với tham số:\n${argsText}\n\nKhông ước lượng được mức độ ảnh hưởng cụ thể — kiểm tra kỹ tham số trên trước khi duyệt.`;
+    return buildGenericArgsPreview(
+      pendingTool.provider,
+      pendingTool.name,
+      argsText,
+    );
   }
 
   private async countAffectedRows(
@@ -380,7 +393,7 @@ export class CheckpointPauseService {
 
     try {
       const result = await this.mcpClient.callTool({
-        provider: 'sql_server',
+        provider: SQL_SERVER_PROVIDER,
         name: 'execute_read_only_query',
         args: { query: countQuery },
         ownerId: userId,

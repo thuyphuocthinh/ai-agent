@@ -58,7 +58,6 @@ export class SmartExecutionRouter implements IExecutionRouter {
 
     const hybrid = decideExecutionMode({
       prompt: context.prompt,
-      forcedMode: 'auto',
       contextCharBudgetEstimate: context.contextCharBudgetEstimate,
     });
     if (hybrid.mode === EExecutionEngineMode.DYNAMIC_SUPERVISOR) {

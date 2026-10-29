@@ -59,7 +59,6 @@ function extractTopLevelTuples(valuesText: string): string[] {
   return tuples;
 }
 
-export const RETRYABLE_HTTP_STATUS_CODES = new Set([429, 502, 503, 504]);
 export type ToolErrorClass = 'retryable' | 'permanent';
 
 interface ParsedToolError {

@@ -1,4 +1,8 @@
 import { Logger } from '@nestjs/common';
+import {
+  EXECUTE_WRITE_QUERY_TOOL,
+  SQL_SERVER_PROVIDER,
+} from '@agent/core/constants';
 import { RunReactLoopRequestDto } from '../../../contracts/dtos/react-loop.dto';
 import { McpToolDto } from '../../../contracts/dtos/mcp.dto';
 import { LlmStrategy } from '../../../contracts/engine/llm-strategy.interface';
@@ -224,8 +228,8 @@ export class ToolRiskGate {
   // Risk Gate như cũ.
   isAutoApprovableInsert(name: string, args: Record<string, unknown>): boolean {
     if (
-      this.resolveProvider(name) !== 'sql_server' ||
-      name !== 'execute_write_query'
+      this.resolveProvider(name) !== SQL_SERVER_PROVIDER ||
+      name !== EXECUTE_WRITE_QUERY_TOOL
     ) {
       return false;
     }

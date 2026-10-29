@@ -17,6 +17,7 @@ import {
 } from '../../../contracts/engine/orchestration-answer.types';
 import { ReactLoopService } from '../../loop/react-loop.service';
 import { AgentCancellationService } from '../../cancellation/agent-cancellation.service';
+import { assertNotCancelled } from '../../cancellation/assert-not-cancelled.util';
 import { CheckpointPauseService } from '../../hitl/checkpoint-pause.service';
 import { MetricsRegistryService } from '../../../infrastructure/resilience/metrics-registry.service';
 import { TurnCancelledError } from '../../loop/errors/turn-cancelled.error';
@@ -27,6 +28,12 @@ import {
 } from '../../../contracts/dtos/react-loop.dto';
 import { ExecutedStepDto } from '../../../contracts/dtos/message-client.dto';
 import { SubAgentSpawnerService } from './sub-agent-spawner.service';
+import { buildReactRequestIdentity } from '../utils/react-request-identity.util';
+import {
+  buildApprovalFollowUpPrompt,
+  buildApprovedToolFailureMessage,
+  buildClarifiedPrompt,
+} from './utils/engine-prompt.util';
 import { ClarificationRequiredError } from '../../../contracts/engine/clarification-required.error';
 import { AvailableAgentDto } from '../../../contracts/dtos/supervisor.dto';
 import { SupervisorService } from '../../supervisor/supervisor.service';
@@ -87,23 +94,14 @@ export class SingleAgentEngine implements IExecutionEngine {
       `Thực thi Multi-Provider Single Agent cho turn ${replyMessageId} (providers: ${connectedProviders.join(', ')})`,
     );
 
-    const isCancelled = await this.cancellation.isCancelled(replyMessageId);
-    if (signal?.aborted || isCancelled) {
-      throw new TurnCancelledError(undefined);
-    }
+    await assertNotCancelled(this.cancellation, replyMessageId, signal);
 
     const requestDto: RunReactLoopRequestDto = {
       prompt,
       provider: primaryProvider,
       providers: connectedProviders,
-      userId: data.userId,
-      channelId: data.conversationId ?? data.channelId,
-      conversationId: data.conversationId,
-      workspaceId: data.tenantId ?? data.workspaceId,
-      tenantId: data.tenantId,
+      ...buildReactRequestIdentity(data),
       messageId: replyMessageId,
-      channelType: data.sessionType ?? data.channelType ?? 'web',
-      sessionType: data.sessionType,
       history,
       model:
         process.env.DEFAULT_REACT_MODEL ??
@@ -287,12 +285,14 @@ export class SingleAgentEngine implements IExecutionEngine {
       const candidateId =
         checkpoint.selectedCandidateId || checkpoint.selectedProvider;
       const candidate = checkpoint.clarificationCandidates?.find(
-        (c) =>
-          c.provider === candidateId ||
-          (c as unknown as { id?: string }).id === candidateId,
+        (c) => c.provider === candidateId || c.id === candidateId,
       );
       const candidateLabel = candidate?.label ?? candidateId ?? 'Đã xác nhận';
-      const clarifiedPrompt = `${checkpoint.originalPrompt}\n\n[Khách hàng được chọn: ${candidateLabel} (Mã: ${candidateId})]`;
+      const clarifiedPrompt = buildClarifiedPrompt(
+        checkpoint.originalPrompt,
+        candidateLabel,
+        candidateId,
+      );
 
       this.logger.log(
         `[SingleAgentEngine] Resume Clarification cho turn ${replyMessageId}: ${candidateLabel} (${candidateId})`,
@@ -350,7 +350,7 @@ export class SingleAgentEngine implements IExecutionEngine {
       const toolResultText = extractTextFromMcpResult(toolResult);
       if (toolResult.isError) {
         return buildAnswer(
-          `⚠️ Hành động "${pendingTool.name}" đã được duyệt nhưng thực thi thất bại:\n${toolResultText}`,
+          buildApprovedToolFailureMessage(pendingTool.name, toolResultText),
           [],
         );
       }
@@ -367,15 +367,12 @@ export class SingleAgentEngine implements IExecutionEngine {
         executedPendingTool,
       ];
 
-      const followUpPrompt = `[BỐI CẢNH TIẾN ĐỘ THỰC THI]:
-- Yêu cầu gốc: "${checkpoint.originalPrompt}"
-- Hành động rủi ro "${pendingTool.provider}.${pendingTool.name}" ĐÃ ĐƯỢC NGƯỜI DÙNG PHÊ DUYỆT VÀ ĐÃ THỰC THI THÀNH CÔNG trên hệ thống.
-- Kết quả thực thi thực tế: ${toolResultText.slice(0, 1500)}
-
-[CHỈ DẪN TIẾP TỤC]:
-1. TUYỆT ĐỐI KHÔNG gọi lại hành động "${pendingTool.name}" hoặc các bước đã hoàn tất trước đó (dữ liệu đã được ghi nhận trên hệ thống).
-2. Nếu trong yêu cầu ban đầu CÒN BƯỚC TIẾP THEO (ví dụ: gửi thông báo Slack/Email, tổng hợp thêm...), hãy tiếp tục sử dụng công cụ phù hợp để hoàn tất.
-3. Nếu TẤT CẢ CÁC BƯỚC ĐÃ XONG, hãy viết câu trả lời hoàn chỉnh để báo cáo kết quả cho người dùng.`;
+      const followUpPrompt = buildApprovalFollowUpPrompt({
+        originalPrompt: checkpoint.originalPrompt,
+        provider: pendingTool.provider,
+        toolName: pendingTool.name,
+        resultText: toolResultText,
+      });
       const context: EngineExecutionContext = {
         data: {
           userId,

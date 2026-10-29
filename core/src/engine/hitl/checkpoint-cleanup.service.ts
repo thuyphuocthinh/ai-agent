@@ -1,6 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { EAgentStreamStepType } from '@agent/core/constants';
+import {
+  EAgentStreamStepType,
+  WORKER_CRASHED_AFTER_EXECUTION_MESSAGE,
+  WORKER_CRASHED_EXECUTION_UNKNOWN_MESSAGE,
+} from '@agent/core/constants';
 import { CheckpointService } from './checkpoint.service';
 import { MessageClientService } from '../streaming/message-client.service';
 import { AgentStreamService } from '../streaming/agent-stream.service';
@@ -142,8 +146,8 @@ export class CheckpointCleanupService {
     // Không thể phân biệt 2 case này chỉ bằng dữ liệu đang có — báo "thử lại" một cách
     // chắc nịch ở đây là nguy hiểm (có thể khiến hành động chạy trùng lần 2).
     const content = checkpoint.toolExecutedAt
-      ? '⚠️ Hành động đã được duyệt và THỰC THI THÀNH CÔNG, nhưng worker gặp sự cố ngay sau đó khi tổng hợp câu trả lời. Kết quả đã được ghi — không cần thực hiện lại hành động này.'
-      : '⚠️ Hành động đã được duyệt nhưng worker gặp sự cố trong lúc thực thi — CHƯA THỂ XÁC ĐỊNH hành động đã thực sự chạy hay chưa. Vui lòng tự kiểm tra kết quả (VD trong hệ thống/ứng dụng đích) TRƯỚC KHI yêu cầu lại, để tránh thực hiện trùng.';
+      ? WORKER_CRASHED_AFTER_EXECUTION_MESSAGE
+      : WORKER_CRASHED_EXECUTION_UNKNOWN_MESSAGE;
     await this.messageClient.updateMessage({
       id: checkpoint.replyMessageId,
       userId: checkpoint.userId,

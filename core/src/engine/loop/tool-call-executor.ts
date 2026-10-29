@@ -5,6 +5,8 @@ import {
   ORCHESTRATION_CONSTANTS,
   EStepExecutionStatus,
   EAgentStreamStepType,
+  EXECUTE_WRITE_QUERY_TOOL,
+  SQL_SERVER_PROVIDER,
 } from '@agent/core/constants';
 import { extractTextFromMcpResult } from '@agent/core/common';
 import { IStreamSink, IToolProvider } from '../../contracts';
@@ -23,6 +25,12 @@ import { CallToolResponseDto, McpToolDto } from '../../contracts/dtos/mcp.dto';
 import { abortableSleep } from '../../common/async/abortable-sleep.util';
 import { capToolResultSize } from '../../common/text/token-budget.util';
 import { classifyToolError, parseInsertValues } from './utils/tool-execution.util';
+import {
+  buildEscalationDetail,
+  buildIdempotencyBlockedMessage,
+  buildMergedSqlBatchResult,
+  buildRepeatedToolCallMessage,
+} from './utils/react-loop-prompt.util';
 import { PiiScrubberUtil } from '../../common/text/pii/pii-scrubber.util';
 import { formatActionSummary } from '../../common/action-summary';
 import { MemoryManagerService } from '../../memory/memory-manager.service';
@@ -185,7 +193,9 @@ export class ToolCallExecutor {
           content:
             indexInBatch === 0
               ? content
-              : `Merged into the SQL batch represented by tool call ${primaryCall.id ?? primarySourceIndex + 1}; no separate database execution and no additional rows were affected.`,
+              : buildMergedSqlBatchResult(
+                  primaryCall.id ?? primarySourceIndex + 1,
+                ),
         });
       });
     });
@@ -202,8 +212,8 @@ export class ToolCallExecutor {
 
   private prepareToolCalls(toolCalls: LlmToolCall[]): PreparedToolCall[] {
     const hasSqlServer =
-      this.dto.provider === 'sql_server' ||
-      toolCalls.some((c) => this.resolveToolCall(c.name).provider === 'sql_server');
+      this.dto.provider === SQL_SERVER_PROVIDER ||
+      toolCalls.some((c) => this.resolveToolCall(c.name).provider === SQL_SERVER_PROVIDER);
     if (!hasSqlServer) {
       return toolCalls.map((call, index) => ({ call, sourceIndexes: [index] }));
     }
@@ -215,8 +225,8 @@ export class ToolCallExecutor {
       let query: string | undefined;
       const { provider: callProvider, rawName } = this.resolveToolCall(call.name);
       if (
-        callProvider === 'sql_server' &&
-        rawName === 'execute_write_query' &&
+        callProvider === SQL_SERVER_PROVIDER &&
+        rawName === EXECUTE_WRITE_QUERY_TOOL &&
         typeof call.args.query === 'string'
       ) {
         query = call.args.query;
@@ -258,8 +268,8 @@ export class ToolCallExecutor {
   private resolveInsertTableKey(call: LlmToolCall): string | null {
     const { provider, rawName } = this.resolveToolCall(call.name);
     if (
-      provider !== 'sql_server' ||
-      rawName !== 'execute_write_query'
+      provider !== SQL_SERVER_PROVIDER ||
+      rawName !== EXECUTE_WRITE_QUERY_TOOL
     ) {
       return null;
     }
@@ -333,7 +343,11 @@ export class ToolCallExecutor {
         throw new EscalationRequiredError(
           policyResult.reason || `Hành động vượt quá thẩm quyền AI`,
           undefined,
-          `Thao tác ${displayName} yêu cầu số tiền ${policyResult.currentAmount ?? 'N/A'} vượt hạn mức AI (${policyResult.thresholdLimit ?? 'N/A'})`,
+          buildEscalationDetail(
+            displayName,
+            policyResult.currentAmount,
+            policyResult.thresholdLimit,
+          ),
           policyResult.currentAmount,
         );
       }
@@ -409,7 +423,7 @@ export class ToolCallExecutor {
       ? await this.riskGate.acquireIdempotency(name, args)
       : { success: true, key: '' };
     if (!idempotency.success) {
-      const msg = `[Idempotency] Thao tác đang được xử lý hoặc đã hoàn tất trước đó (${idempotency.reason}).`;
+      const msg = buildIdempotencyBlockedMessage(idempotency.reason);
       this.logger.warn(`tool_call ${displayName} bị khóa bởi Idempotency: ${idempotency.reason}`);
       await this.emitToolCall(displayName, argsPreview, toolCallId, friendlySummary);
       await this.recordResult(
@@ -551,11 +565,11 @@ export class ToolCallExecutor {
     const otherToolNames = this.mcpTools
       .map((t) => t.name)
       .filter((n) => n !== name);
-    const suggestion =
-      otherToolNames.length > 0
-        ? `KHÔNG được gọi lại tool này. Nếu nhiệm vụ cần 1 HÀNH ĐỘNG (ghi/thêm/tạo/sửa dữ liệu...), hãy gọi tool phù hợp trong số các tool còn lại: ${otherToolNames.join(', ')}.`
-        : 'Không còn tool nào khác của hệ thống này để thử.';
-    const resultPreview = `Tool "${displayName}" đã được gọi với ĐÚNG tham số này ${attempts - 1} lần trước đó và không thực thi lại nữa. ${suggestion} Nếu không có tool nào phù hợp để hoàn thành yêu cầu, báo thẳng cho người dùng biết giới hạn đó thay vì im lặng bỏ cuộc.`;
+    const resultPreview = buildRepeatedToolCallMessage(
+      displayName,
+      attempts,
+      otherToolNames,
+    );
     this.logger.warn(
       `tool_call ${displayName} bị chặn — lặp lại quá ${ORCHESTRATION_CONSTANTS.MAX_SAME_TOOL_CALL_REPEATS} lần với cùng tham số`,
     );

@@ -35,6 +35,7 @@ import { CheckpointService } from '../../hitl/checkpoint.service';
 import { TurnResolverRun } from '../turn/turn-resolver-run';
 import { runCancellable } from '../../cancellation/cancellable-run.util';
 import { TurnCancelledError } from '../../loop/errors/turn-cancelled.error';
+import { buildApprovedToolFailureMessage } from './utils/engine-prompt.util';
 
 /**
  * DynamicSupervisorEngine
@@ -147,7 +148,10 @@ export class DynamicSupervisorEngine implements IExecutionEngine {
     await this.checkpointService?.markToolExecuted({ id: checkpoint.id });
 
     if (toolResult.isError) {
-      const errorMessage = `⚠️ Hành động "${pendingTool.name}" đã được duyệt nhưng thực thi thất bại:\n${toolResultText}`;
+      const errorMessage = buildApprovedToolFailureMessage(
+        pendingTool.name,
+        toolResultText,
+      );
       return {
         content: errorMessage,
       };

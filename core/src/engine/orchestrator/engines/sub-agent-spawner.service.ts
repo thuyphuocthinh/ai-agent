@@ -3,8 +3,13 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ORCHESTRATION_CONSTANTS } from '@agent/core/constants';
 import { ReactLoopService } from '../../loop/react-loop.service';
 import { AgentCancellationService } from '../../cancellation/agent-cancellation.service';
+import { assertNotCancelled } from '../../cancellation/assert-not-cancelled.util';
 import { TurnCancelledError } from '../../loop/errors/turn-cancelled.error';
 import { RunReactLoopRequestDto } from '../../../contracts/dtos/react-loop.dto';
+import {
+  buildIsolatedSubAgentPrompt,
+  buildSubAgentFailureResult,
+} from './utils/engine-prompt.util';
 import {
   ISubAgentSpawner,
   SubAgentSpawnOptions,
@@ -55,14 +60,9 @@ export class SubAgentSpawnerService implements ISubAgentSpawner {
       `[SubAgentSpawner] Spawning sub-agent "${subAgentId}" for parent="${parentMessageId}" task="${task.slice(0, 60)}..."`,
     );
 
-    const isCancelled = await this.cancellation.isCancelled(parentMessageId);
-    if (signal?.aborted || isCancelled) {
-      throw new TurnCancelledError(undefined);
-    }
+    await assertNotCancelled(this.cancellation, parentMessageId, signal);
 
-    const isolatedPrompt = context
-      ? `=== DỮ LIỆU CUNG CẤP TỪ AGENT CHÍNH ===\n${context}\n\n=== NHIỆM VỤ CẦN THỰC HIỆN ===\n${task}`
-      : task;
+    const isolatedPrompt = buildIsolatedSubAgentPrompt(context, task);
 
     const requestDto: RunReactLoopRequestDto = {
       prompt: isolatedPrompt,
@@ -111,7 +111,7 @@ export class SubAgentSpawnerService implements ISubAgentSpawner {
 
       return {
         success: false,
-        result: `Sub-agent không thể hoàn thành nhiệm vụ do lỗi: ${(error as Error)?.message}`,
+        result: buildSubAgentFailureResult((error as Error)?.message),
         error: (error as Error)?.message,
       };
     }

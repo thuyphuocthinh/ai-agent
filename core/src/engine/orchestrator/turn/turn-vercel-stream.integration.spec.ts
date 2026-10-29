@@ -5,6 +5,8 @@ import { IProcessAiTriggerJobData } from '@agent/core/infrastructure/queue';
 import { McpToolConnectorService } from '../../../infrastructure/tools/mcp/mcp-tool-connector.service';
 import { TurnResolverService } from './turn-resolver.service';
 import { SingleAgentEngine } from '../engines/single-agent.engine';
+import { DynamicSupervisorEngine } from '../engines/dynamic-supervisor.engine';
+import { ApprovalContinuationPlannerService } from '../../hitl/approval-continuation-planner.service';
 import { SmartExecutionRouter } from '../engines/smart-execution-router.service';
 import { ExecutionEngineRegistryService } from '../engines/execution-engine-registry.service';
 import { EXECUTION_ENGINE_REGISTRY, EXECUTION_ROUTER } from '../../../contracts';
@@ -121,15 +123,17 @@ describe('1 turn thật → AgentStreamService → VercelUiStreamAdapter → ai@
       providers: [
         TurnResolverService,
         SingleAgentEngine,
+        DynamicSupervisorEngine,
         SmartExecutionRouter,
         {
           provide: EXECUTION_ENGINE_REGISTRY,
-          useFactory: (single: SingleAgentEngine) => {
+          useFactory: (single: SingleAgentEngine, dynamic: DynamicSupervisorEngine) => {
             const registry = new ExecutionEngineRegistryService();
             registry.register(single);
+            registry.register(dynamic);
             return registry;
           },
-          inject: [SingleAgentEngine],
+          inject: [SingleAgentEngine, DynamicSupervisorEngine],
         },
         { provide: EXECUTION_ROUTER, useExisting: SmartExecutionRouter },
         ReactLoopService,
@@ -150,6 +154,10 @@ describe('1 turn thật → AgentStreamService → VercelUiStreamAdapter → ai@
           },
         },
         { provide: SupervisorService, useValue: mockSupervisor },
+        {
+          provide: ApprovalContinuationPlannerService,
+          useValue: { resolveRemainingSteps: jest.fn() },
+        },
         { provide: McpToolConnectorService, useValue: mockMcp },
         {
           provide: LlmStrategyFactory,

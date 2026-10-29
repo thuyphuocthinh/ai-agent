@@ -29,6 +29,20 @@ import {
 } from '../../contracts/skill/skill-catalog-reader.interface';
 import { LlmStrategyFactory } from '../strategy/llm-strategy.factory';
 import { loadSkillCatalogSafely } from '../loop/utils/skill-catalog-loader.util';
+import {
+  resolveEscalationModelId,
+  resolveSupervisorModelId,
+} from './utils/supervisor-model.util';
+import {
+  buildDynamicAgentDescription,
+  buildEvaluatePrompt,
+  buildSynthesisPrompt,
+  buildIngressApprovalRequiredAnswer,
+  buildPolicyDeniedAnswer,
+  buildPolicyEscalatedAnswer,
+  buildSupervisorPolicyGuidance,
+  formatAgentList,
+} from './utils/supervisor-guidance-prompt.util';
 import { checkQuantity, QuantityCheckResult } from '../loop/guards/quantity-check.util';
 import { describeExternalServiceError } from '../loop/utils/external-service-error.util';
 import { withLlmRetry } from '../loop/utils/with-llm-retry.util';
@@ -73,6 +87,29 @@ export class SupervisorService {
     private readonly skillCatalog?: ISkillCatalogReader,
   ) {}
 
+  // Một lời gọi LLM của Supervisor: circuit breaker theo strategy + retry có timeout. `canRetry`
+  // dành cho lệnh gọi có stream (đã stream token thì không được retry mù).
+  private callLlm<T>(
+    strategyId: string,
+    label: string,
+    model: string,
+    attempt: (attemptSignal: AbortSignal) => Promise<T>,
+    signal?: AbortSignal,
+    canRetry?: () => boolean,
+  ): Promise<T> {
+    return this.circuitBreaker.run(
+      `llm:${strategyId}`,
+      () =>
+        withLlmRetry(
+          attempt,
+          ORCHESTRATION_CONSTANTS.LLM_CALL_TIMEOUT_MS,
+          `Supervisor ${label} timeout sau ${ORCHESTRATION_CONSTANTS.LLM_CALL_TIMEOUT_MS / 1000}s (model=${model})`,
+          { signal, canRetry },
+        ),
+      signal,
+    );
+  }
+
   private getSystemAgents(): AvailableAgentDto[] {
     const provider = 'compute';
     if (!AGENT_REGISTRY[provider]?.endpoint) return [];
@@ -108,7 +145,7 @@ export class SupervisorService {
       label: entity.name,
       description:
         entity.description ||
-        `Hệ thống/API mở rộng (Custom Swagger) tên "${entity.name}" — liên quan tới các thao tác/dữ liệu của hệ thống này (tham khảo: ${entity.specUrl}).`,
+        buildDynamicAgentDescription(entity.name, entity.specUrl),
     }));
 
     return [
@@ -140,19 +177,7 @@ export class SupervisorService {
     if (rankingCache && !rankingCache.current) {
       rankingCache.current = { shown, omittedCount };
     }
-    let agentListText: string;
-    if (shown.length > 0) {
-      let text = shown
-        .map((a) => `- ${a.provider} (${a.label}): ${a.description}`)
-        .join('\n');
-      if (omittedCount > 0) {
-        text += `\n(Còn ${omittedCount} hệ thống khác đã kết nối nhưng không liên quan tới câu hỏi này, đã ẩn bớt khỏi danh sách trên.)`;
-      }
-      agentListText = text;
-    } else {
-      agentListText =
-        '(Người dùng chưa kết nối agent nào — nếu câu hỏi cần dữ liệu, trả lời "respond" và nhắc user vào Settings để kết nối.)';
-    }
+    const agentListText = formatAgentList(shown, omittedCount);
 
     const planSchema =
       rounds.length > 0
@@ -160,10 +185,7 @@ export class SupervisorService {
         : SUPERVISOR_PLAN_SCHEMA;
 
     try {
-      const planModelId =
-        process.env.SUPERVISOR_PLANNING_MODEL ??
-        process.env.SUPERVISOR_MODEL ??
-        ORCHESTRATION_CONSTANTS.SUPERVISOR_MODEL;
+      const planModelId = resolveSupervisorModelId('plan');
       const { strategy, model } = this.llmFactory.resolve(planModelId);
       const memories = channelId
         ? await this.memoryManager.getMemories(channelId, planModelId, prompt)
@@ -194,20 +216,20 @@ export class SupervisorService {
               this.logger.warn(`[Supervisor Policy Guard] Chặn yêu cầu Ingress rủi ro cao không có tool: ${prompt}`);
               return {
                 action: 'respond',
-                answer: `Thao tác cấu hình định tuyến mạng Ingress diện rộng có rủi ro cao và cần có sự phê duyệt từ Quản trị viên (theo quy chế ${evalResult.citedRuleId || 'SEC-DEVOPS-002'}). Hệ thống không tự ý áp dụng hoặc hướng dẫn tạo file cấu hình khi chưa có phê duyệt chính thức.`,
+                answer: buildIngressApprovalRequiredAnswer(evalResult.citedRuleId),
               };
             }
           } else if (evalResult.verdict === EPolicyVerdict.DENY) {
             this.logger.warn(`[Supervisor Policy Guard] Chặn yêu cầu vi phạm chính sách cấm: ${prompt}`);
             return {
               action: 'respond',
-              answer: `Từ chối thực thi: ${evalResult.reason || 'Yêu cầu vi phạm quy chế bảo mật doanh nghiệp.'} (Điều khoản: ${evalResult.citedRuleId || 'ENTERPRISE_POLICY'}).`,
+              answer: buildPolicyDeniedAnswer(evalResult.reason, evalResult.citedRuleId),
             };
           } else if (evalResult.verdict === EPolicyVerdict.ESCALATE) {
             this.logger.warn(`[Supervisor Policy Guard] Chuyển tiếp sự vụ vượt thẩm quyền AI: ${prompt}`);
             return {
               action: 'respond',
-              answer: `Yêu cầu vượt quá thẩm quyền của AI: ${evalResult.reason || 'Sự vụ cần được xử lý bởi nhân sự chuyên trách.'} (Điều khoản: ${evalResult.citedRuleId || 'ENTERPRISE_POLICY'}). Sự vụ đã được ghi nhận để nhân sự có thẩm quyền tiếp quản.`,
+              answer: buildPolicyEscalatedAnswer(evalResult.reason, evalResult.citedRuleId),
             };
           }
         } catch (err) {
@@ -223,19 +245,9 @@ export class SupervisorService {
             minScore: 0.15,
           });
 
-          if (relevant.length > 0) {
-            const rules = relevant
-              .map((r) => `- [${r.chunk.id}] ${r.chunk.title}: ${r.chunk.content}`)
-              .join('\n');
-
-            policyGuidance =
-              `\n\n--- QUY CHẾ AN NINH & TUÂN THỦ DOANH NGHIỆP (BẮT BUỘC TUÂN THỦ) ---\n${rules}\n\n` +
-              `QUY TẮC BẢO MẬT BẮT BUỘC CHO SUPERVISOR:\n` +
-              `1. Nếu yêu cầu của người dùng thuộc diện cần phê duyệt (REQUIRE_APPROVAL) hoặc bị nghiêm cấm (DENY) hoặc vượt thẩm quyền (ESCALATE) mà hệ thống KHÔNG CÓ tool chính thức hỗ trợ quy trình đó (hoặc người dùng yêu cầu trực tiếp thay đổi định tuyến Ingress, xóa CSDL production, trích xuất bảng lương nhân viên):\n` +
-              `   - BẠN BẮT BUỘC PHẢI CHỌN action="respond".\n` +
-              `   - Điền "answer" bằng câu trả lời từ chối/yêu cầu phê duyệt rõ ràng, trích dẫn đúng mã điều khoản (ví dụ: SEC-DEVOPS-002, SEC-DEVOPS-001, SEC-HR-001).\n` +
-              `   - TUYỆT ĐỐI KHÔNG phân công (plan) cho bất kỳ agent nào (như compute/python) để sinh script, YAML, JSON, hay viết hướng dẫn người dùng làm thủ công nhằm lách quy chế!`;
-          }
+          policyGuidance = buildSupervisorPolicyGuidance(
+            relevant.map((r) => r.chunk),
+          );
         } catch (err) {
           this.logger.warn(`Lỗi truy xuất policy grounding ở Supervisor: ${(err as Error)?.message}`);
         }
@@ -252,22 +264,18 @@ export class SupervisorService {
       this.logger.log(
         `plan() model=${model} agents=${agents.length} historyTurns=${history.length} prompt=${fullPrompt}`,
       );
-      const plan = await this.circuitBreaker.run(
-        `llm:${strategy.id}`,
-        () =>
-          withLlmRetry(
-            (attemptSignal) =>
-              strategy.generateStructured<SupervisorPlanDto>({
-                model,
-                systemInstruction: `${SUPERVISOR_PLANNING_PROMPT}${policyGuidance}\n${agentListText}`,
-                prompt: fullPrompt,
-                schema: planSchema,
-                signal: attemptSignal,
-              }),
-            ORCHESTRATION_CONSTANTS.LLM_CALL_TIMEOUT_MS,
-            `Supervisor plan() timeout sau ${ORCHESTRATION_CONSTANTS.LLM_CALL_TIMEOUT_MS / 1000}s (model=${model})`,
-            { signal },
-          ),
+      const plan = await this.callLlm(
+        strategy.id,
+        'plan()',
+        model,
+        (attemptSignal) =>
+          strategy.generateStructured<SupervisorPlanDto>({
+            model,
+            systemInstruction: `${SUPERVISOR_PLANNING_PROMPT}${policyGuidance}\n${agentListText}`,
+            prompt: fullPrompt,
+            schema: planSchema,
+            signal: attemptSignal,
+          }),
         signal,
       );
       this.logger.log(`plan() result=${JSON.stringify(plan)}`);
@@ -321,27 +329,23 @@ export class SupervisorService {
     prompt: string,
     signal?: AbortSignal,
   ): Promise<SupervisorPlanDto> {
-    const escalationModelId = process.env.SUPERVISOR_ESCALATION_MODEL;
+    const escalationModelId = resolveEscalationModelId();
     if (!escalationModelId) return plan;
 
     try {
       const { strategy, model } = this.llmFactory.resolve(escalationModelId);
-      const escalated = await this.circuitBreaker.run(
-        `llm:${strategy.id}`,
-        () =>
-          withLlmRetry(
-            (attemptSignal) =>
-              strategy.generateStructured<SupervisorPlanDto>({
-                model,
-                systemInstruction: `${SUPERVISOR_PLANNING_PROMPT}\n${agentListText}`,
-                prompt: fullPrompt,
-                schema,
-                signal: attemptSignal,
-              }),
-            ORCHESTRATION_CONSTANTS.LLM_CALL_TIMEOUT_MS,
-            `Supervisor plan() escalation timeout sau ${ORCHESTRATION_CONSTANTS.LLM_CALL_TIMEOUT_MS / 1000}s (model=${model})`,
-            { signal },
-          ),
+      const escalated = await this.callLlm(
+        strategy.id,
+        'plan() escalation',
+        model,
+        (attemptSignal) =>
+          strategy.generateStructured<SupervisorPlanDto>({
+            model,
+            systemInstruction: `${SUPERVISOR_PLANNING_PROMPT}\n${agentListText}`,
+            prompt: fullPrompt,
+            schema,
+            signal: attemptSignal,
+          }),
         signal,
       );
       this.metrics.incrementBehaviorSignal('model_escalation');
@@ -378,10 +382,7 @@ export class SupervisorService {
       return { verdict: ESupervisorVerdict.DONE };
     }
 
-    const evaluateModelId =
-      process.env.SUPERVISOR_EVALUATE_MODEL ??
-      process.env.SUPERVISOR_MODEL ??
-      ORCHESTRATION_CONSTANTS.SUPERVISOR_MODEL;
+    const evaluateModelId = resolveSupervisorModelId('evaluate');
     const cappedResult = capToolResultSize(
       completedStep.result,
       this.memoryManager.buildBudget(evaluateModelId).toolResultCharBudget,
@@ -398,31 +399,31 @@ export class SupervisorService {
       })
       .join('\n');
     const mustFinishRemaining = hasPendingActionStep(remainingSteps);
-    const doneNotAllowedNote = mustFinishRemaining
-      ? '\n\nLƯU Ý: còn ít nhất 1 bước BẮT BUỘC (đánh dấu ở trên) chưa chạy — "done" không phải lựa chọn hợp lệ ở lượt này, chỉ được chọn "continue" hoặc "replan".'
-      : '';
-    const prompt = `Câu hỏi gốc: ${originalPrompt}\n\nBước vừa thực hiện xong — Agent "${completedStep.agent}" (yêu cầu: "${completedStep.task}") → kết quả: ${cappedResult}\n\nCác bước CÒN LẠI trong kế hoạch (chưa chạy):\n${remainingText}\n\nBước vừa xong có đạt kỳ vọng không, các bước còn lại có còn hợp lý để tiếp tục không?${doneNotAllowedNote}`;
+    const prompt = buildEvaluatePrompt({
+      originalPrompt,
+      completedAgent: completedStep.agent,
+      completedTask: completedStep.task,
+      cappedResult,
+      remainingText,
+      mustFinishRemaining,
+    });
 
     try {
       const { strategy, model } = this.llmFactory.resolve(evaluateModelId);
-      const verdict = await this.circuitBreaker.run(
-        `llm:${strategy.id}`,
-        () =>
-          withLlmRetry(
-            (attemptSignal) =>
-              strategy.generateStructured<SupervisorEvaluateDto>({
-                model,
-                systemInstruction: SUPERVISOR_EVALUATE_PROMPT,
-                prompt,
-                schema: mustFinishRemaining
-                  ? SUPERVISOR_EVALUATE_SCHEMA_NO_DONE
-                  : SUPERVISOR_EVALUATE_SCHEMA,
-                signal: attemptSignal,
-              }),
-            ORCHESTRATION_CONSTANTS.LLM_CALL_TIMEOUT_MS,
-            `Supervisor evaluate() timeout sau ${ORCHESTRATION_CONSTANTS.LLM_CALL_TIMEOUT_MS / 1000}s (model=${model})`,
-            { signal },
-          ),
+      const verdict = await this.callLlm(
+        strategy.id,
+        'evaluate()',
+        model,
+        (attemptSignal) =>
+          strategy.generateStructured<SupervisorEvaluateDto>({
+            model,
+            systemInstruction: SUPERVISOR_EVALUATE_PROMPT,
+            prompt,
+            schema: mustFinishRemaining
+              ? SUPERVISOR_EVALUATE_SCHEMA_NO_DONE
+              : SUPERVISOR_EVALUATE_SCHEMA,
+            signal: attemptSignal,
+          }),
         signal,
       );
       this.logger.log(`evaluate() result=${JSON.stringify(verdict)}`);
@@ -457,10 +458,7 @@ export class SupervisorService {
       return { requiredCount: 0, achievedCount: 0 };
     }
 
-    const modelId =
-      process.env.SUPERVISOR_EVALUATE_MODEL ??
-      process.env.SUPERVISOR_MODEL ??
-      ORCHESTRATION_CONSTANTS.SUPERVISOR_MODEL;
+    const modelId = resolveSupervisorModelId('evaluate');
     const { strategy, model } = this.llmFactory.resolve(modelId);
     return checkQuantity(
       originalPrompt,
@@ -480,9 +478,7 @@ export class SupervisorService {
     signal?: AbortSignal,
   ): Promise<string> {
     try {
-      const modelId =
-        process.env.SUPERVISOR_MODEL ??
-        ORCHESTRATION_CONSTANTS.SUPERVISOR_MODEL;
+      const modelId = resolveSupervisorModelId('synthesize');
       const { strategy, model } = this.llmFactory.resolve(modelId);
 
       const roundsText = capRoundResults(
@@ -502,7 +498,7 @@ export class SupervisorService {
         history: [],
       });
 
-      const prompt = `Câu hỏi gốc: ${originalPrompt}\n\nDữ liệu đã thu thập được:\n${roundsText}\n\nHãy tổng hợp các dữ liệu trên thành một câu trả lời hoàn chỉnh cho người dùng.`;
+      const prompt = buildSynthesisPrompt(originalPrompt, roundsText);
 
       // streamedAnything reset lại MỖI lần thử (đầu fn()) — chỉ cho retry khi
       // lần vừa lỗi CHƯA stream ra token nào (xem ORCHESTRATION_CONSTANTS.MAX_LLM_CALL_RETRY_ATTEMPTS).
@@ -514,19 +510,16 @@ export class SupervisorService {
           onToken(chunk);
         };
       }
-      const result = await this.circuitBreaker.run(
-        `llm:${strategy.id}`,
-        () =>
-          withLlmRetry(
-            (attemptSignal) => {
-              streamedAnything = false;
-              return session.sendMessage(prompt, trackedOnToken, attemptSignal);
-            },
-            ORCHESTRATION_CONSTANTS.LLM_CALL_TIMEOUT_MS,
-            `Supervisor synthesize() timeout sau ${ORCHESTRATION_CONSTANTS.LLM_CALL_TIMEOUT_MS / 1000}s (model=${model})`,
-            { signal, canRetry: () => !streamedAnything },
-          ),
+      const result = await this.callLlm(
+        strategy.id,
+        'synthesize()',
+        model,
+        (attemptSignal) => {
+          streamedAnything = false;
+          return session.sendMessage(prompt, trackedOnToken, attemptSignal);
+        },
         signal,
+        () => !streamedAnything,
       );
       this.logger.log(`synthesize() result=${result.text}`);
       return result.text;
