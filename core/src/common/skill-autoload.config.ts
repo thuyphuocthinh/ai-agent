@@ -14,10 +14,12 @@ export interface SkillAutoloadConfig {
   timeoutMs: number;
 }
 
-// minScore tạm thời — được chốt bằng dữ liệu thật ở bước hiệu chỉnh (script skill:eval).
+// minScore chốt bằng embedding thật (script skill:eval): khoảng đúng toàn bộ (0.388, 0.454].
+// Lưu ý: `metadata.triggers` của skill seed trùng bộ prompt trong skill-match-eval.prompts.json
+// nên khoảng này chưa được kiểm chứng ngoài mẫu — cần bộ prompt giữ riêng (held-out).
 export const SKILL_AUTOLOAD_DEFAULTS: SkillAutoloadConfig = {
   enabled: true,
-  minScore: 0.4,
+  minScore: 0.42,
   maxSkills: 2,
   maxChars: 6000,
   timeoutMs: 1500,

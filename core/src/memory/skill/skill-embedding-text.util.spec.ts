@@ -16,4 +16,15 @@ describe('buildSkillEmbeddingText', () => {
       buildSkillEmbeddingText({ name: 'A', description: 'B', tags: [] }),
     ).toBe('A. B');
   });
+
+  it('appends triggers when present in metadata', () => {
+    expect(
+      buildSkillEmbeddingText({
+        name: 'Ghi SQL',
+        description: 'Sửa dữ liệu',
+        tags: ['sql'],
+        metadata: { triggers: ['đổi tên sản phẩm', 'cập nhật giá'] },
+      }),
+    ).toBe('Ghi SQL. Sửa dữ liệu. sql. Các câu lệnh mẫu: đổi tên sản phẩm; cập nhật giá');
+  });
 });

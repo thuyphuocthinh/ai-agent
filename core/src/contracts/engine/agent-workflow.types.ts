@@ -35,6 +35,11 @@ export interface AgentWorkflowConfig {
   readonly tools?: readonly string[];
 
   /**
+   * Danh sách slug skill gán cứng cho workflow này.
+   */
+  readonly skills?: readonly string[];
+
+  /**
    * Số vòng lặp ReAct tối đa trước khi tự động dừng (mặc định theo ORCHESTRATION_CONSTANTS.MAX_REACT_LOOPS).
    */
   readonly maxLoops?: number;

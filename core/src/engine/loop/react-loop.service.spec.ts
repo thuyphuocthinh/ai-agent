@@ -767,6 +767,84 @@ describe('ReactLoopService', () => {
         );
       });
 
+      it('injects 100% full playbook directly and skips matcher when skills are explicitly assigned', async () => {
+        mockSkillCatalog.getSkillBySlug.mockImplementation(async (slug: string) => {
+          if (slug === 'order-lookup') {
+            return {
+              slug: 'order-lookup',
+              name: 'Tra cứu đơn hàng',
+              description: 'Quy trình tra cứu đơn hàng',
+              instructions: 'BƯỚC 1: Tìm theo ID\nBƯỚC 2: Kiểm tra trạng thái',
+            };
+          }
+          return null;
+        });
+        mockSession.sendMessage.mockResolvedValueOnce({ text: 'ok', toolCalls: [] });
+
+        await service.run({ ...baseDto, skills: ['order-lookup'] });
+
+        expect(mockSkillCatalog.getSkillBySlug).toHaveBeenCalledWith(
+          'order-lookup',
+          baseDto.workspaceId,
+        );
+        expect(mockSkillMatcher.match).not.toHaveBeenCalled();
+        expect(mockStrategy.startChat).toHaveBeenCalledWith(
+          expect.objectContaining({
+            systemInstruction: expect.stringContaining('=== QUY TRÌNH: Tra cứu đơn hàng (order-lookup) ==='),
+          }),
+        );
+        expect(mockStrategy.startChat).toHaveBeenCalledWith(
+          expect.objectContaining({
+            systemInstruction: expect.stringContaining('BƯỚC 1: Tìm theo ID'),
+          }),
+        );
+      });
+
+      it('warns about explicitly assigned slugs that are missing or disabled and still loads the others', async () => {
+        const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+        try {
+          mockSkillCatalog.getSkillBySlug.mockImplementation(async (slug: string) =>
+            slug === 'order-lookup'
+              ? { slug, name: 'Tra cứu đơn hàng', instructions: 'BƯỚC 1: Tìm theo ID' }
+              : null,
+          );
+          mockSession.sendMessage.mockResolvedValueOnce({ text: 'ok', toolCalls: [] });
+
+          await service.run({ ...baseDto, skills: ['order-lookup', 'gone-skill'] });
+
+          expect(mockStrategy.startChat.mock.calls[0][0].systemInstruction).toContain('BƯỚC 1: Tìm theo ID');
+          expect(warnSpy.mock.calls.map((c) => String(c[0]))).toContainEqual(
+            expect.stringContaining('gone-skill'),
+          );
+        } finally {
+          warnSpy.mockRestore();
+        }
+      });
+
+      it('still runs without the skills when loading explicitly assigned skills fails', async () => {
+        mockSkillCatalog.getSkillBySlug.mockRejectedValue(new Error('db down'));
+        mockSession.sendMessage.mockResolvedValueOnce({ text: 'ok', toolCalls: [] });
+
+        const result = await service.run({ ...baseDto, skills: ['order-lookup'] });
+
+        expect(result.answer).toBe('ok');
+        expect(mockStrategy.startChat.mock.calls[0][0].systemInstruction).not.toContain('=== QUY TRÌNH:');
+      });
+
+      it('starts matching the prompt while the tools are still loading (no serial latency)', async () => {
+        let releaseTools: (tools: unknown[]) => void = () => undefined;
+        const toolsLoading = new Promise<unknown[]>((resolve) => (releaseTools = resolve));
+        mockMcpClient.getTools.mockImplementation(() => toolsLoading);
+        mockSession.sendMessage.mockResolvedValueOnce({ text: 'ok', toolCalls: [] });
+
+        const run = service.run(baseDto);
+        await new Promise((resolve) => setImmediate(resolve));
+
+        expect(mockSkillMatcher.match).toHaveBeenCalledTimes(1);
+        releaseTools([{ name: 'get_database_schema', description: 'd', inputSchema: {} }]);
+        await run;
+      });
+
       it('keeps read_skill and the catalog when allowedTools restricts the provider tools (native tools are always available)', async () => {
         withReadSkill();
         mockSkillCatalog.getCatalogForPrompt.mockResolvedValue('CATALOG-TEXT');

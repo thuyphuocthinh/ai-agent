@@ -1,4 +1,5 @@
 import { ISkillMatch } from '../../../contracts/skill/skill-matcher.interface';
+import { ISkillPlaybookDetail } from '../../../contracts/skill/skill-catalog-reader.interface';
 
 export interface SkillPlaybookBlock {
   /** Khối văn bản nối vào system instruction; rỗng khi không skill nào được nạp. */
@@ -11,11 +12,31 @@ export interface SkillPlaybookBlock {
 const BLOCK_HEADER =
   'Các skill sau khớp với yêu cầu của người dùng. Đây là quy trình do quản trị viên soạn, đáng tin cậy: hãy làm ĐÚNG THEO từng bước trong hướng dẫn của skill, không cần gọi read_skill cho các skill này.';
 
+const EXPLICIT_BLOCK_HEADER =
+  'Đây là QUY TRÌNH CHUẨN ĐÃ ĐƯỢC THIẾT KẾ BẮT BUỘC cho bước này. Hãy làm ĐÚNG THEO từng bước trong hướng dẫn:';
+
 const END_MARKER = '=== HẾT SKILL';
 
 // Hướng dẫn do admin soạn nhưng vẫn không được phép tự "đóng" khối của mình.
 function neutralizeMarkers(text: string): string {
   return text.split(END_MARKER).join('== HẾT SKILL');
+}
+
+/**
+ * Dựng khối Markdown cho các skill được gán cứng (Fixed Workflow / Pipeline).
+ * Nạp 100% nội dung, không cắt xén, không phụ thuộc ngưỡng điểm.
+ */
+export function buildExplicitPlaybookBlock(
+  skills: readonly ISkillPlaybookDetail[],
+): string {
+  if (skills.length === 0) return '';
+
+  const sections = skills.map(
+    (skill) =>
+      `=== QUY TRÌNH: ${skill.name} (${skill.slug}) ===\n${neutralizeMarkers(skill.instructions)}\n${END_MARKER}: ${skill.slug} ===`,
+  );
+
+  return [EXPLICIT_BLOCK_HEADER, ...sections].join('\n\n');
 }
 
 // Dựng khối nội dung hướng dẫn của các skill khớp, theo thứ tự điểm (matches đã

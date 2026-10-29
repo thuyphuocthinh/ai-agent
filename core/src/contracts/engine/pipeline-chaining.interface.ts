@@ -58,6 +58,11 @@ export interface PipelineStepDefinition {
   readonly tools?: readonly string[];
 
   /**
+   * Danh sách slug skill gán cứng cho bước này (ví dụ: ['sql-safe-write']).
+   */
+  readonly skills?: readonly string[];
+
+  /**
    * Provider gắn liền với bước này (ví dụ: 'google_sheets', 'sql_server', 'compute').
    */
   readonly provider?: string;

@@ -40,6 +40,9 @@ export class RunReactLoopRequestDto {
   // Danh sách công cụ được phép dùng (Principle of Least Privilege).
   // Nếu truyền, ReactLoop chỉ nạp các tool trùng tên trong mảng này.
   allowedTools?: string[];
+  // Danh sách slug skill gán cứng trực tiếp cho lượt chạy này (Fixed Workflow / Pipeline).
+  // Khi có giá trị, ReactLoop nạp thẳng 100% Playbook của các skill này, bỏ qua tìm kiếm động.
+  skills?: string[];
   // Số lần tự sửa lỗi tối đa khi gọi tool fail (Hard cap: mặc định 2 lần, không retry vô tận)
   maxSelfCorrectionRetries?: number;
   selfCorrectionCount?: number;

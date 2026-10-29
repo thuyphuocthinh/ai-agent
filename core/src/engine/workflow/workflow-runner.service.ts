@@ -57,6 +57,7 @@ export class WorkflowRunnerService {
         goal: workflow.systemPrompt,
       },
       allowedTools: workflow.tools ? [...workflow.tools] : undefined,
+      skills: workflow.skills ? [...workflow.skills] : undefined,
     };
 
     try {

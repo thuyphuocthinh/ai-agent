@@ -1,8 +1,10 @@
 import {
+  buildExplicitPlaybookBlock,
   buildSkillPlaybookBlock,
   formatSkillAutoloadLog,
 } from './skill-playbook-prompt.util';
 import { ISkillMatch } from '../../../contracts/skill/skill-matcher.interface';
+import { ISkillPlaybookDetail } from '../../../contracts/skill/skill-catalog-reader.interface';
 
 function match(slug: string, instructions: string, score = 0.6): ISkillMatch {
   return {
@@ -134,5 +136,33 @@ describe('formatSkillAutoloadLog', () => {
     });
 
     expect(line).toBe('[skill-autoload] loaded=a(0.50) skipped=-');
+  });
+});
+
+describe('buildExplicitPlaybookBlock', () => {
+  it('returns empty string when skills array is empty', () => {
+    expect(buildExplicitPlaybookBlock([])).toBe('');
+  });
+
+  it('renders explicit mandatory playbook block without budget truncation', () => {
+    const skills: ISkillPlaybookDetail[] = [
+      {
+        id: '1',
+        tenantId: 'default',
+        slug: 'sql-safe-write',
+        name: 'Ghi SQL an toàn',
+        description: 'desc',
+        instructions: '1. Kiểm tra WHERE\n2. Ghi log',
+        tools: ['execute_write_query'],
+        tags: [],
+        isActive: true,
+      },
+    ];
+
+    const result = buildExplicitPlaybookBlock(skills);
+    expect(result).toContain('QUY TRÌNH CHUẨN ĐÃ ĐƯỢC THIẾT KẾ BẮT BUỘC');
+    expect(result).toContain('=== QUY TRÌNH: Ghi SQL an toàn (sql-safe-write) ===');
+    expect(result).toContain('1. Kiểm tra WHERE\n2. Ghi log');
+    expect(result).toContain('=== HẾT SKILL: sql-safe-write ===');
   });
 });

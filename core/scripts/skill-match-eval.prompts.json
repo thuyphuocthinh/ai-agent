@@ -1,0 +1,26 @@
+[
+  { "prompt": "Lập báo cáo tình trạng đơn hàng giúp tôi", "expected": "order-status-report" },
+  { "prompt": "Thống kê số đơn hàng theo từng trạng thái và tổng tiền", "expected": "order-status-report" },
+  { "prompt": "Cho tôi báo cáo doanh thu và các đơn chưa có thanh toán thành công", "expected": "order-status-report" },
+
+  { "prompt": "Đổi tên sản phẩm 'Áo thun' thành 'Áo thun cotton'", "expected": "sql-safe-write" },
+  { "prompt": "Xóa các đơn hàng đã hủy khỏi bảng orders", "expected": "sql-safe-write" },
+  { "prompt": "Cập nhật giá của giày thể thao lên 750000", "expected": "sql-safe-write" },
+
+  { "prompt": "Đề xuất giúp tôi kế hoạch nhập hàng", "expected": "restock-planning" },
+  { "prompt": "Sản phẩm nào sắp hết hàng cần nhập thêm?", "expected": "restock-planning" },
+  { "prompt": "Lập kế hoạch nhập hàng quý 4 dựa trên tồn kho và giá nhà cung cấp", "expected": "restock-planning" },
+
+  { "prompt": "Thông báo sự cố: cổng thanh toán bị chậm, ảnh hưởng đơn hàng mới", "expected": "incident-notify" },
+  { "prompt": "Báo cho quản lý biết hệ thống đang gặp sự cố mức cao", "expected": "incident-notify" },
+  { "prompt": "Soạn thông báo sự cố nội bộ gửi kênh ops", "expected": "incident-notify" },
+
+  { "prompt": "2 cộng 2 bằng mấy?", "expected": null },
+  { "prompt": "Xin chào, bạn khỏe không?", "expected": null },
+  { "prompt": "Hôm nay thời tiết thế nào?", "expected": null },
+  { "prompt": "Dịch giúp tôi sang tiếng Anh: tôi yêu Việt Nam", "expected": null },
+  { "prompt": "Viết một bài thơ ngắn về mùa thu", "expected": null },
+  { "prompt": "Giải thích REST API là gì", "expected": null },
+  { "prompt": "Cảm ơn bạn nhiều nhé", "expected": null },
+  { "prompt": "Tóm tắt giúp tôi nội dung email vừa nhận", "expected": null }
+]

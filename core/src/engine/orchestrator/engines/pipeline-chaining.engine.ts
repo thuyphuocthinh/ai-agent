@@ -233,6 +233,7 @@ export class PipelineChainingEngine implements IPipelineChainingEngine {
           goal: step.systemPrompt ?? `Thực thi bước ${step.name}`,
         },
         allowedTools: step.tools ? [...step.tools] : undefined,
+        skills: step.skills ? [...step.skills] : undefined,
         maxSelfCorrectionRetries: 2,
       };
 

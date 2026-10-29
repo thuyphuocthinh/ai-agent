@@ -17,7 +17,8 @@
     "test:cov": "jest --coverage",
     "prisma:generate": "prisma generate --schema=prisma/schema.prisma",
     "prisma:push": "prisma db push --schema=prisma/schema.prisma",
-    "seed:skills": "node scripts/seed-skills.js"
+    "seed:skills": "node scripts/seed-skills.js",
+    "skill:eval": "ts-node -r tsconfig-paths/register scripts/skill-match-eval.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.109.1",

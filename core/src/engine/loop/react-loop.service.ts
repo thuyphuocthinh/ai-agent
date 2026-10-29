@@ -20,6 +20,7 @@ import {
   ISkillMatch,
   ISkillMatcher,
   SKILL_MATCHER,
+  ISkillPlaybookDetail,
 } from '../../contracts';
 import { CircuitBreakerService } from '../../infrastructure/resilience/circuit-breaker.service';
 import { AgentCancellationService } from '../cancellation/agent-cancellation.service';
@@ -32,6 +33,7 @@ import { ReactLoopRun } from './react-loop-run';
 import { ToolRepeatGuard } from './guards/tool-repeat-guard';
 import { formatPersonaPrompt } from './utils/persona-prompt.util';
 import {
+  buildExplicitPlaybookBlock,
   buildSkillPlaybookBlock,
   formatSkillAutoloadLog,
 } from './utils/skill-playbook-prompt.util';
@@ -130,8 +132,9 @@ export class ReactLoopService {
             : [dto.provider];
         const primaryProvider = targetProviders[0];
 
-        // Nạp skill tự động chạy song song với nạp tool/prompt để không cộng thêm
-        // độ trễ nối tiếp.
+        // Skill gán cứng (workflow/pipeline) thì không dò theo độ khớp. Dò khớp chạy
+        // song song với nạp tool/prompt để không cộng thêm độ trễ nối tiếp.
+        const forcedSkillSlugs = dto.skills ?? [];
         const [{ mcpTools, toolToProviderMap }, systemInstruction, skillMatches] =
           await Promise.all([
             this.loadToolsForProviders(
@@ -149,7 +152,9 @@ export class ReactLoopService {
               dto.persona,
               dto.prompt,
             ),
-            this.loadSkillMatches(dto.prompt, dto.workspaceId),
+            forcedSkillSlugs.length > 0
+              ? Promise.resolve<ISkillMatch[]>([])
+              : this.loadSkillMatches(dto.prompt, dto.workspaceId),
           ]);
 
         if (signal.aborted) {
@@ -168,32 +173,18 @@ export class ReactLoopService {
               )
             : mcpTools;
 
-        // Skill khớp prompt được nạp thẳng nội dung hướng dẫn (không phụ thuộc
-        // model có tự gọi read_skill hay không); skill đã nạp bỏ khỏi catalog.
-        const playbook = buildSkillPlaybookBlock(
-          skillMatches,
-          readSkillAutoloadConfig().maxChars,
-        );
-        if (skillMatches.length > 0) {
-          this.logger.log(formatSkillAutoloadLog(skillMatches, playbook));
-        }
+        const skillPromptText =
+          forcedSkillSlugs.length > 0
+            ? await this.buildExplicitSkillPrompt(forcedSkillSlugs, dto.workspaceId)
+            : await this.buildMatchedSkillPrompt(
+                skillMatches,
+                dto.workspaceId,
+                effectiveTools.some((t) => t.name === READ_SKILL_TOOL_NAME),
+              );
 
-        // Level 1 của skill chỉ có ý nghĩa khi agent có read_skill — tránh chỉ dẫn
-        // gọi tool không có (VD khi không có native tool nào được nạp).
-        const skillCatalogText = effectiveTools.some(
-          (t) => t.name === READ_SKILL_TOOL_NAME,
-        )
-          ? await loadSkillCatalogSafely(
-              this.skillCatalog,
-              this.logger,
-              dto.workspaceId,
-              playbook.loadedSlugs,
-            )
-          : '';
         const fullSystemInstruction = [
           systemInstruction,
-          playbook.text,
-          skillCatalogText,
+          skillPromptText,
         ]
           .filter(Boolean)
           .join('\n\n');
@@ -287,6 +278,67 @@ export class ReactLoopService {
       );
     }
     return loaded;
+  }
+
+  // Skill gán cứng cho lượt chạy (fixed workflow / pipeline): nạp 100% nội dung
+  // hướng dẫn theo slug, bỏ qua dò khớp và catalog. Slug không có hoặc đã tắt bị
+  // bỏ qua kèm cảnh báo; lỗi nạp (VD DB) chỉ làm mất phần này, không chặn lượt chạy.
+  private async buildExplicitSkillPrompt(
+    slugs: readonly string[],
+    workspaceId?: string,
+  ): Promise<string> {
+    const catalog = this.skillCatalog;
+    if (!catalog) return '';
+    try {
+      const found = await Promise.all(
+        slugs.map((slug) => catalog.getSkillBySlug(slug, workspaceId)),
+      );
+      const skills = found.filter((s): s is ISkillPlaybookDetail => Boolean(s));
+      const missing = slugs.filter(
+        (slug) => !skills.some((s) => s.slug === slug),
+      );
+      if (missing.length > 0) {
+        this.logger.warn(
+          `[skill-explicit] không tìm thấy hoặc skill đã tắt: ${missing.join(', ')}`,
+        );
+      }
+      this.logger.log(
+        `[skill-explicit] loaded=${skills.map((s) => s.slug).join(',') || '-'}`,
+      );
+      return buildExplicitPlaybookBlock(skills);
+    } catch (error) {
+      this.logger.warn(
+        `Không thể nạp skill gán cứng: ${(error as Error)?.message}`,
+      );
+      return '';
+    }
+  }
+
+  // Skill khớp prompt (đã dò ở trên) nạp thẳng nội dung hướng dẫn, trong ngân
+  // sách ký tự; skill đã nạp bỏ khỏi catalog Level 1 (chỉ nối khi có read_skill).
+  private async buildMatchedSkillPrompt(
+    matches: readonly ISkillMatch[],
+    workspaceId: string | undefined,
+    hasReadSkillTool: boolean,
+  ): Promise<string> {
+    const playbook = buildSkillPlaybookBlock(
+      matches,
+      readSkillAutoloadConfig().maxChars,
+    );
+    if (matches.length > 0) {
+      this.logger.log(formatSkillAutoloadLog(matches, playbook));
+    }
+
+    const catalogText = hasReadSkillTool
+      ? await loadSkillCatalogSafely(
+          this.skillCatalog,
+          this.logger,
+          workspaceId,
+          playbook.loadedSlugs,
+        )
+      : '';
+
+    return [playbook.text, catalogText].filter(Boolean).join('\n\n');
   }
 
   // Lỗi/timeout embedding (hoặc DB chưa migrate) chỉ làm mất phần nạp tự động,

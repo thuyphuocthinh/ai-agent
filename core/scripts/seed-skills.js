@@ -11,11 +11,21 @@ const TENANT_ID = 'default';
 const SKILLS = [
   {
     slug: 'order-status-report',
-    name: 'Báo cáo tình trạng đơn hàng',
+    name: 'Thống kê đơn hàng và doanh thu',
     description:
-      'Quy trình lập báo cáo đơn hàng theo trạng thái từ SQL và gửi vào kênh Slack. Dùng khi người dùng muốn thống kê/báo cáo đơn hàng, doanh thu, thanh toán.',
+      'Thống kê số lượng đơn hàng và tổng doanh thu theo từng trạng thái thanh toán. Dùng khi người dùng cần xem số liệu thống kê đơn hàng hoặc doanh thu bán hàng.',
     tools: ['table_schema', 'read_query', 'post_message'],
-    tags: ['sql', 'slack', 'report'],
+    tags: ['thống kê đơn', 'doanh thu', 'số lượng đơn', 'báo cáo đơn hàng'],
+    metadata: {
+      autoLoad: true,
+      triggers: [
+        'lập báo cáo tình trạng đơn hàng giúp tôi',
+        'thống kê số đơn hàng theo từng trạng thái và tổng tiền',
+        'cho tôi báo cáo doanh thu và các đơn chưa có thanh toán thành công',
+        'thống kê doanh thu bán hàng theo trạng thái đơn',
+        'xem số lượng đơn hàng và tiền thanh toán',
+      ],
+    },
     instructions: `# Báo cáo tình trạng đơn hàng
 
 1. Gọi \`table_schema\` để xác nhận cột của bảng \`orders\` và \`payments\` (KHÔNG đoán tên cột).
@@ -31,11 +41,21 @@ Lưu ý: số liệu trong báo cáo PHẢI lấy từ kết quả truy vấn, k
   },
   {
     slug: 'sql-safe-write',
-    name: 'Ghi dữ liệu SQL an toàn',
+    name: 'Thay đổi, cập nhật hoặc xóa dữ liệu sản phẩm và đơn hàng',
     description:
-      'Dùng MỖI KHI cần thêm/sửa/đổi tên/xóa dữ liệu trong cơ sở dữ liệu (INSERT/UPDATE/DELETE): kiểm tra schema, đếm bản ghi bị ảnh hưởng trước, luôn có WHERE, xác nhận sau khi ghi.',
+      'Chỉnh sửa thông tin, đổi tên, cập nhật giá tiền sản phẩm hoặc xóa đơn hàng trong bảng dữ liệu. Dùng khi người dùng yêu cầu sửa giá, đổi tên, cập nhật giá hoặc xóa dữ liệu.',
     tools: ['table_schema', 'read_query', 'execute_write_query'],
-    tags: ['sql', 'safety'],
+    tags: ['cập nhật giá', 'đổi tên', 'xóa đơn hàng', 'sửa thông tin'],
+    metadata: {
+      autoLoad: true,
+      triggers: [
+        'đổi tên sản phẩm áo thun thành áo thun cotton',
+        'cập nhật giá của giày thể thao lên 750000',
+        'xóa các đơn hàng đã hủy khỏi bảng orders',
+        'sửa thông tin và cập nhật giá bán mặt hàng',
+        'chỉnh sửa dữ liệu bản ghi trong bảng',
+      ],
+    },
     instructions: `# Ghi dữ liệu SQL an toàn
 
 Trước khi gọi \`execute_write_query\`:
@@ -49,11 +69,21 @@ Sau khi ghi:
   },
   {
     slug: 'restock-planning',
-    name: 'Lập kế hoạch nhập hàng',
+    name: 'Kế hoạch nhập hàng tồn kho',
     description:
-      'Quy trình đề xuất nhập hàng: đối chiếu tồn kho trong SQL với bảng giá nhà cung cấp trên Google Sheets rồi ghi kế hoạch.',
+      'Kiểm tra mức tồn kho sản phẩm và đối chiếu bảng giá nhà cung cấp để lập kế hoạch đề xuất số lượng hàng cần nhập thêm vào kho.',
     tools: ['read_query', 'list_spreadsheets', 'read_range', 'append_rows'],
-    tags: ['sql', 'sheets', 'inventory'],
+    tags: ['nhập kho', 'tồn kho', 'hàng tồn', 'kế hoạch nhập hàng'],
+    metadata: {
+      autoLoad: true,
+      triggers: [
+        'đề xuất giúp tôi kế hoạch nhập hàng',
+        'sản phẩm nào sắp hết hàng cần nhập thêm?',
+        'lập kế hoạch nhập hàng quý 4 dựa trên tồn kho và giá nhà cung cấp',
+        'kiểm tra mặt hàng sắp hết để đặt thêm hàng',
+        'tính số lượng sản phẩm cần nhập kho',
+      ],
+    },
     instructions: `# Lập kế hoạch nhập hàng
 
 1. Lấy tồn kho: \`read_query\` bảng \`products\` (name, stock, price).
@@ -64,11 +94,21 @@ Sau khi ghi:
   },
   {
     slug: 'incident-notify',
-    name: 'Thông báo sự cố nội bộ',
+    name: 'Thông báo sự cố kỹ thuật nội bộ',
     description:
-      'Quy trình thông báo sự cố: soạn nội dung theo mẫu chuẩn, đăng kênh Slack #ops và tạo email nháp cho quản lý.',
+      'Soạn và gửi thông báo khẩn cấp khi hệ thống gặp lỗi kỹ thuật, dịch vụ gián đoạn hoặc trục trặc đường truyền cho quản lý và kênh ops.',
     tools: ['post_message', 'create_draft'],
-    tags: ['slack', 'mail', 'incident'],
+    tags: ['sự cố', 'thông báo', 'khẩn cấp', 'lỗi hệ thống', 'ops'],
+    metadata: {
+      autoLoad: true,
+      triggers: [
+        'thông báo sự cố: cổng thanh toán bị chậm, ảnh hưởng đơn hàng mới',
+        'báo cho quản lý biết hệ thống đang gặp sự cố mức cao',
+        'soạn thông báo sự cố nội bộ gửi kênh ops',
+        'dịch vụ gặp sự cố kỹ thuật khẩn cấp',
+        'báo cáo trục trặc hệ thống cho quản lý',
+      ],
+    },
     instructions: `# Thông báo sự cố nội bộ
 
 Mẫu nội dung bắt buộc (mỗi mục một dòng):
@@ -101,6 +141,6 @@ async function main() {
 }
 
 main().catch((error) => {
-  console.error('Seed skills thất bại:', error.message);
+  console.error('seed:skills thất bại:', error.message);
   process.exit(1);
 });
