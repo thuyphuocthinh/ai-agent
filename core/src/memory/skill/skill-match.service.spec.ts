@@ -166,6 +166,28 @@ describe('SkillMatchService', () => {
   });
 
   describe('embedding cost control (AC-9)', () => {
+    it('lấy vector từ CachedService (Redis) khi có sẵn, không gọi embeddingProvider cho skill đó', async () => {
+      const skill = buildSkill({ id: 'skill-cached', slug: 'cached-skill' });
+      mockCatalog.listVisibleActive.mockResolvedValue([skill]);
+      const mockCached = {
+        get: jest.fn().mockResolvedValue([0.9, Math.sqrt(1 - 0.9 * 0.9)]),
+        set: jest.fn().mockResolvedValue(true),
+      };
+      const serviceWithCache = new SkillMatchService(
+        mockCatalog as unknown as SkillCatalogService,
+        mockEmbedding as unknown as OpenAiEmbeddingProvider,
+        mockCached as never,
+      );
+
+      mockEmbedding.embed.mockResolvedValue([[1, 0]]); // chỉ embed prompt
+
+      const results = await serviceWithCache.match('câu hỏi liên quan');
+      expect(mockCached.get).toHaveBeenCalled();
+      expect(mockEmbedding.embed).toHaveBeenCalledWith(['câu hỏi liên quan']);
+      expect(results.length).toBe(1);
+      expect(results[0].skill.slug).toBe('cached-skill');
+      expect(results[0].score).toBeCloseTo(0.9, 2);
+    });
     it('makes a single embedding call for the prompt and all uncached skills', async () => {
       mockCatalog.listVisibleActive.mockResolvedValue([
         buildSkill({ id: 'a', name: 'Alpha' }),
@@ -285,6 +307,19 @@ describe('SkillMatchService', () => {
       await service.match('y');
 
       expect(mockEmbedding.embed.mock.calls[1][0]).toHaveLength(2);
+    });
+
+    it('handles skills where updatedAt is a string instead of a Date instance safely', async () => {
+      const stringDateSkill = {
+        ...buildSkill({ name: 'StringDateSkill' }),
+        updatedAt: '2026-10-30T09:00:00.000Z' as unknown as Date,
+      };
+      mockCatalog.listVisibleActive.mockResolvedValue([stringDateSkill]);
+      embedWith({ StringDateSkill: 0.8 });
+
+      const matches = await service.match('cần làm việc');
+      expect(matches).toHaveLength(1);
+      expect(matches[0].skill.name).toBe('StringDateSkill');
     });
   });
 });

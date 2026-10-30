@@ -97,6 +97,20 @@ export class ToolRiskGate {
     );
   }
 
+  private isSchemaDiscoveryTool(name: string): boolean {
+    const lower = name.toLowerCase();
+    const schemaTools = [
+      'table_schema',
+      'describe_table',
+      'list_tables',
+      'get_schema',
+      'show_tables',
+    ];
+    return schemaTools.some(
+      (t) => lower === t || lower.endsWith(`.${t}`) || lower.endsWith(`__${t}`),
+    );
+  }
+
   isDestructive(name: string): boolean {
     const tool = this.mcpTools.find((t) => t.name === name);
     return Boolean(
@@ -132,7 +146,7 @@ export class ToolRiskGate {
   ): Promise<PolicyEvaluationResult | null> {
     // Tool nội bộ chỉ-đọc (VD read_skill: playbook do admin soạn) không chạm dữ liệu
     // nghiệp vụ — để LLM judge đánh giá chỉ gây từ chối nhầm theo ý định của người dùng.
-    if (this.isInternalReadOnlyTool(name)) return null;
+    if (this.isInternalReadOnlyTool(name) || this.isSchemaDiscoveryTool(name)) return null;
 
     // 1. Ưu tiên Semantic Policy Evaluator (Domain-Agnostic Hybrid Gate)
     if (this.semanticPolicyEvaluator) {
@@ -243,6 +257,10 @@ export class ToolRiskGate {
    * Các tool này không làm thay đổi trạng thái hệ thống nên không cần khóa Idempotency.
    */
   private isReadOnlyTool(name: string): boolean {
+    const tool = this.mcpTools.find((t) => t.name === name);
+    if (tool?.annotations?.readOnlyHint === true) {
+      return true;
+    }
     const lower = name.toLowerCase();
     const readOnlyPrefixes = [
       'get_',
@@ -255,6 +273,7 @@ export class ToolRiskGate {
       'describe_',
       'inspect_',
       'query_',
+      'table_schema',
     ];
     return readOnlyPrefixes.some(
       (prefix) => lower.startsWith(prefix) || lower.includes(`.${prefix}`),

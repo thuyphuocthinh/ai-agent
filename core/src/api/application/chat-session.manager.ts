@@ -11,6 +11,8 @@ import {
  * Phục vụ chạy cục bộ / Web Playground / Unit Tests (Zero-config).
  * Cài đặt IChatSessionManager, sẵn sàng để thay thế bằng DbChatSessionManager.
  */
+export const DEFAULT_SESSION_TENANT_ID = 'default';
+
 @Injectable()
 export class InMemoryChatSessionManager implements IChatSessionManager {
   private readonly sessions = new Map<string, IChatSession>();
@@ -19,7 +21,7 @@ export class InMemoryChatSessionManager implements IChatSessionManager {
     return this.sessions.get(sessionId);
   }
 
-  getOrCreate(sessionId?: string): IChatSession {
+  getOrCreate(sessionId?: string, tenantId?: string): IChatSession {
     if (sessionId) {
       const existing = this.sessions.get(sessionId);
       if (existing) return existing;
@@ -28,7 +30,7 @@ export class InMemoryChatSessionManager implements IChatSessionManager {
       id: sessionId || randomUUID(),
       userId: randomUUID(),
       conversationId: randomUUID(),
-      tenantId: randomUUID(),
+      tenantId: tenantId || randomUUID(),
       botUserId: randomUUID(),
       approvalMessageIds: new Set<string>(),
       state: EConversationState.AI_ACTIVE,

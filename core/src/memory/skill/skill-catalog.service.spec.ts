@@ -292,6 +292,62 @@ describe('SkillCatalogService', () => {
     });
   });
 
+  describe('listVisibleActive with CachedService', () => {
+    it('uses CachedService to cache and invalidate active skills list', async () => {
+      const mockCached = {
+        getVersion: jest.fn().mockResolvedValue(1),
+        bumpVersion: jest.fn().mockResolvedValue(2),
+        get: jest.fn().mockResolvedValue(null),
+        set: jest.fn().mockResolvedValue(true),
+      };
+      const serviceWithCache = new SkillCatalogService(
+        mockPrisma as never,
+        mockCached as never,
+      );
+
+      mockPrisma.skill.findMany.mockResolvedValue([buildRow()]);
+
+      // Lần 1: cache miss -> fetch từ DB và set vào cache
+      const res1 = await serviceWithCache.listVisibleActive('tenant-a');
+      expect(mockCached.get).toHaveBeenCalled();
+      expect(mockCached.set).toHaveBeenCalled();
+      expect(res1.length).toBe(1);
+
+      // Thao tác create -> invalidate cache (bumpVersion)
+      mockPrisma.skill.create.mockResolvedValue(buildRow({ slug: 'new-skill' }));
+      await serviceWithCache.create({
+        tenantId: 'tenant-a',
+        slug: 'new-skill',
+        name: 'New Skill',
+        description: 'Desc',
+        instructions: 'Do this',
+      });
+      expect(mockCached.bumpVersion).toHaveBeenCalled();
+    });
+
+    it('rehydrates updatedAt from ISO string to Date instance when read from cache', async () => {
+      const mockCached = {
+        getVersion: jest.fn().mockResolvedValue(1),
+        bumpVersion: jest.fn().mockResolvedValue(2),
+        get: jest.fn().mockResolvedValue([
+          {
+            ...buildRow(),
+            updatedAt: '2026-10-30T09:00:00.000Z',
+          },
+        ]),
+        set: jest.fn().mockResolvedValue(true),
+      };
+      const serviceWithCache = new SkillCatalogService(
+        mockPrisma as never,
+        mockCached as never,
+      );
+
+      const res = await serviceWithCache.listVisibleActive('tenant-a');
+      expect(res[0].updatedAt).toBeInstanceOf(Date);
+      expect(res[0].updatedAt.getTime()).toBe(new Date('2026-10-30T09:00:00.000Z').getTime());
+    });
+  });
+
   describe('getCatalogForPrompt (Level 1)', () => {
     it('returns an empty string when there is no active skill', async () => {
       mockPrisma.skill.findMany.mockResolvedValue([]);

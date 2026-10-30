@@ -94,4 +94,21 @@ export const CACHE = {
         `${GLOBAL_PREFIX}:${GLOBAL_VER}:summary:v1:${conversationId}:${turnMarker}`,
     },
   },
+  SKILLS: {
+    _VER: 'v1',
+    SETTINGS: {
+      VECTOR_TTL: TTL.WEEK, // 7 ngày (vector của một (id, updatedAt) bất biến)
+      CATALOG_TTL: TTL.SHORT, // 5 phút
+    },
+    KEYS: {
+      VECTOR: (id: string, updatedAtMs: number): string =>
+        `${GLOBAL_PREFIX}:${GLOBAL_VER}:skills:v1:vec:${id}:${updatedAtMs}`,
+      ACTIVE_CATALOG: (tenantId: string, version: number): string =>
+        `${GLOBAL_PREFIX}:${GLOBAL_VER}:skills:v1:active:${tenantId}:v${version}`,
+    },
+    TRACKERS: {
+      CATALOG_VERSION: (tenantId: string): string =>
+        `${GLOBAL_PREFIX}:trackers:skills:catalog_version:${tenantId}`,
+    },
+  },
 };

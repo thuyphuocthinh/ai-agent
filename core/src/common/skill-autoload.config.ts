@@ -22,7 +22,7 @@ export const SKILL_AUTOLOAD_DEFAULTS: SkillAutoloadConfig = {
   minScore: 0.42,
   maxSkills: 2,
   maxChars: 6000,
-  timeoutMs: 1500,
+  timeoutMs: 5000,
 };
 
 // Đọc env tại thời điểm gọi (không cache) để đổi cấu hình và test dễ dàng;

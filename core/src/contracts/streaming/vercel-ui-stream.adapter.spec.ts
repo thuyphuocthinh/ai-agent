@@ -177,6 +177,34 @@ describe('VercelUiStreamAdapter (AC-2, AC-3, AC-7)', () => {
         .map((p) => (p as { text: string }).text);
       expect(texts.sort()).toEqual(['Bugs: 5 open', 'Revenue: $1,000']);
     });
+
+    it('phát tán data-status mang metadata skills khi step_start có danh sách skills đã nạp', async () => {
+      const skills = [
+        { slug: 'order-status-report', name: 'Báo cáo đơn hàng', score: 0.64 },
+      ];
+      const { chunks } = await run([
+        [
+          {
+            type: 'step_start',
+            label: '🎯 Kỹ năng kích hoạt: Báo cáo đơn hàng (64%)',
+            kind: 'planning' as never,
+            skills,
+          },
+        ],
+        [{ type: 'done' }],
+      ]);
+
+      const statusChunk = chunks.find((c) => c.type === 'data-status');
+      expect(statusChunk).toBeDefined();
+      expect(statusChunk).toMatchObject({
+        type: 'data-status',
+        data: {
+          label: '🎯 Kỹ năng kích hoạt: Báo cáo đơn hàng (64%)',
+          kind: 'planning',
+          skills,
+        },
+      });
+    });
   });
 
   describe('tool calls', () => {

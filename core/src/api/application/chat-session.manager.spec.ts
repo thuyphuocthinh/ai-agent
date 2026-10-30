@@ -35,6 +35,11 @@ describe('InMemoryChatSessionManager', () => {
       expect(manager.get(customId)).toBe(session);
     });
 
+    it('creates a session with custom tenantId when provided', () => {
+      const session = manager.getOrCreate('custom-sess', 'tenant-custom');
+      expect(session.tenantId).toBe('tenant-custom');
+    });
+
     it('returns the same existing session when called repeatedly with same sessionId', () => {
       const customId = 'session-existing';
       const session1 = manager.getOrCreate(customId);

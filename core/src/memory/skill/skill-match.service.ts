@@ -1,4 +1,6 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
+import { CachedService } from '../../infrastructure/redis/cached.service';
+import { CACHE } from '../../constants/cache.constant';
 import { traceable } from 'langsmith/traceable';
 import {
   CHARS_PER_TOKEN_ESTIMATE,
@@ -33,6 +35,8 @@ export class SkillMatchService implements ISkillMatcher {
   constructor(
     private readonly catalog: SkillCatalogService,
     private readonly embeddingProvider: OpenAiEmbeddingProvider,
+    @Optional()
+    private readonly cachedService?: CachedService,
   ) {}
 
   // Reject khi embedding lỗi/timeout — người gọi phải bắt và rơi về catalog.
@@ -71,10 +75,36 @@ export class SkillMatchService implements ISkillMatcher {
     prompt: string,
     candidates: SkillRecord[],
   ): Promise<number[]> {
-    const missing = candidates.filter((skill) => {
+    const missingCandidates: SkillRecord[] = [];
+    for (const skill of candidates) {
+      const updatedAtMs = this.getSkillUpdatedAtMs(skill);
       const cached = this.vectorCache.get(skill.id);
-      return !cached || cached.updatedAtMs !== skill.updatedAt.getTime();
-    });
+      if (!cached || cached.updatedAtMs !== updatedAtMs) {
+        missingCandidates.push(skill);
+      }
+    }
+
+    const missing: SkillRecord[] = [];
+    if (this.cachedService && missingCandidates.length > 0) {
+      await Promise.all(
+        missingCandidates.map(async (skill) => {
+          const updatedAtMs = this.getSkillUpdatedAtMs(skill);
+          const cacheKey = CACHE.SKILLS.KEYS.VECTOR(skill.id, updatedAtMs);
+          const cachedVector = await this.cachedService!.get<number[]>(cacheKey);
+          if (cachedVector && Array.isArray(cachedVector) && cachedVector.length > 0) {
+            this.vectorCache.set(skill.id, {
+              updatedAtMs,
+              vector: cachedVector,
+            });
+          } else {
+            missing.push(skill);
+          }
+        }),
+      );
+    } else {
+      missing.push(...missingCandidates);
+    }
+
     const texts = [prompt, ...missing.map(buildSkillEmbeddingText)];
     const estimatedTokens = Math.ceil(
       texts.reduce((sum, t) => sum + t.length, 0) / CHARS_PER_TOKEN_ESTIMATE,
@@ -96,12 +126,27 @@ export class SkillMatchService implements ISkillMatcher {
       );
     }
     const [promptVector, ...skillVectors] = vectors;
-    missing.forEach((skill, i) =>
+    missing.forEach((skill, i) => {
+      const vec = skillVectors[i];
+      const updatedAtMs = this.getSkillUpdatedAtMs(skill);
       this.vectorCache.set(skill.id, {
-        updatedAtMs: skill.updatedAt.getTime(),
-        vector: skillVectors[i],
-      }),
-    );
+        updatedAtMs,
+        vector: vec,
+      });
+      if (this.cachedService) {
+        const cacheKey = CACHE.SKILLS.KEYS.VECTOR(skill.id, updatedAtMs);
+        this.cachedService
+          .set(cacheKey, vec, CACHE.SKILLS.SETTINGS.VECTOR_TTL)
+          .catch(() => {});
+      }
+    });
     return promptVector;
+  }
+
+  private getSkillUpdatedAtMs(skill: SkillRecord): number {
+    if (skill.updatedAt instanceof Date) {
+      return skill.updatedAt.getTime();
+    }
+    return new Date(skill.updatedAt).getTime();
   }
 }

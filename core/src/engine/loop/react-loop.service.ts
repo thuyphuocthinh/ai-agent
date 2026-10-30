@@ -3,6 +3,7 @@ import {
   ORCHESTRATION_CONSTANTS,
   ORCHESTRATION_SYSTEM_PROMPT,
   EAgentStreamStepType,
+  EAgentStreamStepKind,
   NATIVE_TOOL_PROVIDER,
 } from '@agent/core/constants';
 import {
@@ -208,7 +209,7 @@ export class ReactLoopService {
       dto.allowedTools,
     );
 
-    const skillPromptText =
+    const skillResolution =
       forcedSkillSlugs.length > 0
         ? await this.buildExplicitSkillPrompt(forcedSkillSlugs, dto.workspaceId)
         : await this.buildMatchedSkillPrompt(
@@ -217,9 +218,32 @@ export class ReactLoopService {
             effectiveTools.some((t) => t.name === READ_SKILL_TOOL_NAME),
           );
 
+    if (skillResolution.loadedSkills.length > 0) {
+      const skillNames = skillResolution.loadedSkills
+        .map((s) => (s.score !== undefined ? `${s.name} (${Math.round(s.score * 100)}%)` : s.name))
+        .join(', ');
+      this.streamSink
+        .emitStep(
+          {
+            userId: dto.userId,
+            channelId: dto.channelId,
+            messageId: dto.messageId,
+            channelType: dto.channelType,
+            streamKey: dto.streamKey,
+          },
+          {
+            type: EAgentStreamStepType.STEP_START,
+            label: `🎯 Kỹ năng kích hoạt: ${skillNames}`,
+            kind: EAgentStreamStepKind.PLANNING,
+            skills: skillResolution.loadedSkills,
+          },
+        )
+        .catch(() => {});
+    }
+
     const fullSystemInstruction = [
       systemInstruction,
-      skillPromptText,
+      skillResolution.text,
     ]
       .filter(Boolean)
       .join('\n\n');
@@ -313,9 +337,9 @@ export class ReactLoopService {
   private async buildExplicitSkillPrompt(
     slugs: readonly string[],
     workspaceId?: string,
-  ): Promise<string> {
+  ): Promise<{ text: string; loadedSkills: Array<{ slug: string; name: string; score?: number }> }> {
     const catalog = this.skillCatalog;
-    if (!catalog) return '';
+    if (!catalog) return { text: '', loadedSkills: [] };
     try {
       const found = await Promise.all(
         slugs.map((slug) => catalog.getSkillBySlug(slug, workspaceId)),
@@ -332,12 +356,15 @@ export class ReactLoopService {
       this.logger.log(
         `[skill-explicit] loaded=${skills.map((s) => s.slug).join(',') || '-'}`,
       );
-      return buildExplicitPlaybookBlock(skills);
+      return {
+        text: buildExplicitPlaybookBlock(skills),
+        loadedSkills: skills.map((s) => ({ slug: s.slug, name: s.name })),
+      };
     } catch (error) {
       this.logger.warn(
         `Không thể nạp skill gán cứng: ${(error as Error)?.message}`,
       );
-      return '';
+      return { text: '', loadedSkills: [] };
     }
   }
 
@@ -347,7 +374,7 @@ export class ReactLoopService {
     matches: readonly ISkillMatch[],
     workspaceId: string | undefined,
     hasReadSkillTool: boolean,
-  ): Promise<string> {
+  ): Promise<{ text: string; loadedSkills: Array<{ slug: string; name: string; score?: number }> }> {
     const playbook = buildSkillPlaybookBlock(
       matches,
       readSkillAutoloadConfig().maxChars,
@@ -365,7 +392,19 @@ export class ReactLoopService {
         )
       : '';
 
-    return [playbook.text, catalogText].filter(Boolean).join('\n\n');
+    const loadedSkills = playbook.loadedSlugs.map((slug) => {
+      const match = matches.find((m) => m.skill.slug === slug);
+      return {
+        slug,
+        name: match?.skill.name ?? slug,
+        score: match?.score,
+      };
+    });
+
+    return {
+      text: [playbook.text, catalogText].filter(Boolean).join('\n\n'),
+      loadedSkills,
+    };
   }
 
   // Lỗi/timeout embedding (hoặc DB chưa migrate) chỉ làm mất phần nạp tự động,

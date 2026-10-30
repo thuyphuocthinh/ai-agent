@@ -1,4 +1,6 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
+import { CachedService } from '../../infrastructure/redis/cached.service';
+import { CACHE } from '../../constants/cache.constant';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../infrastructure/database/prisma.service';
 import {
@@ -30,7 +32,11 @@ export const DEFAULT_SKILL_TENANT_ID = 'default';
 export class SkillCatalogService implements ISkillCatalogReader {
   private readonly logger = new Logger(SkillCatalogService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional()
+    private readonly cachedService?: CachedService,
+  ) {}
 
   // Quản trị: mọi skill (kể cả đã tắt) của đúng tenant này.
   async list(tenantId = DEFAULT_SKILL_TENANT_ID): Promise<SkillRecord[]> {
@@ -68,6 +74,7 @@ export class SkillCatalogService implements ISkillCatalogReader {
           metadata: (input.metadata ?? {}) as Prisma.InputJsonObject,
         },
       });
+      await this.invalidateCatalogCache(tenantId);
       this.logger.log(`create() tenantId=${tenantId} slug="${input.slug}"`);
       return mapPrismaSkillToRecord(saved);
     } catch (error) {
@@ -98,6 +105,7 @@ export class SkillCatalogService implements ISkillCatalogReader {
           metadata: input.metadata as Prisma.InputJsonObject | undefined,
         },
       });
+      await this.invalidateCatalogCache(tenantId);
       this.logger.log(`update() tenantId=${tenantId} id=${id}`);
       return mapPrismaSkillToRecord(saved);
     } catch (error) {
@@ -118,6 +126,7 @@ export class SkillCatalogService implements ISkillCatalogReader {
       .catch((error: unknown) => {
         throw sanitizePrismaError(error, 'SkillCatalogService.toggleActive');
       });
+    await this.invalidateCatalogCache(tenantId);
     this.logger.log(
       `toggleActive() tenantId=${tenantId} id=${id} isActive=${saved.isActive}`,
     );
@@ -143,6 +152,34 @@ export class SkillCatalogService implements ISkillCatalogReader {
   async listVisibleActive(
     tenantId = DEFAULT_SKILL_TENANT_ID,
   ): Promise<SkillRecord[]> {
+    if (!this.cachedService) {
+      return this.fetchVisibleActiveFromDb(tenantId);
+    }
+    const tracker = CACHE.SKILLS.TRACKERS.CATALOG_VERSION(tenantId);
+    const version = await this.cachedService.getVersion(tracker);
+    const key = CACHE.SKILLS.KEYS.ACTIVE_CATALOG(tenantId, version);
+
+    const cached = await this.cachedService.get<SkillRecord[]>(key);
+    if (cached && Array.isArray(cached)) {
+      return cached.map((s) => ({
+        ...s,
+        updatedAt: s.updatedAt instanceof Date ? s.updatedAt : new Date(s.updatedAt),
+      }));
+    }
+
+    const records = await this.fetchVisibleActiveFromDb(tenantId);
+    await this.cachedService.set(
+      key,
+      records,
+      CACHE.SKILLS.SETTINGS.CATALOG_TTL,
+      true,
+    );
+    return records;
+  }
+
+  private async fetchVisibleActiveFromDb(
+    tenantId: string,
+  ): Promise<SkillRecord[]> {
     const skills = await this.prisma.skill.findMany({
       where: { isActive: true, tenantId: { in: this.visibleTenants(tenantId) } },
       orderBy: { slug: 'asc' },
@@ -154,6 +191,18 @@ export class SkillCatalogService implements ISkillCatalogReader {
       if (!current || skill.tenantId === tenantId) bySlug.set(skill.slug, skill);
     }
     return [...bySlug.values()].map(mapPrismaSkillToRecord);
+  }
+
+  private async invalidateCatalogCache(tenantId: string): Promise<void> {
+    if (!this.cachedService) return;
+    await this.cachedService.bumpVersion(
+      CACHE.SKILLS.TRACKERS.CATALOG_VERSION(tenantId),
+    );
+    if (tenantId !== DEFAULT_SKILL_TENANT_ID) {
+      await this.cachedService.bumpVersion(
+        CACHE.SKILLS.TRACKERS.CATALOG_VERSION(DEFAULT_SKILL_TENANT_ID),
+      );
+    }
   }
 
   // Level 1 — chuỗi gọn (slug, name, description) cho prompt; '' nếu chưa có skill.

@@ -36,6 +36,8 @@ export interface AgentStreamStep {
   persona?: PersonaDto;
   // Mô tả hành động thân thiện hướng người dùng (thay vì câu lệnh SQL hay payload thô).
   friendlySummary?: string;
+  // Danh sách kỹ năng nghiệp vụ đã được kích hoạt trong lượt chạy (Progressive Disclosure Level 2)
+  skills?: Array<{ slug: string; name: string; score?: number }>;
 }
 
 export interface IStreamSink {

@@ -365,6 +365,60 @@ describe('ToolRiskGate', () => {
       expect(mockSemanticEvaluator.evaluate).toHaveBeenCalledTimes(2);
     });
 
+    it('evaluatePolicy() tự động bypass Semantic Policy Evaluator với các tool schema discovery (table_schema)', async () => {
+      const mockSemanticEvaluator = {
+        evaluate: jest.fn().mockResolvedValue({
+          verdict: EPolicyVerdict.DENY,
+          reason: 'chặn nhầm',
+        }),
+      };
+      const gate = new ToolRiskGate({
+        dto: baseDto,
+        mcpTools: [
+          { name: 'sql_server.table_schema', inputSchema: {} },
+          { name: 'table_schema', inputSchema: {} },
+        ],
+        strategy: createStrategy(),
+        model: 'gemini-2.0-flash',
+        circuitBreaker,
+        logger,
+        signal: new AbortController().signal,
+        insertAccumulator: new InsertAccumulator(),
+        semanticPolicyEvaluator: mockSemanticEvaluator as never,
+      });
+
+      await expect(gate.evaluatePolicy('table_schema', { table: 'orders' })).resolves.toBeNull();
+      await expect(gate.evaluatePolicy('sql_server.table_schema', { table: 'orders' })).resolves.toBeNull();
+      expect(mockSemanticEvaluator.evaluate).not.toHaveBeenCalled();
+    });
+
+    it('evaluatePolicy() tự động bypass Semantic Policy Evaluator với các tool schema discovery (table_schema)', async () => {
+      const mockSemanticEvaluator = {
+        evaluate: jest.fn().mockResolvedValue({
+          verdict: EPolicyVerdict.DENY,
+          reason: 'chặn nhầm',
+        }),
+      };
+      const gate = new ToolRiskGate({
+        dto: baseDto,
+        mcpTools: [
+          { name: 'sql_server.table_schema', inputSchema: {} },
+          { name: 'table_schema', inputSchema: {} },
+        ],
+        strategy: createStrategy(),
+        model: 'gemini-2.0-flash',
+        circuitBreaker,
+        logger,
+        signal: new AbortController().signal,
+        insertAccumulator: new InsertAccumulator(),
+        semanticPolicyEvaluator: mockSemanticEvaluator as never,
+      });
+
+      await expect(gate.evaluatePolicy('table_schema', { table: 'orders' })).resolves.toBeNull();
+      await expect(gate.evaluatePolicy('sql_server.table_schema', { table: 'orders' })).resolves.toBeNull();
+      expect(mockSemanticEvaluator.evaluate).not.toHaveBeenCalled();
+    });
+
     it('evaluatePolicy() fallback đến BusinessPolicyEngine theo action type', async () => {
       const mockPolicyEngine = {
         evaluate: jest.fn().mockReturnValue({

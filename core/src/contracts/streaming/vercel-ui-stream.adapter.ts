@@ -161,7 +161,17 @@ export class VercelUiStreamAdapter {
     if (step.persona) {
       this.emit({ type: EVercelStreamChunkType.DATA_PERSONA, id: streamKey, data: step.persona });
     }
-    if (step.label) {
+    if (step.skills && step.skills.length > 0) {
+      this.emit({
+        type: EVercelStreamChunkType.DATA_STATUS,
+        id: streamKey,
+        data: {
+          label: step.label ?? `🎯 Kỹ năng kích hoạt: ${step.skills.map((sk) => sk.name).join(', ')}`,
+          kind: step.kind ?? EAgentStreamStepKind.PLANNING,
+          skills: step.skills,
+        },
+      });
+    } else if (step.label) {
       this.emit({
         type: EVercelStreamChunkType.DATA_STATUS,
         id: streamKey,

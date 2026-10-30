@@ -8,12 +8,12 @@ describe('readSkillAutoloadConfig', () => {
     expect(readSkillAutoloadConfig({})).toEqual(SKILL_AUTOLOAD_DEFAULTS);
   });
 
-  it('is enabled by default with a limit of 2 skills, 6000 chars and a 1500 ms timeout', () => {
+  it('is enabled by default with a limit of 2 skills, 6000 chars and a 5000 ms timeout', () => {
     expect(readSkillAutoloadConfig({})).toMatchObject({
       enabled: true,
       maxSkills: 2,
       maxChars: 6000,
-      timeoutMs: 1500,
+      timeoutMs: 5000,
     });
   });
 

@@ -214,6 +214,6 @@ describeWithRedis('RedisTurnEventLogService (Redis Streams thật)', () => {
     await log.finish(messageId, ETurnLogStatus.DONE);
 
     expect(texts(await reading)).toEqual(['muộn']);
-  });
+  }, 15000);
 
 });

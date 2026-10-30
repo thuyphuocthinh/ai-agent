@@ -39,7 +39,7 @@ export interface IConversationSummary {
  */
 export interface IChatSessionManager {
   get(sessionId: string): Promise<IChatSession | undefined> | IChatSession | undefined;
-  getOrCreate(sessionId?: string): Promise<IChatSession> | IChatSession;
+  getOrCreate(sessionId?: string, tenantId?: string): Promise<IChatSession> | IChatSession;
   trackApproval(sessionId: string, messageId: string): Promise<void> | void;
   hasApproval(sessionId: string, messageId: string): Promise<boolean> | boolean;
   setConversationState?(sessionId: string, state: EConversationState): Promise<void> | void;
