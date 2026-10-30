@@ -40,6 +40,16 @@ describe('AgentRankingService', () => {
       expect(mockEmbeddingProvider.embed).not.toHaveBeenCalled();
     });
 
+    it('uses custom threshold when provided (e.g. MAX_FRONTLINE_AGENTS_BEFORE_RANKING = 3)', async () => {
+      const agents = buildAgents(4);
+      mockEmbeddingProvider.embed.mockImplementation(async (texts: string[]) =>
+        texts.map(() => [1, 0, 0]),
+      );
+      const result = await service.rankAgentsForPrompt('câu hỏi', agents, 3);
+      expect(mockEmbeddingProvider.embed).toHaveBeenCalled();
+      expect(result.shown.length).toBeLessThanOrEqual(agents.length);
+    });
+
     it('ranks and hides irrelevant agents once above the threshold, keeping only what the embedding index actually returned', async () => {
       const agents = buildAgents(
         ORCHESTRATION_CONSTANTS.MAX_AGENTS_BEFORE_RANKING + 1,

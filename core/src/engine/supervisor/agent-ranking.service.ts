@@ -19,8 +19,9 @@ export class AgentRankingService {
   async rankAgentsForPrompt(
     prompt: string,
     agents: AvailableAgentDto[],
+    maxBeforeRanking: number = ORCHESTRATION_CONSTANTS.MAX_AGENTS_BEFORE_RANKING,
   ): Promise<{ shown: AvailableAgentDto[]; omittedCount: number }> {
-    if (agents.length <= ORCHESTRATION_CONSTANTS.MAX_AGENTS_BEFORE_RANKING) {
+    if (agents.length <= maxBeforeRanking) {
       return { shown: agents, omittedCount: 0 };
     }
 

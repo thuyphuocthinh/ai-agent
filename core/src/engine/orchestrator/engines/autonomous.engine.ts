@@ -222,6 +222,7 @@ export class AutonomousEngine implements IExecutionEngine {
       const ranked = await this.agentRanking.rankAgentsForPrompt(
         prompt,
         effectiveAgents,
+        ORCHESTRATION_CONSTANTS.MAX_FRONTLINE_AGENTS_BEFORE_RANKING,
       );
       effectiveAgents = ranked.shown;
       if (ranked.omittedCount > 0) {

@@ -12,6 +12,7 @@ import {
 import { AnswerResult } from '../../../contracts/engine/orchestration-answer.types';
 import { SupervisorService } from '../../supervisor/supervisor.service';
 import { AvailableAgentDto } from '../../../contracts/dtos/supervisor.dto';
+import { ORCHESTRATION_CONSTANTS } from '../../../constants';
 
 describe('AutonomousEngine', () => {
   let engine: AutonomousEngine;
@@ -244,6 +245,7 @@ describe('AutonomousEngine', () => {
       expect(mockAgentRanking.rankAgentsForPrompt).toHaveBeenCalledWith(
         'Tra cứu doanh thu từ SQL và gửi qua Slack',
         manyAgentsContext.agents,
+        ORCHESTRATION_CONSTANTS.MAX_FRONTLINE_AGENTS_BEFORE_RANKING,
       );
       expect(mockReactLoop.run).toHaveBeenCalledWith(
         expect.objectContaining({
