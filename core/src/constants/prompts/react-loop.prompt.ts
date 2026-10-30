@@ -39,3 +39,7 @@ export const TOOL_ERROR_SELF_HEAL_HINT =
   '[HƯỚNG DẪN TỰ SỬA]: Công cụ gặp lỗi trên. Hãy kiểm tra lại tham số, cấu trúc bảng/dữ liệu hoặc đổi phương án gọi tool khác. Tuyệt đối không gọi lại công cụ với các tham số y hệt mà không thay đổi gì.';
 export const TOOL_ERROR_FAIL_FAST_PREFIX = '[DỪNG THỬ LẠI - FAIL-FAST]:';
 
+// Ghi chú đính kèm khi offload dữ liệu lớn ra đĩa tạm (Direct-to-Disk)
+export const DIRECT_TO_DISK_OFFLOAD_NOTE =
+  'Dữ liệu lớn (> 50KB) đã được lưu ra file tạm an toàn để tiết kiệm Token. Dùng Python Compute Sandbox đọc file này để xử lý.';
+

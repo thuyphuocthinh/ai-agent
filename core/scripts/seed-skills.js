@@ -122,6 +122,48 @@ Các bước:
 2. Đăng nội dung vào kênh #ops bằng \`post_message\` (cần người dùng duyệt).
 3. Tạo email nháp cho quản lý bằng \`create_draft\` với cùng nội dung; KHÔNG tự gửi email.`,
   },
+  {
+    slug: 'template-preserving-etl',
+    name: 'ETL nạp dữ liệu lớn bảo toàn mẫu Google Sheet',
+    description:
+      'Quy trình trích xuất dữ liệu lớn từ SQL/CRM/File và nạp vào Google Sheet theo mẫu có sẵn mà không làm hỏng công thức hoặc gây lỗi Rate-Limit HTTP 429.',
+    tools: ['get_sheet_structure', 'run_python', 'batch_update_values'],
+    tags: ['etl', 'google sheets', 'bảo toàn công thức', 'dữ liệu lớn', 'batch update'],
+    metadata: {
+      autoLoad: true,
+      triggers: [
+        'đồng bộ dữ liệu đơn hàng vào Google Sheet theo mẫu',
+        'nạp danh sách khách hàng vào bảng tính không ghi đè công thức',
+        'chuyển dữ liệu lớn vào Sheet tự động',
+        'ETL dữ liệu vào Google Sheet bảo toàn template',
+      ],
+    },
+    instructions: `# Quy trình ETL nạp dữ liệu lớn vào Google Sheet (Bảo toàn template & công thức)
+
+Khi xử lý tác vụ trích xuất dữ liệu lớn và nạp vào Google Sheet, BẮT BUỘC tuân thủ 4 bước nghiêm ngặt sau:
+
+1. BƯỚC 1 - KIỂM TRA MẪU (Template Inspection):
+   - Luôn gọi \`get_sheet_structure\` trước tiên để lấy metadata: headers, \`firstEmptyRowIndex\`, và danh sách các cột chứa công thức tính toán (\`protectedFormulaColumns\`).
+   - Ghi nhớ các cột công thức (ví dụ: cột VAT, Tổng tiền) để KHÔNG ghi đè giá trị tĩnh vào các cột này.
+
+2. BƯỚC 2 - TRÍCH XUẤT DỮ LIỆU & DIRECT-TO-DISK:
+   - Thực thi truy vấn nguồn (SQL, CRM, v.v.).
+   - Nếu dữ liệu lớn (>50KB), hệ thống sẽ tự động lưu ra file tạm an toàn và trả về envelope dạng:
+     \`{"status":"saved_to_tmp","path":"/tmp/artifacts/.../source_xxx.json",...}\`
+   - Đọc kỹ đường dẫn file tạm và mẫu 2 bản ghi để nắm bắt cấu trúc dữ liệu.
+
+3. BƯỚC 3 - CHUYỂN ĐỔI BẰNG SANDBOX (Python Compute):
+   - KHÔNG bao giờ tự render toàn bộ mảng dữ liệu khổng lồ vào ngữ cảnh hội thoại.
+   - Sử dụng tool \`run_python\` để chạy script trong Sandbox Docker cách ly:
+     + Đọc file JSON từ đường dẫn nguồn (\`path\`).
+     + Chuyển đổi và sắp xếp đúng thứ tự các cột khớp với headers của Sheet (bỏ qua hoặc để trống các cột công thức).
+     + Xuất kết quả ma trận mảng 2D ra file JSON đích trên thư mục tạm (ví dụ: \`transformed_matrix.json\`).
+
+4. BƯỚC 4 - CẬP NHẬT NGUYÊN TỬ (Atomic Batch Update):
+   - Gọi tool \`batch_update_values\` TRONG ĐÚNG 1 LẦN DUY NHẤT.
+   - Truyền tham số \`payloadFilePath\` trỏ tới file JSON ma trận đã chuyển đổi và \`range\` bắt đầu từ dòng trống đầu tiên (\`firstEmptyRowIndex\`).
+   - Tuyệt đối KHÔNG gọi cập nhật từng dòng hoặc từng ô lẻ tẻ để tránh lỗi Rate-Limit HTTP 429 và quá tải API.`,
+  },
 ];
 
 async function main() {

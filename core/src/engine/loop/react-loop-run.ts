@@ -102,6 +102,7 @@ export class ReactLoopRun {
         insertAccumulator,
         riskGate,
         actionAudit: deps.actionAudit,
+        tmpManager: deps.tmpManager,
       },
     );
   }

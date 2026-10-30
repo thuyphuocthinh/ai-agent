@@ -38,5 +38,27 @@ services:
       timeout: 3s
       retries: 10
 
+  # Python Compute Sandbox cách ly mạng cho xử lý dữ liệu lớn (Spec: Template-Preserving ETL)
+  sandbox-compute:
+    image: python:3.11-slim
+    container_name: agent-sandbox-compute
+    # 1. Ngắt 100% mạng Internet (chống leak token và tải script độc hại)
+    network_mode: none
+    # 2. Không cấp quyền root
+    user: "1000:1000"
+    # 3. Root Filesystem Read-Only
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    # 4. Chỉ mount thư mục artifacts dùng chung
+    volumes:
+      - ./.tmp/artifacts:/tmp/artifacts:rw
+    # 5. Giới hạn tài nguyên cứng
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+
 volumes:
   agent-local-pgdata:

@@ -51,6 +51,7 @@ describe('ToolCallExecutor', () => {
       mcpTools?: McpToolDto[];
       riskGate?: Partial<ToolRiskGate>;
       insertAccumulator?: InsertAccumulator;
+      tmpManager?: any;
     } = {},
   ) {
     const riskGate = {
@@ -76,6 +77,7 @@ describe('ToolCallExecutor', () => {
         repeatGuard: new ToolRepeatGuard(),
         insertAccumulator: options.insertAccumulator ?? new InsertAccumulator(),
         riskGate,
+        tmpManager: options.tmpManager,
       },
     );
     return { executor, riskGate };
@@ -405,6 +407,46 @@ describe('ToolCallExecutor', () => {
       expect(result2[0].content).toContain('[LỖI THỰC THI CÔNG CỤ]:');
       expect(result2[0].content).toContain('[DỪNG THỬ LẠI - FAIL-FAST]:');
       expect(result2[0].content).toContain('Đã thử lại 2 lần liên tiếp');
+    });
+
+    it('offloads huge JSON results (> 50KB) to disk and returns lightweight envelope to save tokens', async () => {
+      const records = Array.from({ length: 1500 }, (_, i) => ({
+        id: i + 1,
+        code: `ORD-${i + 1}`,
+        customer: `Khách hàng ${i + 1}`,
+        total: 1500000,
+      }));
+      const rawJson = JSON.stringify(records);
+      expect(rawJson.length).toBeGreaterThan(ORCHESTRATION_CONSTANTS.DIRECT_TO_DISK_CHAR_THRESHOLD);
+
+      const mockTmpManager = {
+        saveJsonToFile: jest.fn().mockResolvedValue('/tmp/artifacts/reply-msg-1/source_query_orders.json'),
+      };
+
+      mockMcpClient.callTool.mockResolvedValue({
+        content: [{ type: 'text', text: rawJson }],
+        isError: false,
+      });
+
+      const { executor } = createExecutor({ tmpManager: mockTmpManager });
+      const result = await executor.run([
+        { id: 'call-1', name: 'query_orders', args: { limit: 1500 } },
+      ]);
+
+      expect(mockTmpManager.saveJsonToFile).toHaveBeenCalledWith(
+        'reply-msg-1',
+        'source_query_orders.json',
+        records,
+      );
+
+      const envelope = JSON.parse(result[0].content);
+      expect(envelope).toMatchObject({
+        status: 'saved_to_tmp',
+        path: '/tmp/artifacts/reply-msg-1/source_query_orders.json',
+        recordCount: 1500,
+        sample: [records[0], records[1]],
+      });
+      expect(envelope.note).toContain('Python Compute Sandbox');
     });
   });
 });

@@ -37,6 +37,10 @@ export const ORCHESTRATION_CONSTANTS = {
   MCP_RESOURCE_CONTENT_CACHE_TTL_MS: 60 * 1000,
   // Số message gần nhất (trước message trigger) lấy làm context hội thoại.
   CHAT_HISTORY_LIMIT: 10,
+  // Ngưỡng dung lượng kết quả tool (50.000 ký tự ~ 50KB) để kích hoạt van xả Direct-to-Disk.
+  // Khi kết quả tool vượt quá ngưỡng này, tự động lưu raw JSON ra đĩa tạm an toàn
+  // và chỉ trả về Envelope siêu nhẹ (~250 ký tự) cho LLM để tránh làm tràn Token / vỡ ngữ cảnh.
+  DIRECT_TO_DISK_CHAR_THRESHOLD: 50_000,
   // Giai đoạn 4, Step 5 — khi lịch sử bị cắt bởi CHAT_HISTORY_LIMIT (còn tin
   // cũ hơn), lấy thêm 1 lô nhỏ NGAY TRƯỚC cửa sổ đó để ghép thành 1 câu tóm
   // tắt rule-based (không gọi thêm LLM) — tránh mất hoàn toàn ngữ cảnh cũ.

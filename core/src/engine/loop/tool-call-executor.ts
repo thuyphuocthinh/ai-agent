@@ -20,6 +20,7 @@ import { ApprovalRequiredError } from './errors/approval-required.error';
 import {
   ClarificationRequiredError,
   IClarificationCandidate,
+  IArtifactTmpManager,
 } from '../../contracts';
 import { CallToolResponseDto, McpToolDto } from '../../contracts/dtos/mcp.dto';
 import { abortableSleep } from '../../common/async/abortable-sleep.util';
@@ -38,6 +39,7 @@ import { MemoryManagerService } from '../../memory/memory-manager.service';
 import { ToolRepeatGuard } from './guards/tool-repeat-guard';
 import { InsertAccumulator } from './guards/insert-accumulator';
 import { ToolRiskGate } from './guards/tool-risk-gate';
+import { tryOffloadPayloadToDisk } from './utils/tool-payload-offloader.util';
 import {
   EPolicyStatus,
   EscalationRequiredError,
@@ -100,6 +102,7 @@ export class ToolCallExecutor {
   private readonly insertAccumulator: InsertAccumulator;
   private readonly riskGate: ToolRiskGate;
   private readonly actionAudit?: ActionAuditService;
+  private readonly tmpManager?: IArtifactTmpManager;
 
   private readonly toolCalls: ToolCallTraceDto[] = [];
   private readonly toolToProviderMap?: Map<string, string>;
@@ -127,6 +130,7 @@ export class ToolCallExecutor {
     this.insertAccumulator = deps.insertAccumulator;
     this.riskGate = deps.riskGate;
     this.actionAudit = deps.actionAudit;
+    this.tmpManager = deps.tmpManager;
 
     this.tracedHandleToolCall = traceable(
       (name: string, args: Record<string, unknown>) =>
@@ -682,7 +686,7 @@ export class ToolCallExecutor {
       toolCallId,
       friendlySummary,
     );
-    const feedText = this.capForFeed(text);
+    const feedText = await this.prepareFeedText(name, text, status);
     if (status === 'success') {
       this.repeatGuard.cacheSuccess(signature, resultPreview, feedText);
     }
@@ -784,6 +788,25 @@ export class ToolCallExecutor {
         e.parameterName,
       );
     }
+  }
+
+  // Chuẩn bị nội dung trả về cho LLM: Tự động lưu ra đĩa nếu vượt ngưỡng 50KB, hoặc cắt gọt theo token budget
+  private async prepareFeedText(
+    name: string,
+    text: string,
+    status: EStepExecutionStatus,
+  ): Promise<string> {
+    if (status === EStepExecutionStatus.SUCCESS) {
+      const turnId = this.dto.messageId || 'turn-default';
+      const offloaded = await tryOffloadPayloadToDisk(
+        name,
+        text,
+        turnId,
+        this.tmpManager,
+      );
+      if (offloaded) return offloaded;
+    }
+    return this.capForFeed(text);
   }
 
   // Cắt kết quả tool theo ngân sách ký tự của model trước khi đưa lại cho LLM.

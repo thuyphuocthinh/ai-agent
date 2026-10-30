@@ -24,6 +24,8 @@ import {
   ISkillMatcher,
   SKILL_MATCHER,
   ISkillPlaybookDetail,
+  ARTIFACT_TMP_MANAGER,
+  IArtifactTmpManager,
 } from '../../contracts';
 import { CircuitBreakerService } from '../../infrastructure/resilience/circuit-breaker.service';
 import { AgentCancellationService } from '../cancellation/agent-cancellation.service';
@@ -94,6 +96,9 @@ export class ReactLoopService {
     @Optional()
     @Inject(SKILL_MATCHER)
     private readonly skillMatcher?: ISkillMatcher,
+    @Optional()
+    @Inject(ARTIFACT_TMP_MANAGER)
+    private readonly tmpManager?: IArtifactTmpManager,
   ) {}
 
   async run(
@@ -290,6 +295,7 @@ export class ReactLoopService {
       semanticPolicyEvaluator: this.semanticPolicyEvaluator,
       idempotencyManager: this.idempotencyManager,
       actionAudit: this.actionAudit,
+      tmpManager: this.tmpManager,
     };
   }
 
