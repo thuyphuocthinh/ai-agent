@@ -46,6 +46,24 @@ describe('token-budget.util', () => {
       expect(parsed._data_summary.dataRef).toBeDefined();
       expect(parsed.sample_records.length).toBeGreaterThan(0);
     });
+
+    it('truncates JSON array at item boundaries and closes with valid syntax when budget is very constrained', () => {
+      const records = Array.from({ length: 50 }, (_, i) => ({
+        id: i,
+        code: `CODE_${i}`,
+        val: i * 10,
+      }));
+      const rawJson = JSON.stringify(records);
+      // Ngân sách 250 ký tự (ToolOutputCompressor envelope không vừa 250 ký tự)
+      const capped = capToolResultSize(rawJson, 250);
+      expect(capped.length).toBeLessThanOrEqual(250);
+      // Kết quả BẮT BUỘC phải là JSON hợp lệ (parse được)
+      const parsed = JSON.parse(capped);
+      expect(Array.isArray(parsed)).toBe(true);
+      const lastItem = parsed[parsed.length - 1];
+      expect(lastItem._metadata).toBeDefined();
+      expect(lastItem._metadata).toContain('đã cắt bớt');
+    });
   });
 
   describe('resolveDataCharBudget', () => {

@@ -39,6 +39,7 @@ import { formatPersonaPrompt } from './utils/persona-prompt.util';
 import { resolveEffectiveTools } from './utils/effective-tools.util';
 import {
   buildPolicyGroundingPrompt,
+  buildRecalledMemoriesPrompt,
   buildResourcesPrompt,
   formatResourceBlock,
 } from './utils/react-loop-prompt.util';
@@ -192,6 +193,7 @@ export class ReactLoopService {
           dto.workspaceId,
           dto.persona,
           dto.prompt,
+          dto.channelId ?? dto.conversationId,
         ),
         forcedSkillSlugs.length > 0
           ? Promise.resolve<ISkillMatch[]>([])
@@ -492,6 +494,7 @@ export class ReactLoopService {
     workspaceId?: string,
     persona?: PersonaDto,
     userPrompt?: string,
+    channelId?: string,
   ): Promise<string> {
     const resourceContents = await this.buildResourcesBlock(
       provider,
@@ -509,6 +512,11 @@ export class ReactLoopService {
     }
     systemInstruction += buildResourcesPrompt(resourceContents);
     systemInstruction += await this.buildPolicyGroundingBlock(userPrompt);
+    systemInstruction += await this.buildRecalledMemoriesBlock(
+      channelId,
+      modelId,
+      userPrompt,
+    );
 
     return systemInstruction;
   }
@@ -565,6 +573,27 @@ export class ReactLoopService {
       return buildPolicyGroundingPrompt(relevant.map((r) => r.chunk));
     } catch (err) {
       this.logger.warn(`Lỗi truy xuất policy grounding: ${(err as Error).message}`);
+      return '';
+    }
+  }
+
+  // Tiêm ký ức và sự thật dài hạn (Entities / Facts) vào System Instruction của ReAct
+  private async buildRecalledMemoriesBlock(
+    channelId?: string,
+    modelId: string = ORCHESTRATION_CONSTANTS.DEFAULT_REACT_MODEL,
+    userPrompt?: string,
+  ): Promise<string> {
+    if (!channelId || !this.memoryManager) return '';
+    try {
+      const memories = await this.memoryManager.getMemories(
+        channelId,
+        modelId,
+        userPrompt,
+      );
+      if (!memories || memories.length === 0) return '';
+      return buildRecalledMemoriesPrompt(memories.map((m) => m.content));
+    } catch (err) {
+      this.logger.warn(`Lỗi nạp ký ức vào ReAct: ${(err as Error).message}`);
       return '';
     }
   }

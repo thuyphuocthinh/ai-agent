@@ -382,5 +382,29 @@ describe('ToolCallExecutor', () => {
       expect(steps[1].type).toBe('tool_result');
       expect(steps[1].friendlySummary).toBe('Tra cứu dữ liệu từ bảng "products"');
     });
+
+    it('appends self-healing recovery hint on first failure and triggers fail-fast on second consecutive failure', async () => {
+      mockMcpClient.callTool.mockResolvedValue({
+        content: [{ type: 'text', text: 'Table "invalid_tbl" does not exist' }],
+        isError: true,
+      });
+      const { executor } = createExecutor();
+
+      // Lần 1: Lỗi đầu tiên -> Gợi ý tự sửa lỗi
+      const result1 = await executor.run([
+        { id: 'call-1', name: 'execute_read_query', args: { query: 'SELECT * FROM invalid_tbl' } },
+      ]);
+      expect(result1[0].content).toContain('[LỖI THỰC THI CÔNG CỤ]:');
+      expect(result1[0].content).toContain('[HƯỚNG DẪN TỰ SỬA]:');
+      expect(result1[0].content).not.toContain('[DỪNG THỬ LẠI - FAIL-FAST]:');
+
+      // Lần 2: Lỗi tiếp trên cùng tool (khác args nên không bị ToolRepeatGuard chặn) -> Kích hoạt Fail-Fast
+      const result2 = await executor.run([
+        { id: 'call-2', name: 'execute_read_query', args: { query: 'SELECT * FROM invalid_tbl_2' } },
+      ]);
+      expect(result2[0].content).toContain('[LỖI THỰC THI CÔNG CỤ]:');
+      expect(result2[0].content).toContain('[DỪNG THỬ LẠI - FAIL-FAST]:');
+      expect(result2[0].content).toContain('Đã thử lại 2 lần liên tiếp');
+    });
   });
 });

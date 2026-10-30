@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import {
   ORCHESTRATION_CONSTANTS,
   ECheckpointKind,
+  NATIVE_TOOL_PROVIDER,
 } from '@agent/core/constants';
 import {
   IExecutionEngine,
@@ -46,6 +47,7 @@ import {
   SupervisorRoundDto,
 } from '../../../contracts/dtos/supervisor.dto';
 import { SupervisorService } from '../../supervisor/supervisor.service';
+import { AgentRankingService } from '../../supervisor/agent-ranking.service';
 import { AgentDiscoveryService } from '../../discovery/agent-discovery.service';
 import {
   IToolProvider,
@@ -107,6 +109,8 @@ export class AutonomousEngine implements IExecutionEngine {
     private readonly cachedService?: CachedService,
     @Optional()
     private readonly llmFactory?: LlmStrategyFactory,
+    @Optional()
+    private readonly agentRanking?: AgentRankingService,
   ) {}
 
   canHandle(context: EngineRoutingContext): boolean {
@@ -207,8 +211,28 @@ export class AutonomousEngine implements IExecutionEngine {
 
   private async executeFrontlineReAct(context: EngineExecutionContext): Promise<AnswerResult> {
     const { data, replyMessageId, prompt, agents, history, signal } = context;
-    const connectedProviders = (agents ?? []).map((a) => a.provider);
-    const primaryProvider = connectedProviders[0] ?? 'compute';
+
+    // Dynamic Provider Pruning: Khi số agent kết nối vượt ngưỡng (mặc định 3), dùng vector ranking chọn lọc
+    let effectiveAgents = agents ?? [];
+    if (
+      this.agentRanking &&
+      effectiveAgents.length >
+      ORCHESTRATION_CONSTANTS.MAX_FRONTLINE_AGENTS_BEFORE_RANKING
+    ) {
+      const ranked = await this.agentRanking.rankAgentsForPrompt(
+        prompt,
+        effectiveAgents,
+      );
+      effectiveAgents = ranked.shown;
+      if (ranked.omittedCount > 0) {
+        this.logger.log(
+          `[AutonomousEngine] Frontline Tool RAG: Chọn ${effectiveAgents.length} agents (${effectiveAgents.map((a) => a.provider).join(', ')}), ẩn ${ranked.omittedCount} agents để tiết kiệm tokens`,
+        );
+      }
+    }
+
+    const connectedProviders = effectiveAgents.map((a) => a.provider);
+    const primaryProvider = connectedProviders[0] ?? NATIVE_TOOL_PROVIDER;
 
     const requestDto: RunReactLoopRequestDto = {
       prompt,

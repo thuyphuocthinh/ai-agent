@@ -554,6 +554,25 @@ describe('ReactLoopService', () => {
     );
   });
 
+  it('injects recalled long-term memories into systemInstruction when available', async () => {
+    mockMemoryManager.getMemories.mockResolvedValueOnce([
+      { content: 'User prefers concise summaries' },
+      { content: 'User timezone is Asia/Ho_Chi_Minh' },
+    ]);
+    mockSession.sendMessage.mockResolvedValueOnce({
+      text: 'ok',
+      toolCalls: [],
+    });
+
+    await service.run(baseDto);
+
+    const callArgs = mockStrategy.startChat.mock.calls[0][0];
+    const systemInstruction = callArgs.systemInstruction;
+    expect(systemInstruction).toContain('=== KÝ ỨC VÀ SỰ THẬT ĐÃ BIẾT VỀ NGƯỜI DÙNG ===');
+    expect(systemInstruction).toContain('User prefers concise summaries');
+    expect(systemInstruction).toContain('User timezone is Asia/Ho_Chi_Minh');
+  });
+
   describe('native tools (read_skill) dùng chung cho mọi agent', () => {
     const toolNamesSentToModel = (): string[] =>
       (
@@ -1416,7 +1435,8 @@ describe('ReactLoopService', () => {
       // Lỗi được feed NGƯỢC LẠI cho LLM (không throw ra ngoài run()) — turn
       // tiếp tục bình thường, LLM tự quyết định câu trả lời tiếp theo.
       const fedBackToLlm = mockSession.sendMessage.mock.calls[1][0];
-      expect(fedBackToLlm[0].content).toBe('ECONNREFUSED');
+      expect(fedBackToLlm[0].content).toContain('ECONNREFUSED');
+      expect(fedBackToLlm[0].content).toContain('[LỖI THỰC THI CÔNG CỤ]:');
       expect(result.answer).toBe('ok');
     });
 

@@ -26,3 +26,16 @@ export const PARTIAL_WRITE_CAVEAT =
 // Gợi ý khi chặn tool lặp lại mà không còn tool nào khác trong hệ thống để thử.
 export const NO_OTHER_TOOLS_SUGGESTION =
   'Không còn tool nào khác của hệ thống này để thử.';
+
+// --- Trí nhớ dài hạn (Semantic Recall) ---
+export const RECALLED_MEMORIES_HEADER =
+  '=== KÝ ỨC VÀ SỰ THẬT ĐÃ BIẾT VỀ NGƯỜI DÙNG ===';
+export const RECALLED_MEMORIES_FOOTER =
+  '===============================================';
+
+// --- Hướng dẫn phục hồi lỗi công cụ (Self-Healing & Fail-Fast Ceiling) ---
+export const TOOL_ERROR_RECOVERY_PREFIX = '[LỖI THỰC THI CÔNG CỤ]:';
+export const TOOL_ERROR_SELF_HEAL_HINT =
+  '[HƯỚNG DẪN TỰ SỬA]: Công cụ gặp lỗi trên. Hãy kiểm tra lại tham số, cấu trúc bảng/dữ liệu hoặc đổi phương án gọi tool khác. Tuyệt đối không gọi lại công cụ với các tham số y hệt mà không thay đổi gì.';
+export const TOOL_ERROR_FAIL_FAST_PREFIX = '[DỪNG THỬ LẠI - FAIL-FAST]:';
+

@@ -7,6 +7,11 @@ import {
   POLICY_GROUNDING_INTRO,
   POLICY_GROUNDING_TITLE,
   RESOURCES_PROMPT_HEADER,
+  RECALLED_MEMORIES_HEADER,
+  RECALLED_MEMORIES_FOOTER,
+  TOOL_ERROR_RECOVERY_PREFIX,
+  TOOL_ERROR_SELF_HEAL_HINT,
+  TOOL_ERROR_FAIL_FAST_PREFIX,
 } from '../../../constants/prompts';
 
 export interface PolicyExcerpt {
@@ -113,3 +118,31 @@ export function buildMaxStepsAnswer(
     (hasSuccessfulToolCall ? PARTIAL_WRITE_CAVEAT : '')
   );
 }
+
+// Định dạng khối ký ức dài hạn tiêm vào ReAct system instruction.
+export function buildRecalledMemoriesPrompt(memories: readonly string[]): string {
+  if (memories.length === 0) return '';
+  const lines = memories.map((m) => `- ${m}`).join('\n');
+  return `\n\n${RECALLED_MEMORIES_HEADER}\n${lines}\n${RECALLED_MEMORIES_FOOTER}`;
+}
+
+// Định dạng thông báo lỗi tool kèm gợi ý tự sửa lỗi (Recovery Hint) hoặc lệnh Fail-Fast dừng khẩn cấp.
+export function buildToolExecutionErrorMessage(
+  rawErrorMessage: string,
+  displayName: string,
+  isFailFast: boolean,
+  failures: number,
+): string {
+  if (isFailFast) {
+    return (
+      `${TOOL_ERROR_RECOVERY_PREFIX} ${rawErrorMessage}\n` +
+      `${TOOL_ERROR_FAIL_FAST_PREFIX} Đã thử lại ${failures} lần liên tiếp nhưng công cụ "${displayName}" vẫn thất bại. DỪNG gọi công cụ này ngay lập tức. ` +
+      `Hãy giải thích rõ nguyên nhân lỗi và thông báo trực tiếp cho người dùng thay vì tiếp tục thử lại.`
+    );
+  }
+  return (
+    `${TOOL_ERROR_RECOVERY_PREFIX} ${rawErrorMessage}\n` +
+    `${TOOL_ERROR_SELF_HEAL_HINT}`
+  );
+}
+

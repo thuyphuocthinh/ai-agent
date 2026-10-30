@@ -83,6 +83,22 @@ export function capToolResultSize(
   });
 
   let payload = input as JsonValue;
+
+  // Nếu input là chuỗi JSON string (kết quả MCP), thử parse để bảo toàn cấu trúc mảng/đối tượng
+  if (typeof input === 'string') {
+    const trimmed = input.trim();
+    if (
+      (trimmed.startsWith('[') && trimmed.endsWith(']')) ||
+      (trimmed.startsWith('{') && trimmed.endsWith('}'))
+    ) {
+      try {
+        payload = JSON.parse(trimmed) as JsonValue;
+      } catch {
+        // Không phải JSON hợp lệ, giữ nguyên payload dạng chuỗi
+      }
+    }
+  }
+
   payload = minifier.minify(payload);
   payload = cleaner.clean(payload);
 
@@ -101,7 +117,29 @@ export function capToolResultSize(
       return structured.text;
     }
 
-    // 2. Fallback: Dùng PayloadCompressor từ agentic-io-parser để alias keys
+    // 2. Nếu là mảng JSON vượt ngân sách (hoặc cấu trúc mẫu vẫn vượt maxChars),
+    // cắt gọt an toàn theo ranh giới phần tử, đóng ngoặc ']' hợp lệ và chèn _metadata
+    if (Array.isArray(payload)) {
+      const preservedItems: unknown[] = [];
+      let currentLength = 2; // Cho cặp ngoặc '[' và ']'
+      for (let i = 0; i < payload.length; i++) {
+        const itemStr = JSON.stringify(payload[i]);
+        const addedLength =
+          (preservedItems.length > 0 ? 1 : 0) + itemStr.length;
+        if (currentLength + addedLength > maxChars - 120) {
+          const remaining = payload.length - i;
+          preservedItems.push({
+            _metadata: `... đã cắt bớt ${remaining} phần tử do vượt ngân sách ...`,
+          });
+          return JSON.stringify(preservedItems);
+        }
+        preservedItems.push(payload[i]);
+        currentLength += addedLength;
+      }
+      return JSON.stringify(preservedItems);
+    }
+
+    // 3. Fallback: Dùng PayloadCompressor từ agentic-io-parser để alias keys
     const { compressed, dictionary } = compressor.compress(payload);
     payload = compressed;
     if (Object.keys(dictionary).length > 0) {

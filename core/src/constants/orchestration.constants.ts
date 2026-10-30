@@ -138,6 +138,8 @@ export const ORCHESTRATION_CONSTANTS = {
   // = 2 nghĩa là tổng cộng 2 lần thử THẬT (1 lần đầu + 1 lần retry).
   MAX_TRANSIENT_TOOL_RETRY_ATTEMPTS: 2,
   TRANSIENT_RETRY_BACKOFF_MS: 500,
+  // Số lần tự sửa lỗi tối đa khi gọi tool bị lỗi nghiệp vụ (Fail-Fast Ceiling)
+  MAX_SELF_CORRECTION_RETRIES: 2,
   // Giai đoạn System, mục 5.2 — giới hạn số request đồng thời được phép dồn
   // vào CÙNG 1 MCP provider, độc lập với AI_ORCHESTRATION_QUEUE_CONCURRENCY
   // (global) của BullMQ worker. Circuit breaker chỉ phản ứng SAU khi đã đủ lỗi
@@ -158,6 +160,8 @@ export const ORCHESTRATION_CONSTANTS = {
   // đưa vào prompt — dưới ngưỡng giữ nguyên hành vi cũ (liệt kê hết), đúng cách
   // Tool RAG hiện có cũng chỉ kích hoạt khi tool > 128.
   MAX_AGENTS_BEFORE_RANKING: 8,
+  // Ngưỡng kích hoạt ranking cho Frontline ReAct (vì mỗi agent nạp toàn bộ JSON schema của tools)
+  MAX_FRONTLINE_AGENTS_BEFORE_RANKING: 3,
   AGENT_RANKING_TOP_K: 6,
   // mục 16 — chặn fan-out embedding call không giới hạn khi prompt có nhiều
   // từ nối tuần tự (VD "rồi" lặp lại nhiều lần trong 1 đoạn dài).

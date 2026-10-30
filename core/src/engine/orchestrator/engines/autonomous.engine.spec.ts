@@ -11,6 +11,7 @@ import {
 } from '../../../contracts/engine/execution-engine.interface';
 import { AnswerResult } from '../../../contracts/engine/orchestration-answer.types';
 import { SupervisorService } from '../../supervisor/supervisor.service';
+import { AvailableAgentDto } from '../../../contracts/dtos/supervisor.dto';
 
 describe('AutonomousEngine', () => {
   let engine: AutonomousEngine;
@@ -193,6 +194,61 @@ describe('AutonomousEngine', () => {
               text: expect.stringContaining('[TÓM TẮT BỐI CẢNH CÁC LƯỢT TRÒ CHUYỆN TRƯỚC ĐÓ]'),
             }),
           ]),
+        }),
+        undefined,
+      );
+    });
+
+    it('sử dụng AgentRankingService để lọc bớt provider khi số lượng connected agents vượt ngưỡng (> 3)', async () => {
+      const mockAgentRanking = {
+        rankAgentsForPrompt: jest.fn().mockResolvedValue({
+          shown: [
+            { provider: 'sql_server', label: 'SQL Server' },
+            { provider: 'slack', label: 'Slack' },
+          ],
+          omittedCount: 3,
+        }),
+      };
+
+      const customEngine = new AutonomousEngine(
+        mockReactLoop,
+        mockCancellation,
+        mockCheckpointPause,
+        mockMetrics,
+        undefined, // subAgentSpawner
+        mockSupervisor, // supervisor
+        undefined, // streamSink
+        undefined, // memoryManager
+        undefined, // toolProvider
+        undefined, // checkpointService
+        undefined, // agentDiscovery
+        undefined, // cachedService
+        undefined, // llmFactory
+        mockAgentRanking as never, // agentRanking
+      );
+
+      const manyAgentsContext: EngineExecutionContext = {
+        ...baseContext,
+        prompt: 'Tra cứu doanh thu từ SQL và gửi qua Slack',
+        agents: [
+          { provider: 'sql_server', label: 'SQL Server', description: 'DB' } as AvailableAgentDto,
+          { provider: 'slack', label: 'Slack', description: 'Messaging' } as AvailableAgentDto,
+          { provider: 'github', label: 'GitHub', description: 'Git' } as AvailableAgentDto,
+          { provider: 'kintone', label: 'Kintone', description: 'CRM' } as AvailableAgentDto,
+          { provider: 'google_docs', label: 'Google Docs', description: 'Docs' } as AvailableAgentDto,
+        ],
+      };
+
+      await customEngine.execute(manyAgentsContext);
+
+      expect(mockAgentRanking.rankAgentsForPrompt).toHaveBeenCalledWith(
+        'Tra cứu doanh thu từ SQL và gửi qua Slack',
+        manyAgentsContext.agents,
+      );
+      expect(mockReactLoop.run).toHaveBeenCalledWith(
+        expect.objectContaining({
+          provider: 'sql_server',
+          providers: ['sql_server', 'slack'],
         }),
         undefined,
       );

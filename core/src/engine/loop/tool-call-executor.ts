@@ -30,6 +30,7 @@ import {
   buildIdempotencyBlockedMessage,
   buildMergedSqlBatchResult,
   buildRepeatedToolCallMessage,
+  buildToolExecutionErrorMessage,
 } from './utils/react-loop-prompt.util';
 import { PiiScrubberUtil } from '../../common/text/pii/pii-scrubber.util';
 import { formatActionSummary } from '../../common/action-summary';
@@ -102,6 +103,7 @@ export class ToolCallExecutor {
 
   private readonly toolCalls: ToolCallTraceDto[] = [];
   private readonly toolToProviderMap?: Map<string, string>;
+  private readonly consecutiveFailuresByTool = new Map<string, number>();
 
   // handleToolCall() bind + traceable() 1 LẦN ở constructor — gọi trực tiếp
   // this.handleToolCall(...) trong run() sẽ KHÔNG lên trace LangSmith.
@@ -666,8 +668,10 @@ export class ToolCallExecutor {
 
     if (status === 'error') {
       this.logger.warn(`tool_result ${displayName} FAILED: ${resultPreview}`);
+      text = this.formatToolFailureMessage(name, displayName, text);
     } else {
       this.logger.log(`tool_result ${displayName} ok: ${resultPreview}`);
+      this.consecutiveFailuresByTool.delete(name);
     }
 
     await this.recordResult(
@@ -683,6 +687,27 @@ export class ToolCallExecutor {
       this.repeatGuard.cacheSuccess(signature, resultPreview, feedText);
     }
     return feedText;
+  }
+
+  // Định dạng thông báo lỗi tool kèm gợi ý tự sửa lỗi hoặc lệnh dừng khẩn cấp (Fail-Fast)
+  private formatToolFailureMessage(
+    name: string,
+    displayName: string,
+    rawErrorText: string,
+  ): string {
+    const failures = (this.consecutiveFailuresByTool.get(name) ?? 0) + 1;
+    this.consecutiveFailuresByTool.set(name, failures);
+
+    const maxRetries =
+      this.dto.maxSelfCorrectionRetries ??
+      ORCHESTRATION_CONSTANTS.MAX_SELF_CORRECTION_RETRIES;
+    const isFailFast = failures >= maxRetries;
+    return buildToolExecutionErrorMessage(
+      rawErrorText,
+      displayName,
+      isFailFast,
+      failures,
+    );
   }
 
   // Tool ném exception: huỷ/hỏi-lại thì ném tiếp; còn lại ghi tool_result ERROR (đã scrub PII)
@@ -704,6 +729,11 @@ export class ToolCallExecutor {
     this.logger.warn(
       `tool_result ${displayName} FAILED (exception): ${errorMessage}`,
     );
+    const formattedError = this.formatToolFailureMessage(
+      displayName,
+      displayName,
+      errorMessage,
+    );
     await this.recordResult(
       displayName,
       EStepExecutionStatus.ERROR,
@@ -712,7 +742,7 @@ export class ToolCallExecutor {
       toolCallId,
       friendlySummary,
     );
-    return this.capForFeed(errorMessage);
+    return this.capForFeed(formattedError);
   }
 
   // Tool call bị từ chối trước khi gọi thật (preflight/policy/idempotency/lặp/thiếu dòng):
