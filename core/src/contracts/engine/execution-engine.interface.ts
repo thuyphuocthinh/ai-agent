@@ -9,12 +9,32 @@ export const EXECUTION_ENGINE_REGISTRY = Symbol.for('EXECUTION_ENGINE_REGISTRY')
 export const EXECUTION_ROUTER = Symbol.for('EXECUTION_ROUTER');
 
 export enum EExecutionEngineMode {
+  // Hai thái cực cơ bản (Kiến trúc hợp nhất 2-Engine)
+  DETERMINISTIC = 'deterministic',
+  AUTONOMOUS = 'autonomous',
+
+  // Legacy modes (Giữ lại làm alias tương thích ngược)
   SINGLE_AGENT = 'single_agent',
   PIPELINE_CHAINING = 'pipeline_chaining',
   PARALLEL_FANOUT = 'parallel_fanout',
   DYNAMIC_SUPERVISOR = 'dynamic_supervisor',
   // Chỉ dùng làm routing.mode của turn chạy fixed workflow; không có engine tương ứng trong registry.
   WORKFLOW = 'workflow',
+}
+
+/**
+ * Các chế độ cưỡng bức định tuyến (Forced Execution Modes).
+ * Loại bỏ hoàn toàn magic strings trong code.
+ */
+export enum EForcedExecutionMode {
+  AUTO = 'auto',
+  DETERMINISTIC = 'deterministic',
+  AUTONOMOUS = 'autonomous',
+  // Legacy aliases
+  SINGLE = 'single',
+  SUPERVISOR = 'supervisor',
+  PIPELINE = 'pipeline',
+  FANOUT = 'fanout',
 }
 
 export interface EngineRoutingContext {
@@ -26,7 +46,7 @@ export interface EngineRoutingContext {
   workflowId?: string;
   history?: ChatHistoryTurnDto[];
   availableAgents?: AvailableAgentDto[];
-  forcedMode?: 'single' | 'supervisor' | 'pipeline' | 'fanout' | 'auto' | string;
+  forcedMode?: EForcedExecutionMode | 'single' | 'supervisor' | 'pipeline' | 'fanout' | 'auto' | string;
   contextCharBudgetEstimate?: number;
   metadata?: Record<string, unknown>;
 }

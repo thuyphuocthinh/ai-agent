@@ -75,6 +75,8 @@ describe('AI Agent Pluggable Engines - Production Evaluation Suite', () => {
       execute: jest.fn(),
     });
 
+    registry.register(createMockEngine(EExecutionEngineMode.DETERMINISTIC, 20));
+    registry.register(createMockEngine(EExecutionEngineMode.AUTONOMOUS, 10));
     registry.register(createMockEngine(EExecutionEngineMode.PIPELINE_CHAINING, 20));
     registry.register(createMockEngine(EExecutionEngineMode.PARALLEL_FANOUT, 15));
     registry.register(createMockEngine(EExecutionEngineMode.SINGLE_AGENT, 10));
@@ -105,13 +107,20 @@ describe('AI Agent Pluggable Engines - Production Evaluation Suite', () => {
         const decision = router.route(routingContext);
         const actualMode = decision.mode;
 
-        if (actualMode === item.expectedMode) {
+        const expectedMode =
+          item.expectedMode === 'pipeline_chaining' ||
+          item.expectedMode === 'parallel_fanout' ||
+          item.expectedMode === 'deterministic'
+            ? EExecutionEngineMode.DETERMINISTIC
+            : EExecutionEngineMode.AUTONOMOUS;
+
+        if (actualMode === expectedMode) {
           correctCount++;
         } else {
           failures.push({
             id: item.id,
             prompt: item.prompt,
-            expected: item.expectedMode,
+            expected: expectedMode,
             actual: actualMode,
           });
         }

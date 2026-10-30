@@ -1,34 +1,32 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
   EExecutionEngineMode,
+  EForcedExecutionMode,
   EngineRoutingContext,
   EngineRoutingDecision,
   EXECUTION_ENGINE_REGISTRY,
   IExecutionEngineRegistry,
   IExecutionRouter,
 } from '../../../contracts/engine/execution-engine.interface';
-import { decideExecutionMode } from './hybrid-execution-router.util';
 
 const FORCED_MODE_TO_ENGINE: Record<string, EExecutionEngineMode> = {
-  single: EExecutionEngineMode.SINGLE_AGENT,
-  supervisor: EExecutionEngineMode.DYNAMIC_SUPERVISOR,
-  pipeline: EExecutionEngineMode.PIPELINE_CHAINING,
-  fanout: EExecutionEngineMode.PARALLEL_FANOUT,
+  [EForcedExecutionMode.DETERMINISTIC]: EExecutionEngineMode.DETERMINISTIC,
+  [EForcedExecutionMode.AUTONOMOUS]: EExecutionEngineMode.AUTONOMOUS,
+  [EForcedExecutionMode.SINGLE]: EExecutionEngineMode.SINGLE_AGENT,
+  [EForcedExecutionMode.SUPERVISOR]: EExecutionEngineMode.DYNAMIC_SUPERVISOR,
+  [EForcedExecutionMode.PIPELINE]: EExecutionEngineMode.PIPELINE_CHAINING,
+  [EForcedExecutionMode.FANOUT]: EExecutionEngineMode.PARALLEL_FANOUT,
 };
 
 /**
  * SmartExecutionRouter
  *
- * Chọn engine cho 1 turn theo thứ tự ưu tiên:
- * 1. forcedMode (cấu hình cưỡng bức).
- * 2. Định nghĩa tường minh: metadata.pipeline / workflowId đã đăng ký pipeline / metadata.fanout.
- *    Không auto-route theo regex vì "quy trình", "quét đồng thời"... xuất hiện cả trong chat thường,
- *    và Fan-Out không chạy được nếu thiếu FanoutDefinition.
- * 3. Heuristic hybrid (fan-out song song, sandbox, payload quá khổ, đối kháng) → Dynamic Supervisor.
- * 4. Mặc định Single Agent.
+ * Định tuyến AI Orchestration theo kiến trúc Two-Engine Architecture:
+ * 1. Forced Mode: Cấu hình cưỡng bức từ ENV hoặc Request (giải quyết qua Registry Alias).
+ * 2. Deterministic Mode: Kịch bản định sẵn (workflowId, graph, pipeline, fanout) -> DETERMINISTIC.
+ * 3. Autonomous Mode: Mọi hội thoại đàm thoại tự do mở -> AUTONOMOUS.
  *
- * Single Agent cần ít nhất 1 provider kết nối; nếu không có, rơi về Dynamic Supervisor.
- * Dynamic Supervisor không phải IExecutionEngine (chạy qua TurnResolverRun) nên router chỉ trả decision.
+ * Tuyệt đối không dùng regex phỏng đoán. Không còn nhánh fallback lồng nhau.
  */
 @Injectable()
 export class SmartExecutionRouter implements IExecutionRouter {
@@ -48,82 +46,42 @@ export class SmartExecutionRouter implements IExecutionRouter {
   }
 
   private decide(context: EngineRoutingContext): EngineRoutingDecision {
-    const hasAgents = (context.availableAgents?.length ?? 0) > 0;
-
-    const forced = this.routeForced(context, hasAgents);
+    // 1. Cưỡng bức qua forcedMode
+    const forced = this.routeForced(context);
     if (forced) return forced;
 
-    const explicit = this.routeExplicitDefinition(context);
-    if (explicit) return explicit;
-
-    const hybrid = decideExecutionMode({
-      prompt: context.prompt,
-      contextCharBudgetEstimate: context.contextCharBudgetEstimate,
-    });
-    if (hybrid.mode === EExecutionEngineMode.DYNAMIC_SUPERVISOR) {
-      return this.supervisor(hybrid.reason);
+    // 2. Kịch bản định sẵn tường minh (workflowId hoặc metadata đồ thị/pipeline/fanout)
+    const isDeterministic = Boolean(
+      context.workflowId ||
+      context.metadata?.graph ||
+      context.metadata?.pipeline ||
+      context.metadata?.fanout,
+    );
+    if (isDeterministic) {
+      return this.engineDecision(
+        EExecutionEngineMode.DETERMINISTIC,
+        'Kịch bản định sẵn (workflowId hoặc metadata đồ thị/pipeline/fanout)',
+      );
     }
 
-    if (!hasAgents) {
-      return this.supervisor('Chưa có provider kết nối, dùng Dynamic Supervisor');
-    }
-    return this.engineDecision(EExecutionEngineMode.SINGLE_AGENT, hybrid.reason);
+    // 3. Mặc định: Autonomous Engine tiếp nhận toàn bộ hội thoại mở tự do
+    return this.engineDecision(
+      EExecutionEngineMode.AUTONOMOUS,
+      'Hội thoại mở tự do: Điều phối qua Autonomous Engine',
+    );
   }
 
   private routeForced(
     context: EngineRoutingContext,
-    hasAgents: boolean,
   ): EngineRoutingDecision | undefined {
     const target = context.forcedMode
       ? FORCED_MODE_TO_ENGINE[context.forcedMode]
       : undefined;
     if (!target) return undefined;
 
-    const reason = `Cưỡng bức chạy qua ${target} (forcedMode=${context.forcedMode})`;
-    if (target === EExecutionEngineMode.SINGLE_AGENT && !hasAgents) {
-      return this.supervisor(`${reason} nhưng chưa có provider kết nối, dùng Dynamic Supervisor`);
-    }
-    if (target === EExecutionEngineMode.DYNAMIC_SUPERVISOR) {
-      return this.supervisor(reason);
-    }
-    if (!this.registry.has(target)) {
-      return this.supervisor(`${reason} nhưng engine chưa đăng ký, dùng Dynamic Supervisor`);
-    }
-    return this.engineDecision(target, reason);
-  }
-
-  private routeExplicitDefinition(
-    context: EngineRoutingContext,
-  ): EngineRoutingDecision | undefined {
-    const candidates: Array<[EExecutionEngineMode, boolean, string]> = [
-      [
-        EExecutionEngineMode.PIPELINE_CHAINING,
-        this.hasPipelineDefinition(context),
-        'Có pipeline tường minh (metadata.pipeline hoặc workflowId đã đăng ký)',
-      ],
-      [
-        EExecutionEngineMode.PARALLEL_FANOUT,
-        Boolean(context.metadata?.fanout),
-        'Có fan-out tường minh (metadata.fanout)',
-      ],
-    ];
-
-    for (const [mode, matched, reason] of candidates) {
-      if (matched && this.registry.has(mode)) {
-        return this.engineDecision(mode, reason);
-      }
-    }
-    return undefined;
-  }
-
-  private hasPipelineDefinition(context: EngineRoutingContext): boolean {
-    if (context.metadata?.pipeline) return true;
-    if (!context.workflowId) return false;
-    // Prompt rỗng để canHandle chỉ xét workflowId/metadata, bỏ qua regex theo nội dung.
-    return Boolean(
-      this.registry
-        .get(EExecutionEngineMode.PIPELINE_CHAINING)
-        ?.canHandle({ ...context, prompt: '' }),
+    return this.engineDecision(
+      target,
+      `Cưỡng bức chạy qua ${target} (forcedMode=${context.forcedMode})`,
     );
   }
 
@@ -132,12 +90,5 @@ export class SmartExecutionRouter implements IExecutionRouter {
     reason: string,
   ): EngineRoutingDecision {
     return { mode, engineId: mode, reason };
-  }
-
-  private supervisor(reason: string): EngineRoutingDecision {
-    return {
-      mode: EExecutionEngineMode.DYNAMIC_SUPERVISOR,
-      reason,
-    };
   }
 }

@@ -45,6 +45,10 @@ import { buildApprovedToolFailureMessage } from './utils/engine-prompt.util';
  * Hoàn toàn độc lập, là 1 Execution Engine trong Registry, không phụ thuộc TurnResolverService.
  */
 @Injectable()
+/**
+ * @deprecated Từ kiến trúc Two-Engine Architecture, hãy sử dụng AutonomousEngine.
+ * Class này được giữ lại làm alias/fallback tương thích ngược cho các unit tests và checkpoints cũ.
+ */
 export class DynamicSupervisorEngine implements IExecutionEngine {
   readonly id = EExecutionEngineMode.DYNAMIC_SUPERVISOR;
   readonly name = 'Dynamic Multi-Agent Supervisor';

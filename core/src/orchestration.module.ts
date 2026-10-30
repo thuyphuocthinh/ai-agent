@@ -45,6 +45,11 @@ import { EmbeddingModule } from './infrastructure/embedding/embedding.module';
 import { AgentCancellationService } from './engine/cancellation/agent-cancellation.service';
 import { TurnResolverService } from './engine/orchestrator/turn/turn-resolver.service';
 import { ExecutionEngineRegistryService } from './engine/orchestrator/engines/execution-engine-registry.service';
+import { DeterministicSingleRunner } from './engine/orchestrator/engines/deterministic/deterministic-single.runner';
+import { DeterministicSequenceRunner } from './engine/orchestrator/engines/deterministic/deterministic-sequence.runner';
+import { DeterministicParallelRunner } from './engine/orchestrator/engines/deterministic/deterministic-parallel.runner';
+import { DeterministicEngine } from './engine/orchestrator/engines/deterministic.engine';
+import { AutonomousEngine } from './engine/orchestrator/engines/autonomous.engine';
 import { SingleAgentEngine } from './engine/orchestrator/engines/single-agent.engine';
 import { PipelineChainingEngine } from './engine/orchestrator/engines/pipeline-chaining.engine';
 import { ParallelFanoutEngine } from './engine/orchestrator/engines/parallel-fanout.engine';
@@ -169,6 +174,11 @@ import { SecurityModule } from './security';
     AgentCancellationService,
     TurnResolverService,
     SubAgentSpawnerService,
+    DeterministicSingleRunner,
+    DeterministicSequenceRunner,
+    DeterministicParallelRunner,
+    DeterministicEngine,
+    AutonomousEngine,
     SingleAgentEngine,
     PipelineChainingEngine,
     ParallelFanoutEngine,
@@ -181,6 +191,8 @@ import { SecurityModule } from './security';
         return registry;
       },
       inject: [
+        DeterministicEngine,
+        AutonomousEngine,
         SingleAgentEngine,
         PipelineChainingEngine,
         ParallelFanoutEngine,
@@ -238,6 +250,11 @@ import { SecurityModule } from './security';
     CHAT_SESSION_MANAGER,
     ToolsInfrastructureModule,
     WorkflowRegistryService,
+    DeterministicSingleRunner,
+    DeterministicSequenceRunner,
+    DeterministicParallelRunner,
+    DeterministicEngine,
+    AutonomousEngine,
     WorkflowRunnerService,
     WORKFLOW_REGISTRY,
     WORKFLOW_RUNNER,

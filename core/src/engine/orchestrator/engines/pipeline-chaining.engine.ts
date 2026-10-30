@@ -74,6 +74,10 @@ const PIPELINE_INTENT_REGEX =
  * - Buffer Truncation Guard: Giới hạn an toàn 50.000 ký tự cho input giữa các bước.
  */
 @Injectable()
+/**
+ * @deprecated Từ kiến trúc Two-Engine Architecture, hãy sử dụng DeterministicEngine.
+ * Class này được giữ lại làm alias/fallback tương thích ngược cho các unit tests và checkpoints cũ.
+ */
 export class PipelineChainingEngine implements IPipelineChainingEngine {
   readonly id = EExecutionEngineMode.PIPELINE_CHAINING;
   readonly name = 'Pipeline Chaining Engine (Sequential DAG)';

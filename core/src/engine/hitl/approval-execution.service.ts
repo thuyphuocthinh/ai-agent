@@ -106,8 +106,8 @@ export class ApprovalExecutionService {
       }
     }
 
-    const engineMode = checkpoint.engineMode || EExecutionEngineMode.DYNAMIC_SUPERVISOR;
-    const engine = this.engineRegistry.get(engineMode);
+    const targetMode = checkpoint.engineMode || EExecutionEngineMode.AUTONOMOUS;
+    const engine = this.engineRegistry.get(targetMode);
 
     if (engine?.resume) {
       await this.runResumableTurn(
@@ -123,7 +123,7 @@ export class ApprovalExecutionService {
     }
 
     throw new Error(
-      `[ApprovalExecutionService] Không tìm thấy engine "${engineMode}" hoặc engine không hỗ trợ resume cho checkpoint ${checkpoint.id}`,
+      `[ApprovalExecutionService] Không tìm thấy engine "${targetMode}" hoặc engine không hỗ trợ resume cho checkpoint ${checkpoint.id}`,
     );
   }
 

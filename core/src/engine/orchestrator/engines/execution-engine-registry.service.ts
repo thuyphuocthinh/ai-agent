@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import {
+  EExecutionEngineMode,
   IExecutionEngine,
   IExecutionEngineRegistry,
 } from '../../../contracts/engine/execution-engine.interface';
@@ -7,7 +8,7 @@ import {
 /**
  * ExecutionEngineRegistryService
  *
- * Quản lý danh bạ các Execution Engine (Single Agent, Pipeline Chaining, Parallel Fan-Out, Supervisor...).
+ * Quản lý danh bạ các Execution Engine (Deterministic, Autonomous, và các alias legacy).
  * Hỗ trợ sắp xếp theo thứ tự ưu tiên (priority descending) để Router đánh giá lần lượt.
  */
 @Injectable()
@@ -36,17 +37,36 @@ export class ExecutionEngineRegistryService implements IExecutionEngineRegistry 
   }
 
   /**
-   * Lấy engine theo id định danh.
+   * Lấy engine theo id định danh hoặc alias tương thích ngược.
    */
   get(id: string): IExecutionEngine | undefined {
-    return this.engines.get(id);
+    const direct = this.engines.get(id);
+    if (direct) return direct;
+
+    // Ánh xạ alias tương thích ngược sang 2 Engine mới
+    if (
+      id === EExecutionEngineMode.PIPELINE_CHAINING ||
+      id === EExecutionEngineMode.PARALLEL_FANOUT ||
+      id === EExecutionEngineMode.WORKFLOW
+    ) {
+      return this.engines.get(EExecutionEngineMode.DETERMINISTIC);
+    }
+
+    if (
+      id === EExecutionEngineMode.SINGLE_AGENT ||
+      id === EExecutionEngineMode.DYNAMIC_SUPERVISOR
+    ) {
+      return this.engines.get(EExecutionEngineMode.AUTONOMOUS);
+    }
+
+    return undefined;
   }
 
   /**
-   * Kiểm tra xem engine có tồn tại trong registry hay không.
+   * Kiểm tra xem engine (hoặc alias của nó) có tồn tại trong registry hay không.
    */
   has(id: string): boolean {
-    return this.engines.has(id);
+    return this.get(id) !== undefined;
   }
 
   /**

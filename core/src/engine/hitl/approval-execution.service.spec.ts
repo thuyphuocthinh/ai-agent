@@ -119,7 +119,13 @@ describe('ApprovalExecutionService', () => {
           provide: EXECUTION_ENGINE_REGISTRY,
           useValue: {
             get: jest.fn().mockImplementation((mode: string) => {
-              if (mode === 'dynamic_supervisor') return dynamicSupervisorEngine;
+              if (
+                mode === 'dynamic_supervisor' ||
+                mode === 'autonomous' ||
+                mode === 'single_agent'
+              ) {
+                return dynamicSupervisorEngine;
+              }
               return undefined;
             }),
           },

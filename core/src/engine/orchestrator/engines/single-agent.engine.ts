@@ -58,6 +58,10 @@ import { executeApprovedTool } from '../../hitl/utils/approved-tool-execution.ut
  * - Polymorphic Resume: Tự phục hồi ReAct loop khi người dùng phê duyệt hoặc làm rõ thông tin.
  */
 @Injectable()
+/**
+ * @deprecated Từ kiến trúc Two-Engine Architecture, hãy sử dụng AutonomousEngine.
+ * Class này được giữ lại làm alias/fallback tương thích ngược cho các unit tests và checkpoints cũ.
+ */
 export class SingleAgentEngine implements IExecutionEngine {
   readonly id = EExecutionEngineMode.SINGLE_AGENT;
   readonly name = 'Multi-Provider Single Agent';

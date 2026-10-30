@@ -18,3 +18,15 @@ export function buildSchemaCorrectionPrompt(
     SCHEMA_CORRECTION_INSTRUCTION,
   ].join('\n\n');
 }
+
+export function buildFanoutAggregatorPrompt(
+  prompt: string,
+  resultsSummary: string,
+): string {
+  return [
+    `YÊU CẦU NGƯỜI DÙNG: "${prompt}"`,
+    'DỮ LIỆU TỪ CÁC NGUỒN ĐỘC LẬP:',
+    resultsSummary,
+    'Hãy tổng hợp, so sánh và đưa ra câu trả lời cuối cùng đầy đủ, khách quan nhất:',
+  ].join('\n\n');
+}

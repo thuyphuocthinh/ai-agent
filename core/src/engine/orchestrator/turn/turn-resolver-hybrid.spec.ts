@@ -1,77 +1,102 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { TurnResolverService } from './turn-resolver.service';
-import { SingleAgentEngine } from '../engines/single-agent.engine';
-import { DynamicSupervisorEngine } from '../engines/dynamic-supervisor.engine';
+import { AutonomousEngine } from '../engines/autonomous.engine';
 import { SmartExecutionRouter } from '../engines/smart-execution-router.service';
-import { ExecutionEngineRegistryService } from '../engines/execution-engine-registry.service';
-import {
-  EXECUTION_ENGINE_REGISTRY,
-  EXECUTION_ROUTER,
-  EExecutionEngineMode,
-  TOOL_PROVIDER,
-} from '../../../contracts';
-import { ApprovalContinuationPlannerService } from '../../hitl/approval-continuation-planner.service';
 import { ReactLoopService } from '../../loop/react-loop.service';
 import { SupervisorService } from '../../supervisor/supervisor.service';
 import { AgentCancellationService } from '../../cancellation/agent-cancellation.service';
 import { CheckpointPauseService } from '../../hitl/checkpoint-pause.service';
 import { MetricsRegistryService } from '../../../infrastructure/resilience/metrics-registry.service';
 import { MemoryManagerService } from '../../../memory/memory-manager.service';
-import { MESSAGE_SINK, STREAM_SINK } from '../../../contracts';
+import { ApprovalContinuationPlannerService } from '../../hitl/approval-continuation-planner.service';
+import {
+  EExecutionEngineMode,
+  EForcedExecutionMode,
+  EXECUTION_ENGINE_REGISTRY,
+  EXECUTION_ROUTER,
+  MESSAGE_SINK,
+  STREAM_SINK,
+  TOOL_PROVIDER,
+} from '../../../contracts';
 import { IProcessAiTriggerJobData } from '@agent/core/infrastructure/queue';
 import { ApprovalRequiredError } from '../../loop/errors/approval-required.error';
+import { ExecutionEngineRegistryService } from '../engines/execution-engine-registry.service';
 
-describe('TurnResolverService — Hybrid Orchestration Routing (AC-4 & AC-5)', () => {
+describe('TurnResolverService — Adaptive Autonomous Multi-Agent (AC-1 & AC-2)', () => {
   let service: TurnResolverService;
-
-  const mockMessageSink = {
-    getMessageText: jest.fn(),
-    getRecentHistory: jest.fn().mockResolvedValue([]),
+  let mockMessageSink: {
+    getMessageText: jest.Mock;
+    getRecentHistory: jest.Mock;
   };
-  const mockStreamSink = { emitStep: jest.fn().mockResolvedValue(undefined) };
-  const mockReactLoop = { run: jest.fn() };
-  const mockSupervisor = {
-    getAvailableAgents: jest.fn(),
-    plan: jest.fn(),
-    evaluate: jest.fn(),
-    synthesize: jest.fn(),
+  let mockStreamSink: {
+    publishStep: jest.Mock;
+    publishFinalAnswer: jest.Mock;
   };
-  const mockCancellation = { isCancelled: jest.fn().mockResolvedValue(false) };
-  const mockCheckpointPause = {
-    pauseForApproval: jest.fn(),
-    pauseForClarification: jest.fn(),
+  let mockReactLoop: { run: jest.Mock };
+  let mockSupervisor: {
+    getAvailableAgents: jest.Mock;
+    plan: jest.Mock;
+    evaluate: jest.Mock;
+    synthesize: jest.Mock;
   };
-  const mockMetrics = {
-    incrementBehaviorSignal: jest.fn(),
-  };
-  const mockMemoryManager = {
-    buildBudget: jest.fn().mockReturnValue({
-      dataCharBudget: 10000,
-      historyCharBudget: 5000,
-      memoryCharBudget: 2000,
-      toolResultCharBudget: 10000,
-    }),
-  };
+  let mockCancellation: { isCancelled: jest.Mock };
+  let mockCheckpointPause: { pauseForApproval: jest.Mock; pauseForClarification: jest.Mock };
+  let mockMetrics: { incrementBehaviorSignal: jest.Mock };
+  let mockMemoryManager: { buildBudget: jest.Mock; getMemories: jest.Mock };
 
   const sampleData: IProcessAiTriggerJobData = {
-    userId: 'user-1',
-    channelId: 'channel-1',
-    conversationId: 'channel-1',
-    messageId: 'msg-1',
-    workspaceId: 'workspace-1',
+    messageId: 'trigger-msg-1',
+    channelId: 'chan-123',
+    userId: 'user-456',
+    sessionType: 'chat',
   };
 
   beforeEach(async () => {
-    jest.clearAllMocks();
-    process.env.DEFAULT_ORCHESTRATION_MODE = 'hybrid';
+    mockMessageSink = {
+      getMessageText: jest
+        .fn()
+        .mockResolvedValue('Kiểm tra đơn hàng trong SQL và gửi thông báo vào Slack'),
+      getRecentHistory: jest.fn().mockResolvedValue([]),
+    };
 
-    mockMessageSink.getMessageText.mockResolvedValue(
-      'Kiểm tra đơn hàng trong SQL và gửi thông báo vào Slack',
-    );
-    mockSupervisor.getAvailableAgents.mockResolvedValue([
-      { provider: 'sql_server', label: 'SQL Server', description: 'SQL DB' },
-      { provider: 'slack', label: 'Slack', description: 'Slack Chat' },
-    ]);
+    mockStreamSink = {
+      publishStep: jest.fn().mockResolvedValue(undefined),
+      publishFinalAnswer: jest.fn().mockResolvedValue(undefined),
+      emitStep: jest.fn().mockResolvedValue(undefined),
+    };
+
+    mockReactLoop = {
+      run: jest.fn(),
+    };
+
+    mockSupervisor = {
+      getAvailableAgents: jest.fn().mockResolvedValue([
+        { provider: 'sql_server', label: 'SQL Server' },
+        { provider: 'slack', label: 'Slack' },
+      ]),
+      plan: jest.fn(),
+      evaluate: jest.fn(),
+      synthesize: jest.fn(),
+    };
+
+    mockCancellation = {
+      isCancelled: jest.fn().mockResolvedValue(false),
+    };
+
+    mockCheckpointPause = {
+      pauseForApproval: jest.fn(),
+      pauseForClarification: jest.fn(),
+    };
+
+    mockMetrics = {
+      incrementBehaviorSignal: jest.fn(),
+    };
+
+    mockMemoryManager = {
+      buildBudget: jest.fn().mockReturnValue({ historyCharBudget: 2000 }),
+      getMemories: jest.fn().mockResolvedValue([]),
+    };
+
     mockReactLoop.run.mockResolvedValue({
       answer: 'Đã hoàn tất kiểm tra và gửi thông báo',
       toolCalls: [
@@ -83,18 +108,16 @@ describe('TurnResolverService — Hybrid Orchestration Routing (AC-4 & AC-5)', (
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TurnResolverService,
-        SingleAgentEngine,
-        DynamicSupervisorEngine,
+        AutonomousEngine,
         SmartExecutionRouter,
         {
           provide: EXECUTION_ENGINE_REGISTRY,
-          useFactory: (single: SingleAgentEngine, dynamic: DynamicSupervisorEngine) => {
+          useFactory: (autonomous: AutonomousEngine) => {
             const registry = new ExecutionEngineRegistryService();
-            registry.register(single);
-            registry.register(dynamic);
+            registry.register(autonomous);
             return registry;
           },
-          inject: [SingleAgentEngine, DynamicSupervisorEngine],
+          inject: [AutonomousEngine],
         },
         { provide: EXECUTION_ROUTER, useExisting: SmartExecutionRouter },
         { provide: MESSAGE_SINK, useValue: mockMessageSink },
@@ -120,10 +143,10 @@ describe('TurnResolverService — Hybrid Orchestration Routing (AC-4 & AC-5)', (
     delete process.env.DEFAULT_ORCHESTRATION_MODE;
   });
 
-  it('định tuyến yêu cầu thông thường trực tiếp vào Multi-Provider Single Agent, bỏ qua 4 bước Supervisor (AC-4)', async () => {
+  it('định tuyến yêu cầu thông thường trực tiếp vào Frontline ReAct của Autonomous Engine (< 2s) (AC-1)', async () => {
     const result = await service.resolveAnswer(sampleData, 'reply-msg-1');
 
-    // Chạy thẳng Single Agent
+    // Chạy thẳng Frontline ReAct của Autonomous Engine
     expect(mockReactLoop.run).toHaveBeenCalledWith(
       expect.objectContaining({
         providers: ['sql_server', 'slack'],
@@ -132,49 +155,41 @@ describe('TurnResolverService — Hybrid Orchestration Routing (AC-4 & AC-5)', (
       undefined,
     );
 
-    // Tuyệt đối không gọi Supervisor planning hay evaluate
+    // Tuyệt đối không gọi Supervisor planning khi hội thoại thông thường
     expect(mockSupervisor.plan).not.toHaveBeenCalled();
-    expect(mockSupervisor.evaluate).not.toHaveBeenCalled();
-    expect(mockSupervisor.synthesize).not.toHaveBeenCalled();
-
     expect(result.content).toBe('Đã hoàn tất kiểm tra và gửi thông báo');
     expect(result.toolCalls).toHaveLength(2);
   });
 
-  it('tự động chuyển sang Multi-Agent Supervisor khi phát hiện điều kiện chạy song song (Parallel Fan-out) (AC-5)', async () => {
-    mockMessageSink.getMessageText.mockResolvedValue(
-      'Quét đồng thời 5 kênh Slack #dev, #ops, #sales để tìm kiếm sự cố',
-    );
+  it('kích hoạt Tầng 2: Supervisor Planning khi có forcedMode=supervisor (AC-2)', async () => {
+    process.env.DEFAULT_ORCHESTRATION_MODE = EForcedExecutionMode.SUPERVISOR;
+
     mockSupervisor.plan.mockResolvedValue({
       action: 'respond',
-      answer: 'Kết quả từ Supervisor',
+      answer: 'Kết quả từ Supervisor Planning',
     });
 
     const result = await service.resolveAnswer(sampleData, 'reply-msg-2');
 
     // Kích hoạt Supervisor
     expect(mockSupervisor.plan).toHaveBeenCalled();
-    expect(mockReactLoop.run).not.toHaveBeenCalled();
-    expect(result.content).toBe('Kết quả từ Supervisor');
+    expect(result.content).toBe('Kết quả từ Supervisor Planning');
   });
 
-  it('tự động chuyển sang Multi-Agent Supervisor khi phát hiện điều kiện chạy Code Python Sandbox (AC-5)', async () => {
-    mockMessageSink.getMessageText.mockResolvedValue(
-      'Chạy script python để tính toán ma trận độ trễ',
-    );
+  it('kích hoạt Tầng 2: Supervisor Planning khi payload vượt ngưỡng an toàn (> 30.000 ký tự) (AC-2)', async () => {
+    mockMessageSink.getMessageText.mockResolvedValue('a'.repeat(30005));
     mockSupervisor.plan.mockResolvedValue({
       action: 'respond',
-      answer: 'Đã chạy python trên subagent compute',
+      answer: 'Kết quả tóm tắt payload quá khổ',
     });
 
     const result = await service.resolveAnswer(sampleData, 'reply-msg-3');
 
-    // Kích hoạt Supervisor
     expect(mockSupervisor.plan).toHaveBeenCalled();
-    expect(result.content).toBe('Đã chạy python trên subagent compute');
+    expect(result.content).toBe('Kết quả tóm tắt payload quá khổ');
   });
 
-  it('tạm dừng và tạo checkpoint HITL an toàn khi Single Agent gặp công cụ rủi ro cần duyệt (AC-3)', async () => {
+  it('tạm dừng và tạo checkpoint HITL an toàn khi Autonomous Engine gặp công cụ rủi ro cần duyệt (AC-4)', async () => {
     mockReactLoop.run.mockRejectedValueOnce(
       new ApprovalRequiredError(
         {
@@ -185,7 +200,6 @@ describe('TurnResolverService — Hybrid Orchestration Routing (AC-4 & AC-5)', (
         [],
       ),
     );
-    // pauseForApproval() trả AnswerResult ({ content, toolCalls, steps }).
     mockCheckpointPause.pauseForApproval.mockResolvedValueOnce({
       content: 'Đang chờ phê duyệt lệnh ghi',
       toolCalls: [],
@@ -197,7 +211,6 @@ describe('TurnResolverService — Hybrid Orchestration Routing (AC-4 & AC-5)', (
     expect(mockCheckpointPause.pauseForApproval).toHaveBeenCalledWith(
       sampleData,
       expect.any(String),
-      // Single Agent không có round của Supervisor nên SingleAgentEngine truyền [] (thiết kế hiện tại).
       [],
       expect.any(Array),
       expect.any(Array),
@@ -207,7 +220,7 @@ describe('TurnResolverService — Hybrid Orchestration Routing (AC-4 & AC-5)', (
         }),
       }),
       [],
-      EExecutionEngineMode.SINGLE_AGENT,
+      EExecutionEngineMode.AUTONOMOUS,
     );
     expect(result.content).toBe('Đang chờ phê duyệt lệnh ghi');
   });

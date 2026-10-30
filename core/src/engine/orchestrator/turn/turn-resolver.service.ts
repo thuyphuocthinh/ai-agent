@@ -24,7 +24,7 @@ import { MemoryManagerService } from '../../../memory/memory-manager.service';
  * Master Dispatcher (Tổng đài điều phối AI Orchestration).
  * Nhiệm vụ duy nhất:
  * 1. Thu thập ngữ cảnh câu hỏi, lịch sử và danh sách agent khả dụng.
- * 2. Phân loại tác vụ thông qua Execution Router.
+ * 2. Phân loại tác vụ thông qua Execution Router (Deterministic vs Autonomous).
  * 3. Phân bổ công việc tới Engine chuyên trách tương ứng trong Execution Engine Registry.
  *
  * Hoàn toàn tách biệt khỏi logic thực thi vòng lặp (Execution Engine).
@@ -50,7 +50,7 @@ export class TurnResolverService {
     private readonly workflowRunner?: WorkflowRunnerService,
   ) {}
 
-  async resolveAnswer(
+    async resolveAnswer(
     data: IProcessAiTriggerJobData,
     replyMessageId: string,
   ): Promise<AnswerResult> {
@@ -72,6 +72,15 @@ export class TurnResolverService {
 
     const isPipelineWorkflow =
       workflowId &&
+      (this.engineRegistry
+        .get(EExecutionEngineMode.DETERMINISTIC)
+        ?.canHandle({
+          userId: data.userId,
+          workspaceId: data.workspaceId,
+          channelId: data.channelId,
+          workflowId,
+          prompt: '',
+        }) ||
       this.engineRegistry
         .get(EExecutionEngineMode.PIPELINE_CHAINING)
         ?.canHandle({
@@ -80,7 +89,7 @@ export class TurnResolverService {
           channelId: data.channelId,
           workflowId,
           prompt: '',
-        });
+        }));
 
     if (!isPipelineWorkflow && workflowId && this.workflowRegistry && this.workflowRunner) {
       const workflow = this.workflowRegistry.get(workflowId);
@@ -115,12 +124,35 @@ export class TurnResolverService {
     });
 
     const targetEngineId = decision.engineId ?? decision.mode;
-    const engine =
-      this.engineRegistry.get(targetEngineId) ??
-      this.engineRegistry.get(EExecutionEngineMode.DYNAMIC_SUPERVISOR);
+    let engine = this.engineRegistry.get(targetEngineId);
+
+    // Ánh xạ fallback nếu engine mới chưa đăng ký trong registry
+    if (!engine) {
+      if (decision.mode === EExecutionEngineMode.DETERMINISTIC) {
+        engine = this.engineRegistry.get(EExecutionEngineMode.PIPELINE_CHAINING);
+      } else if (decision.mode === EExecutionEngineMode.AUTONOMOUS) {
+        engine =
+          this.engineRegistry.get(EExecutionEngineMode.SINGLE_AGENT) ??
+          this.engineRegistry.get(EExecutionEngineMode.DYNAMIC_SUPERVISOR);
+      } else {
+        engine =
+          this.engineRegistry.get(EExecutionEngineMode.DYNAMIC_SUPERVISOR) ??
+          this.engineRegistry.get(EExecutionEngineMode.AUTONOMOUS);
+      }
+    }
 
     if (engine) {
-      const answer = await engine.execute({ data, replyMessageId, prompt, agents, history });
+      const answer = await engine.execute({
+        data,
+        replyMessageId,
+        prompt,
+        agents,
+        history,
+        metadata: {
+          forcedMode: this.forcedModeFromEnv(),
+          routingDecision: decision,
+        },
+      });
       return { ...answer, routing: { mode: engine.id } };
     }
 
@@ -129,8 +161,8 @@ export class TurnResolverService {
     );
   }
 
-  private forcedModeFromEnv(): 'single' | 'supervisor' | 'auto' {
+  private forcedModeFromEnv(): string {
     const mode = process.env.DEFAULT_ORCHESTRATION_MODE;
-    return mode === 'single' || mode === 'supervisor' ? mode : 'auto';
+    return mode ?? 'auto';
   }
 }

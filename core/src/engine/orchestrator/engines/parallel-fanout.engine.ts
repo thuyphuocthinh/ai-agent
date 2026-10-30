@@ -46,6 +46,10 @@ const DEFAULT_MAX_CONCURRENCY = 8;
  * sau đó bơm toàn bộ kết quả vào 1 Aggregator Model (Model xịn) để tổng hợp báo cáo cuối.
  */
 @Injectable()
+/**
+ * @deprecated Từ kiến trúc Two-Engine Architecture, hãy sử dụng DeterministicEngine.
+ * Class này được giữ lại làm alias/fallback tương thích ngược cho các unit tests và checkpoints cũ.
+ */
 export class ParallelFanoutEngine implements IParallelFanoutEngine {
   readonly id = EExecutionEngineMode.PARALLEL_FANOUT;
   readonly name = 'Parallel Fan-Out & Aggregator Engine';

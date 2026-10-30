@@ -17,6 +17,10 @@ import {
 import { RunWorkflowOptions } from './workflow-runner.interface';
 
 @Injectable()
+/**
+ * @deprecated Từ kiến trúc Two-Engine Architecture, hãy sử dụng DeterministicEngine (DeterministicSingleRunner).
+ * Class này được giữ lại làm fallback tương thích ngược.
+ */
 export class WorkflowRunnerService {
   private readonly logger = new Logger(WorkflowRunnerService.name);
 
