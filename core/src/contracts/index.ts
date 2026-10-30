@@ -20,3 +20,4 @@ export * from './engine/deterministic-graph.interface';
 export * from './dtos';
 export * from './streaming/vercel-ui-stream.adapter';
 export * from './observability';
+export * from './storage/artifact-tmp.interface';

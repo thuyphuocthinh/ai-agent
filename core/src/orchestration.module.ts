@@ -41,6 +41,7 @@ import { ReadSkillTool } from './infrastructure/tools/native/read-skill.tool';
 import { CheckpointCleanupService } from './engine/hitl/checkpoint-cleanup.service';
 import { ResilienceModule } from './infrastructure/resilience/resilience.module';
 import { ToolsInfrastructureModule } from './infrastructure/tools/tools-infrastructure.module';
+import { StorageModule } from './infrastructure/storage';
 import { ObservabilityModule } from './infrastructure/observability/observability.module';
 import { EmbeddingModule } from './infrastructure/embedding/embedding.module';
 import { AgentCancellationService } from './engine/cancellation/agent-cancellation.service';
@@ -105,6 +106,7 @@ import { SecurityModule } from './security';
     ObservabilityModule,
     EmbeddingModule,
     ToolsInfrastructureModule,
+    StorageModule,
   ],
   controllers: [
     ChatController,
