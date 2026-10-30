@@ -38,6 +38,8 @@ import { SKILL_CATALOG_READER } from './contracts/skill/skill-catalog-reader.int
 import { SKILL_MATCHER } from './contracts/skill/skill-matcher.interface';
 import { SkillMatchService } from './memory/skill/skill-match.service';
 import { ReadSkillTool } from './infrastructure/tools/native/read-skill.tool';
+import { GoogleSheetsStructureTool } from './infrastructure/tools/native/google-sheets-structure.tool';
+import { GoogleSheetsBatchUpdateTool } from './infrastructure/tools/native/google-sheets-batch-update.tool';
 import { CheckpointCleanupService } from './engine/hitl/checkpoint-cleanup.service';
 import { ResilienceModule } from './infrastructure/resilience/resilience.module';
 import { ToolsInfrastructureModule } from './infrastructure/tools/tools-infrastructure.module';
@@ -168,6 +170,8 @@ import { SecurityModule } from './security';
     SkillMatchService,
     { provide: SKILL_MATCHER, useExisting: SkillMatchService },
     ReadSkillTool,
+    GoogleSheetsStructureTool,
+    GoogleSheetsBatchUpdateTool,
     PrismaTriggerClaimService,
     AgentCancellationService,
     TurnResolverService,

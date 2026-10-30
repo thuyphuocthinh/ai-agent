@@ -102,6 +102,38 @@ const TOOLS: McpToolDto[] = [
     },
     annotations: { destructiveHint: true },
   },
+  {
+    name: 'get_sheet_structure',
+    description:
+      'Phân tích cấu trúc bảng tính Google Sheet (metadata): danh sách tabs, headers, dòng trống đầu tiên và các cột công thức cần bảo vệ.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        spreadsheet_id: { type: 'string', description: 'Id bảng tính' },
+        spreadsheetId: { type: 'string', description: 'Id bảng tính (camelCase)' },
+        sheetName: { type: 'string', description: 'Tên tab/trang tính cần kiểm tra' },
+        tab: { type: 'string', description: 'Tên tab (alias)' },
+      },
+    },
+    annotations: { readOnlyHint: true },
+  },
+  {
+    name: 'batch_update_values',
+    description:
+      'Cập nhật hàng loạt dữ liệu vào Google Sheet trong 1 request nguyên tử (Atomic Batch).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        spreadsheet_id: { type: 'string' },
+        spreadsheetId: { type: 'string' },
+        range: { type: 'string', description: 'Vùng toạ độ cần ghi, ví dụ "Trang tính1!A2"' },
+        values: { type: 'array', items: { type: 'array', items: {} }, description: 'Ma trận giá trị 2D' },
+        payloadFilePath: { type: 'string' },
+        payload_file_path: { type: 'string' },
+      },
+    },
+    annotations: { destructiveHint: true },
+  },
 ];
 
 const colToIndex = (col: string): number =>
@@ -160,7 +192,7 @@ export function createMockSheetsProvider(): MockProvider {
   const sheets = createSpreadsheets();
 
   const findSheet = (args: Record<string, unknown>): Spreadsheet | CallToolResponseDto => {
-    const id = stringArg(args, 'spreadsheet_id');
+    const id = stringArg(args, 'spreadsheet_id') ?? stringArg(args, 'spreadsheetId');
     if (!id) return errorResult('Thiếu tham số "spreadsheet_id"');
     return (
       sheets.find((s) => s.id === id) ??
@@ -173,6 +205,67 @@ export function createMockSheetsProvider(): MockProvider {
       tab ??
       errorResult(`Không có tab "${name}" trong "${sheet.name}". Tab hợp lệ: ${sheet.tabs.map((t) => t.name).join(', ')}`)
     );
+  };
+
+  const getSheetStructure: MockProvider['call'] = (_name, args) => {
+    const sheet = findSheet(args);
+    if (isToolResult(sheet)) return sheet;
+    const tabName = stringArg(args, 'sheetName') ?? stringArg(args, 'tab');
+    const tab = findTab(sheet, tabName);
+    if (isToolResult(tab)) return tab;
+
+    const headers = tab.rows.length > 0 ? tab.rows[0].map(String) : [];
+    const firstEmptyRowIndex = tab.rows.length + 1;
+    const lastDataRowIndex = tab.rows.length;
+
+    return jsonResult({
+      spreadsheetId: sheet.id,
+      activeSheetName: tab.name,
+      sheets: sheet.tabs.map((t, idx) => ({
+        sheetId: idx,
+        title: t.name,
+        index: idx,
+        rowCount: 1000,
+        columnCount: 26,
+      })),
+      headers,
+      firstEmptyRowIndex,
+      lastDataRowIndex,
+      protectedFormulaColumns: [
+        { columnIndex: 3, columnLetter: 'D', formulaSample: '=C2*0.08' },
+        { columnIndex: 4, columnLetter: 'E', formulaSample: '=C2+D2' },
+      ],
+    });
+  };
+
+  const batchUpdateValues: MockProvider['call'] = (_name, args) => {
+    const sheet = findSheet(args);
+    if (isToolResult(sheet)) return sheet;
+
+    let matrix: unknown[][] = [];
+    if (Array.isArray(args.values) && args.values.length > 0) {
+      matrix = args.values as unknown[][];
+    } else if (stringArg(args, 'payloadFilePath') || stringArg(args, 'payload_file_path')) {
+      matrix = [['MOCK-001', 'Khách hàng A', 100000]];
+    } else {
+      return errorResult('Phải cung cấp values (mảng 2D) hoặc payloadFilePath hợp lệ.');
+    }
+
+    const { tab: tabName, cells } = splitRange(stringArg(args, 'range') ?? '');
+    const tab = findTab(sheet, tabName);
+    if (isToolResult(tab)) return tab;
+
+    const rows = matrix.length;
+    const cols = rows > 0 && Array.isArray(matrix[0]) ? matrix[0].length : 0;
+    const range = cells ? `${tab.name}!${cells}` : `${tab.name}!A${tab.rows.length + 1}`;
+
+    return jsonResult({
+      spreadsheetId: sheet.id,
+      updatedRange: range,
+      updatedRows: rows,
+      updatedColumns: cols,
+      updatedCells: rows * cols,
+    });
   };
 
   const readRange: MockProvider['call'] = (_name, args) => {
@@ -231,6 +324,8 @@ export function createMockSheetsProvider(): MockProvider {
     read_range: readRange,
     append_rows: appendRows,
     update_cells: updateCells,
+    get_sheet_structure: getSheetStructure,
+    batch_update_values: batchUpdateValues,
   };
 
   return {
