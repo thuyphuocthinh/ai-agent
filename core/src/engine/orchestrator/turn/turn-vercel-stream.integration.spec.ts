@@ -4,8 +4,7 @@ import type { UIMessage, UIMessageChunk } from 'ai';
 import { IProcessAiTriggerJobData } from '@agent/core/infrastructure/queue';
 import { McpToolConnectorService } from '../../../infrastructure/tools/mcp/mcp-tool-connector.service';
 import { TurnResolverService } from './turn-resolver.service';
-import { SingleAgentEngine } from '../engines/single-agent.engine';
-import { DynamicSupervisorEngine } from '../engines/dynamic-supervisor.engine';
+import { AutonomousEngine } from '../engines/autonomous.engine';
 import { ApprovalContinuationPlannerService } from '../../hitl/approval-continuation-planner.service';
 import { SmartExecutionRouter } from '../engines/smart-execution-router.service';
 import { ExecutionEngineRegistryService } from '../engines/execution-engine-registry.service';
@@ -122,18 +121,16 @@ describe('1 turn thật → AgentStreamService → VercelUiStreamAdapter → ai@
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TurnResolverService,
-        SingleAgentEngine,
-        DynamicSupervisorEngine,
+        AutonomousEngine,
         SmartExecutionRouter,
         {
           provide: EXECUTION_ENGINE_REGISTRY,
-          useFactory: (single: SingleAgentEngine, dynamic: DynamicSupervisorEngine) => {
+          useFactory: (autonomous: AutonomousEngine) => {
             const registry = new ExecutionEngineRegistryService();
-            registry.register(single);
-            registry.register(dynamic);
+            registry.register(autonomous);
             return registry;
           },
-          inject: [SingleAgentEngine, DynamicSupervisorEngine],
+          inject: [AutonomousEngine],
         },
         { provide: EXECUTION_ROUTER, useExisting: SmartExecutionRouter },
         ReactLoopService,

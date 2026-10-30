@@ -32,7 +32,9 @@ describe('DynamicToolRegistryService', () => {
     } as unknown as jest.Mocked<OpenApiParserService>;
 
     mockEmbeddingProvider = {
-      embed: jest.fn().mockResolvedValue([0.1, 0.2, 0.3]),
+      embed: jest.fn().mockImplementation(async (texts: string[]) =>
+        texts.map(() => [0.1, 0.2, 0.3]),
+      ),
     } as unknown as jest.Mocked<OpenAiEmbeddingProvider>;
 
     mockLoader = {
@@ -124,5 +126,65 @@ describe('DynamicToolRegistryService', () => {
     service.markTokenRefreshed('temp-provider');
     service.removeProvider('temp-provider');
     expect(service.getAllProviders()).not.toContain('temp-provider');
+  });
+
+  it('trả về 100% tools khi số lượng tools <= 12', async () => {
+    const smallTools = Array.from({ length: 10 }, (_, i) => ({
+      name: `tool_${i}`,
+      description: `Tool description ${i}`,
+      inputSchema: { type: 'object' },
+    }));
+
+    service.registerProviderSpec({
+      providerId: 'small-provider',
+      specUrl: 'https://example.com/spec',
+      document: sampleDoc,
+      tools: smallTools,
+      authType: EDynamicProviderAuthType.NONE,
+    });
+
+    const tools = await service.getTools('small-provider', 'tìm kiếm query');
+    expect(tools).toHaveLength(10);
+    expect(mockEmbeddingProvider.embed).not.toHaveBeenCalled();
+  });
+
+  it('kích hoạt SemanticToolIndex khi tools > 12 và có query', async () => {
+    const largeTools = Array.from({ length: 20 }, (_, i) => ({
+      name: `endpoint_api_${i}`,
+      description: `Mô tả endpoint API số ${i}`,
+      inputSchema: { type: 'object' },
+    }));
+
+    service.registerProviderSpec({
+      providerId: 'large-provider',
+      specUrl: 'https://example.com/spec',
+      document: sampleDoc,
+      tools: largeTools,
+      authType: EDynamicProviderAuthType.NONE,
+    });
+
+    const tools = await service.getTools('large-provider', 'tìm endpoint');
+    // Top-K là 8 tools
+    expect(tools).toHaveLength(8);
+    expect(mockEmbeddingProvider.embed).toHaveBeenCalled();
+  });
+
+  it('fallback về tối đa 16 tools đầu khi tools > 12 mà không có query', async () => {
+    const largeTools = Array.from({ length: 25 }, (_, i) => ({
+      name: `endpoint_api_${i}`,
+      description: `Mô tả endpoint API số ${i}`,
+      inputSchema: { type: 'object' },
+    }));
+
+    service.registerProviderSpec({
+      providerId: 'large-no-query',
+      specUrl: 'https://example.com/spec',
+      document: sampleDoc,
+      tools: largeTools,
+      authType: EDynamicProviderAuthType.NONE,
+    });
+
+    const tools = await service.getTools('large-no-query');
+    expect(tools).toHaveLength(16);
   });
 });

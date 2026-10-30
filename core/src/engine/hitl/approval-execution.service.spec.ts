@@ -19,7 +19,7 @@ import { TurnResolverService } from '../orchestrator/turn/turn-resolver.service'
 import { MemoryManagerService } from '../../memory/memory-manager.service';
 import { ApprovalContinuationPlannerService } from './approval-continuation-planner.service';
 import { resolveDataCharBudget } from '../../common/text/token-budget.util';
-import { DynamicSupervisorEngine } from '../orchestrator/engines/dynamic-supervisor.engine';
+import { AutonomousEngine } from '../orchestrator/engines/autonomous.engine';
 
 // approval-execution.service.ts import @agent/core/common ở module scope (extractTextFromMcpResult)
 // — mock thẳng barrel để tránh kéo theo "nanoid" (ESM-only) mà jest không transform được.
@@ -41,7 +41,10 @@ describe('ApprovalExecutionService', () => {
     markToolExecuted: jest.fn(),
   };
   const mockMcpClient = { callTool: jest.fn() };
-  const mockCancellation = { startTurn: jest.fn() };
+  const mockCancellation = {
+    startTurn: jest.fn(),
+    isCancelled: jest.fn().mockResolvedValue(false),
+  };
   const mockTurnResolver = { continueRounds: jest.fn() };
   const mockMemoryManager = {
     buildBudget: jest.fn((modelId: string) => ({
@@ -80,20 +83,20 @@ describe('ApprovalExecutionService', () => {
         Promise.resolve({ remainingSteps: checkpoint.remainingSteps, resultText }),
     );
 
-    const dynamicSupervisorEngine = new DynamicSupervisorEngine(
-      {} as any,
-      mockSupervisor as any,
-      mockAgentStream as any,
-      mockCancellation as any,
-      {} as any,
-      {} as any,
-      mockMemoryManager as any,
-      mockContinuationPlanner as any,
-      mockMcpClient as any,
-      mockCheckpoint as any,
+    const autonomousEngine = new AutonomousEngine(
+      {} as any, // reactLoop
+      mockCancellation as any, // cancellation
+      {} as any, // checkpointPause
+      {} as any, // metrics
+      {} as any, // subAgentSpawner
+      mockSupervisor as any, // supervisor
+      mockAgentStream as any, // streamSink
+      mockMemoryManager as any, // memoryManager
+      mockMcpClient as any, // toolProvider
+      mockCheckpoint as any, // checkpointService
     );
     jest
-      .spyOn(dynamicSupervisorEngine, 'continueRounds')
+      .spyOn(autonomousEngine, 'continueSupervisorRounds')
       .mockImplementation((...args: any[]) =>
         (mockTurnResolver.continueRounds as any)(...args),
       );
@@ -124,7 +127,7 @@ describe('ApprovalExecutionService', () => {
                 mode === 'autonomous' ||
                 mode === 'single_agent'
               ) {
-                return dynamicSupervisorEngine;
+                return autonomousEngine;
               }
               return undefined;
             }),

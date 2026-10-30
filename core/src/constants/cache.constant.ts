@@ -74,4 +74,24 @@ export const CACHE = {
       ],
     },
   },
+  AGENTS: {
+    _VER: 'v1',
+    SETTINGS: {
+      AVAILABLE_TTL: TTL.TINY, // 60 giây (tự động cộng Jitter chống Cache Stampede qua CachedService)
+    },
+    KEYS: {
+      AVAILABLE: (userId: string, workspaceId = 'default'): string =>
+        `${GLOBAL_PREFIX}:${GLOBAL_VER}:agents:v1:available:${userId}:${workspaceId}`,
+    },
+  },
+  SUMMARY: {
+    _VER: 'v1',
+    SETTINGS: {
+      TTL: TTL.MEDIUM, // 1 giờ (3600 giây)
+    },
+    KEYS: {
+      CONVERSATION: (conversationId: string, turnMarker: string): string =>
+        `${GLOBAL_PREFIX}:${GLOBAL_VER}:summary:v1:${conversationId}:${turnMarker}`,
+    },
+  },
 };

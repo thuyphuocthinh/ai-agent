@@ -13,6 +13,7 @@ import { DeterministicStepConfig } from '../../../../contracts/engine/determinis
 import {
   EPipelineStepFailurePolicy,
   EPipelineStepType,
+  PipelineDefinition,
 } from '../../../../contracts/engine/pipeline-chaining.interface';
 import { ReactLoopService } from '../../../loop/react-loop.service';
 import { AgentCancellationService } from '../../../cancellation/agent-cancellation.service';
@@ -28,6 +29,9 @@ import {
 import { ExecutedStepDto } from '../../../../contracts/dtos/message-client.dto';
 import { buildReactRequestIdentity } from '../../utils/react-request-identity.util';
 import { AvailableAgentDto } from '../../../../contracts/dtos/supervisor.dto';
+import { JsonRepair, JsonExtractor } from 'agentic-io-parser';
+import { isZodSchema } from '../../../../common/zod.util';
+import { buildSchemaCorrectionPrompt } from '../utils/pipeline-prompt.util';
 
 const MAX_STEP_INPUT_CHARS = 50_000;
 
@@ -47,6 +51,8 @@ interface SequenceRunState {
 @Injectable()
 export class DeterministicSequenceRunner {
   private readonly logger = new Logger(DeterministicSequenceRunner.name);
+  private readonly jsonRepair = new JsonRepair();
+  private readonly jsonExtractor = new JsonExtractor();
 
   constructor(
     private readonly reactLoop: ReactLoopService,
@@ -84,6 +90,34 @@ export class DeterministicSequenceRunner {
     }
 
     return buildAnswer(state.currentInput, state.allToolCalls, state.executedSteps);
+  }
+
+  /**
+   * Tương thích ngược: thực thi PipelineDefinition trực tiếp
+   */
+  async executePipeline(
+    pipeline: PipelineDefinition,
+    context: EngineExecutionContext,
+  ): Promise<AnswerResult> {
+    const steps: DeterministicStepConfig[] = pipeline.steps.map((s) => ({
+      id: s.id,
+      name: s.name,
+      type: s.type,
+      promptTemplate: s.promptTemplate,
+      systemPrompt: s.systemPrompt,
+      model: s.model,
+      tools: s.tools,
+      skills: s.skills,
+      provider: s.provider,
+      outputSchema: s.outputSchema,
+      condition: s.condition,
+      branchMap: s.branchMap,
+      defaultNextStepId: s.defaultNextStepId,
+      failurePolicy: s.failurePolicy,
+      maxStepRetries: s.maxStepRetries,
+      transform: s.transform,
+    }));
+    return this.run(steps, context, pipeline.id);
   }
 
   private async runStep(
@@ -131,16 +165,22 @@ export class DeterministicSequenceRunner {
     };
 
     try {
-      const result = await this.reactLoop.run(requestDto, context.signal);
-      state.currentInput = result.answer;
-      if (result.toolCalls?.length) {
-        state.allToolCalls.push(...result.toolCalls);
+      const { stepOutput, stepToolCalls } = await this.runStepWithRetry(
+        sequenceId,
+        step,
+        requestDto,
+        context.signal,
+      );
+
+      state.currentInput = stepOutput;
+      if (stepToolCalls.length > 0) {
+        state.allToolCalls.push(...stepToolCalls);
       }
       state.executedSteps.push({
         agent: step.id,
         task: step.name,
         persona: { role: step.name, goal: step.systemPrompt ?? step.name },
-        toolCalls: result.toolCalls ?? [],
+        toolCalls: stepToolCalls,
         result: state.currentInput,
       });
 
@@ -233,6 +273,125 @@ export class DeterministicSequenceRunner {
     this.logger.warn(
       `[DeterministicSequenceRunner: ${sequenceId}] Input step "${stepId}" quá lớn (${input.length} ký tự), cắt về ${MAX_STEP_INPUT_CHARS}`,
     );
-    return input.slice(0, MAX_STEP_INPUT_CHARS) + '\n...[Đã cắt bớt bảo đảm token budget]';
+    return input.slice(0, MAX_STEP_INPUT_CHARS) + '\n...[Đã cắt bớt do quá độ dài an toàn]';
+  }
+
+  private async runStepWithRetry(
+    sequenceId: string,
+    step: DeterministicStepConfig,
+    requestDto: RunReactLoopRequestDto,
+    signal?: AbortSignal,
+  ): Promise<{ stepOutput: string; stepToolCalls: ToolCallTraceDto[] }> {
+    let stepOutput = '';
+    let stepToolCalls: ToolCallTraceDto[] = [];
+    let executionAttempt = 0;
+    const maxRetries =
+      step.failurePolicy === EPipelineStepFailurePolicy.RETRY
+        ? (step.maxStepRetries ?? 2)
+        : 0;
+
+    while (executionAttempt <= maxRetries) {
+      executionAttempt++;
+      try {
+        const result = await this.reactLoop.run(requestDto, signal);
+        stepOutput = result.answer;
+        stepToolCalls = result.toolCalls ?? [];
+
+        stepOutput = await this.validateAndSelfHealSchema(
+          step,
+          stepOutput,
+          requestDto,
+          signal,
+        );
+        break;
+      } catch (runErr) {
+        if (
+          runErr instanceof TurnCancelledError ||
+          runErr instanceof ApprovalRequiredError ||
+          runErr instanceof ClarificationRequiredError
+        ) {
+          throw runErr;
+        }
+        if (executionAttempt <= maxRetries) {
+          this.logger.warn(
+            `[DeterministicSequenceRunner: ${sequenceId}] Step "${step.id}" thất bại lần ${executionAttempt}/${maxRetries + 1}, thử lại...`,
+          );
+          continue;
+        }
+        throw runErr;
+      }
+    }
+    return { stepOutput, stepToolCalls };
+  }
+
+  private async validateAndSelfHealSchema(
+    step: DeterministicStepConfig,
+    output: string,
+    baseRequestDto: RunReactLoopRequestDto,
+    signal?: AbortSignal,
+  ): Promise<string> {
+    if (!step.outputSchema) return output;
+
+    const parsedPayload = this.parseOrRepairJson(output);
+
+    if (isZodSchema(step.outputSchema)) {
+      const parseResult = step.outputSchema.safeParse(parsedPayload);
+      if (parseResult.success) {
+        return typeof parsedPayload === 'string'
+          ? parsedPayload
+          : JSON.stringify(parsedPayload, null, 2);
+      }
+
+      this.logger.warn(
+        `[DeterministicSequenceRunner Step: ${step.id}] Output không khớp schema. Kích hoạt 1-shot self-healing...`,
+      );
+
+      const correctionPrompt = buildSchemaCorrectionPrompt(
+        JSON.stringify(parseResult.error.issues ?? parseResult.error.message),
+        output,
+      );
+
+      try {
+        const healedResult = await this.reactLoop.run(
+          {
+            ...baseRequestDto,
+            prompt: correctionPrompt,
+          },
+          signal,
+        );
+
+        const healedPayload = this.parseOrRepairJson(healedResult.answer);
+        const recheck = step.outputSchema.safeParse(healedPayload);
+        if (recheck.success) {
+          this.logger.log(
+            `[DeterministicSequenceRunner Step: ${step.id}] 1-shot self-healing thành công! Output đã hợp lệ.`,
+          );
+          return JSON.stringify(healedPayload, null, 2);
+        }
+      } catch (healError) {
+        this.logger.warn(
+          `[DeterministicSequenceRunner Step: ${step.id}] 1-shot self-healing thất bại: ${(healError as Error)?.message}`,
+        );
+      }
+    }
+
+    return output;
+  }
+
+  private parseOrRepairJson(rawText: string): unknown {
+    try {
+      return JSON.parse(rawText);
+    } catch {
+      try {
+        return this.jsonRepair.repairAndParse(rawText);
+      } catch {
+        try {
+          const extracted = this.jsonExtractor.extract(rawText);
+          return this.jsonRepair.repairAndParse(extracted);
+        } catch {
+          return null;
+        }
+      }
+    }
   }
 }

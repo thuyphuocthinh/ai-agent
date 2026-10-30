@@ -2,8 +2,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { z } from 'zod';
 import { ToolOutputCompressor } from '../../common/text/tool-output-compressor';
-import { SingleAgentEngine } from '../../engine/orchestrator/engines/single-agent.engine';
-import { PipelineChainingEngine } from '../../engine/orchestrator/engines/pipeline-chaining.engine';
+import { AutonomousEngine } from '../../engine/orchestrator/engines/autonomous.engine';
+import { DeterministicSequenceRunner } from '../../engine/orchestrator/engines/deterministic/deterministic-sequence.runner';
 import {
   ECheckpointKind,
   EApprovalAction,
@@ -62,7 +62,7 @@ async function main() {
   } as unknown as CheckpointPauseService;
   const mockMetrics = { incrementBehaviorSignal: () => {} } as unknown as MetricsRegistryService;
 
-  const singleEngine = new SingleAgentEngine(mockReactLoop, mockCancellation, mockPause, mockMetrics);
+  const singleEngine = new AutonomousEngine(mockReactLoop, mockCancellation, mockPause, mockMetrics);
   const singleResult = await singleEngine.execute({
     data: { userId: 'u1', channelId: 'c1', conversationId: 'conv1', messageId: 'm1' },
     replyMessageId: 'reply1',
@@ -113,7 +113,7 @@ async function main() {
     },
   } as unknown as ReactLoopService;
 
-  const singleEngineClarify = new SingleAgentEngine(mockReactLoopClarify, mockCancellation, mockPauseWithClarify, mockMetrics);
+  const singleEngineClarify = new AutonomousEngine(mockReactLoopClarify, mockCancellation, mockPauseWithClarify, mockMetrics);
   await singleEngineClarify.execute({
     data: { userId: 'u1', channelId: 'c1', conversationId: 'conv1', messageId: 'm2' },
     replyMessageId: 'reply2',
@@ -186,8 +186,8 @@ async function main() {
     },
   } as unknown as ReactLoopService;
 
-  const pipelineEngineHeal = new PipelineChainingEngine(mockReactLoopHealing, mockCancellation, mockPause, mockMetrics);
-  pipelineEngineHeal.registerPipeline({
+  const pipelineEngineHeal = new DeterministicSequenceRunner(mockReactLoopHealing, mockPause, mockCancellation);
+  const pipelineDef = {
     id: 'verify-normalize-pipeline',
     name: 'Verify Normalization Pipeline',
     steps: [
@@ -197,15 +197,14 @@ async function main() {
         outputSchema: NormalizedCrmSchema,
       },
     ],
-  });
+  };
 
-  const healResult = await pipelineEngineHeal.execute({
+  const healResult = await pipelineEngineHeal.executePipeline(pipelineDef, {
     data: { userId: 'u1', channelId: 'c1', conversationId: 'conv1', messageId: 'm3' },
     replyMessageId: 'reply3',
     prompt: 'Chuẩn hóa doanh thu khách hàng',
     agents: [],
     history: [],
-    metadata: { pipelineId: 'verify-normalize-pipeline' },
   });
 
   console.log(`  ${GREEN}✔ Kết quả:${RESET} 1-Shot Self-Healing đã sửa thành công dữ liệu đầu ra:`);

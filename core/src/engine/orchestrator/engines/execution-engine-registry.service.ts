@@ -37,29 +37,10 @@ export class ExecutionEngineRegistryService implements IExecutionEngineRegistry 
   }
 
   /**
-   * Lấy engine theo id định danh hoặc alias tương thích ngược.
+   * Lấy engine theo id định danh.
    */
   get(id: string): IExecutionEngine | undefined {
-    const direct = this.engines.get(id);
-    if (direct) return direct;
-
-    // Ánh xạ alias tương thích ngược sang 2 Engine mới
-    if (
-      id === EExecutionEngineMode.PIPELINE_CHAINING ||
-      id === EExecutionEngineMode.PARALLEL_FANOUT ||
-      id === EExecutionEngineMode.WORKFLOW
-    ) {
-      return this.engines.get(EExecutionEngineMode.DETERMINISTIC);
-    }
-
-    if (
-      id === EExecutionEngineMode.SINGLE_AGENT ||
-      id === EExecutionEngineMode.DYNAMIC_SUPERVISOR
-    ) {
-      return this.engines.get(EExecutionEngineMode.AUTONOMOUS);
-    }
-
-    return undefined;
+    return this.engines.get(id);
   }
 
   /**

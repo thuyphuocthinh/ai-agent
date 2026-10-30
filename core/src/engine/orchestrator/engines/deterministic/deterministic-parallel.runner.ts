@@ -16,7 +16,10 @@ import {
   DeterministicParallelConfig,
   DeterministicWorkerConfig,
 } from '../../../../contracts/engine/deterministic-graph.interface';
-import { FanoutWorkerResult } from '../../../../contracts/engine/parallel-fanout.interface';
+import {
+  FanoutDefinition,
+  FanoutWorkerResult,
+} from '../../../../contracts/engine/parallel-fanout.interface';
 import { ReactLoopService } from '../../../loop/react-loop.service';
 import { AgentCancellationService } from '../../../cancellation/agent-cancellation.service';
 import { assertNotCancelled } from '../../../cancellation/assert-not-cancelled.util';
@@ -153,6 +156,31 @@ export class DeterministicParallelRunner {
     ];
 
     return buildAnswer(aggregatorResult, allToolCalls, executedSteps);
+  }
+
+  /**
+   * Tương thích ngược: thực thi FanoutDefinition trực tiếp
+   */
+  async executeFanout(
+    fanout: FanoutDefinition,
+    context: EngineExecutionContext,
+  ): Promise<AnswerResult> {
+    return this.run(
+      {
+        id: fanout.id,
+        name: fanout.name,
+        workers: fanout.workers.map((w) => ({
+          id: w.id,
+          name: w.name,
+          prompt: w.prompt,
+          provider: w.provider,
+          tools: w.tools,
+        })),
+        maxConcurrency: fanout.maxConcurrency,
+        aggregatorModel: fanout.aggregatorModel,
+      },
+      context,
+    );
   }
 
   private async runWorker(

@@ -32,7 +32,7 @@ import { ActionAuditService, EReviewerType, EPolicyVerdict } from '../../securit
  * Nhiệm vụ duy nhất:
  * 1. Claim checkpoint để chống trùng lặp thực thi (idempotency).
  * 2. Ủy quyền tiếp tục phiên làm việc (resume) cho Execution Engine tương ứng
- *    (SingleAgentEngine, PipelineChainingEngine, hoặc DynamicSupervisorEngine).
+ *    (DeterministicEngine hoặc AutonomousEngine).
  */
 @Injectable()
 export class ApprovalExecutionService {

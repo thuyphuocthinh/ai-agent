@@ -52,42 +52,44 @@ describe('TurnResolverService — gắn routing vào kết quả', () => {
       toolCalls: [{ tool: 'x.y', status: 'success' }],
       steps: [{ agent: 'a', task: 't', toolCalls: [] }],
     };
-    engines.set(EExecutionEngineMode.SINGLE_AGENT, {
-      id: EExecutionEngineMode.SINGLE_AGENT,
+    engines.set(EExecutionEngineMode.AUTONOMOUS, {
+      id: EExecutionEngineMode.AUTONOMOUS,
       execute: jest.fn().mockResolvedValue(answer),
     });
-    router.route.mockResolvedValue({ mode: EExecutionEngineMode.SINGLE_AGENT, reason: 'r' });
+    router.route.mockReturnValue({ mode: EExecutionEngineMode.AUTONOMOUS, engineId: EExecutionEngineMode.AUTONOMOUS, reason: 'r' });
 
     const result = await build().resolveAnswer(data, 'reply-1');
 
-    expect(result).toEqual({ ...answer, routing: { mode: 'single_agent' } });
+    expect(result).toEqual({ ...answer, routing: { mode: 'autonomous' } });
   });
 
-  it('engine được chọn không tồn tại → fallback Dynamic Supervisor và routing ghi đúng engine thực sự chạy', async () => {
-    engines.set(EExecutionEngineMode.DYNAMIC_SUPERVISOR, {
-      id: EExecutionEngineMode.DYNAMIC_SUPERVISOR,
-      execute: jest.fn().mockResolvedValue({ content: 'từ supervisor' }),
+  it('engine được chọn không tồn tại → ném lỗi rõ ràng, không fallback im lặng', async () => {
+    router.route.mockReturnValue({ mode: 'engine_khong_ton_tai', engineId: 'engine_khong_ton_tai', reason: 'r' });
+
+    await expect(build().resolveAnswer(data, 'reply-1')).rejects.toThrow(
+      'Không tìm thấy engine "engine_khong_ton_tai"',
+    );
+  });
+
+  it('fixed workflow → định tuyến qua Deterministic Engine', async () => {
+    engines.set(EExecutionEngineMode.DETERMINISTIC, {
+      id: EExecutionEngineMode.DETERMINISTIC,
+      execute: jest.fn().mockResolvedValue({ content: 'xong workflow' }),
     });
-    router.route.mockResolvedValue({ mode: 'engine_khong_ton_tai', reason: 'r' });
+    router.route.mockReturnValue({
+      mode: EExecutionEngineMode.DETERMINISTIC,
+      engineId: EExecutionEngineMode.DETERMINISTIC,
+      reason: 'Kịch bản định sẵn',
+    });
 
-    const result = await build().resolveAnswer(data, 'reply-1');
-
-    expect(result.routing).toEqual({ mode: 'dynamic_supervisor' });
-  });
-
-  it('fixed workflow → routing.mode = "workflow" kèm tên workflow', async () => {
-    workflowRegistry.get.mockReturnValue({ id: 'wf-1', name: 'Quy trình nhập hàng' });
-    workflowRunner.runWorkflow.mockResolvedValue({ content: 'xong workflow' });
-
-    const result = await build(true).resolveAnswer(
+    const result = await build().resolveAnswer(
       { ...(data as object), workflowId: 'wf-1' } as never,
       'reply-1',
     );
 
     expect(result).toEqual({
       content: 'xong workflow',
-      routing: { mode: 'workflow', label: 'Quy trình nhập hàng' },
+      routing: { mode: 'deterministic' },
     });
-    expect(router.route).not.toHaveBeenCalled();
   });
 });

@@ -18,6 +18,13 @@ const FORCED_MODE_TO_ENGINE: Record<string, EExecutionEngineMode> = {
   [EForcedExecutionMode.FANOUT]: EExecutionEngineMode.PARALLEL_FANOUT,
 };
 
+const LEGACY_MODE_TO_UNIFIED_ENGINE: Record<string, EExecutionEngineMode> = {
+  [EExecutionEngineMode.SINGLE_AGENT]: EExecutionEngineMode.AUTONOMOUS,
+  [EExecutionEngineMode.DYNAMIC_SUPERVISOR]: EExecutionEngineMode.AUTONOMOUS,
+  [EExecutionEngineMode.PIPELINE_CHAINING]: EExecutionEngineMode.DETERMINISTIC,
+  [EExecutionEngineMode.PARALLEL_FANOUT]: EExecutionEngineMode.DETERMINISTIC,
+};
+
 /**
  * SmartExecutionRouter
  *
@@ -89,6 +96,7 @@ export class SmartExecutionRouter implements IExecutionRouter {
     mode: EExecutionEngineMode,
     reason: string,
   ): EngineRoutingDecision {
-    return { mode, engineId: mode, reason };
+    const engineId = LEGACY_MODE_TO_UNIFIED_ENGINE[mode] ?? mode;
+    return { mode, engineId, reason };
   }
 }

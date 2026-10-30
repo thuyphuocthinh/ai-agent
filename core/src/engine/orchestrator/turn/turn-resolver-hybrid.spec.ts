@@ -177,7 +177,7 @@ describe('TurnResolverService — Adaptive Autonomous Multi-Agent (AC-1 & AC-2)'
   });
 
   it('kích hoạt Tầng 2: Supervisor Planning khi payload vượt ngưỡng an toàn (> 30.000 ký tự) (AC-2)', async () => {
-    mockMessageSink.getMessageText.mockResolvedValue('a'.repeat(30005));
+    mockMessageSink.getMessageText.mockResolvedValue('a'.repeat(100005));
     mockSupervisor.plan.mockResolvedValue({
       action: 'respond',
       answer: 'Kết quả tóm tắt payload quá khổ',

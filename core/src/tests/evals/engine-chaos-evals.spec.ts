@@ -1,8 +1,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { z } from 'zod';
-import { SingleAgentEngine } from '../../engine/orchestrator/engines/single-agent.engine';
-import { PipelineChainingEngine } from '../../engine/orchestrator/engines/pipeline-chaining.engine';
+import { AutonomousEngine } from '../../engine/orchestrator/engines/autonomous.engine';
+import { DeterministicSequenceRunner } from '../../engine/orchestrator/engines/deterministic/deterministic-sequence.runner';
 import { ReactLoopService } from '../../engine/loop/react-loop.service';
 import { AgentCancellationService } from '../../engine/cancellation/agent-cancellation.service';
 import { CheckpointPauseService } from '../../engine/hitl/checkpoint-pause.service';
@@ -45,8 +45,8 @@ describe('Enterprise Chaos Evals & Resilience Suite', () => {
   let mockCheckpointPause: jest.Mocked<CheckpointPauseService>;
   let mockMetrics: jest.Mocked<MetricsRegistryService>;
 
-  let singleEngine: SingleAgentEngine;
-  let pipelineEngine: PipelineChainingEngine;
+  let singleEngine: AutonomousEngine;
+  let pipelineEngine: DeterministicSequenceRunner;
 
   const baseContext: EngineExecutionContext = {
     data: {
@@ -94,18 +94,17 @@ describe('Enterprise Chaos Evals & Resilience Suite', () => {
       incrementBehaviorSignal: jest.fn(),
     } as unknown as jest.Mocked<MetricsRegistryService>;
 
-    singleEngine = new SingleAgentEngine(
+    singleEngine = new AutonomousEngine(
       mockReactLoop,
       mockCancellation,
       mockCheckpointPause,
       mockMetrics,
     );
 
-    pipelineEngine = new PipelineChainingEngine(
+    pipelineEngine = new DeterministicSequenceRunner(
       mockReactLoop,
-      mockCancellation,
       mockCheckpointPause,
-      mockMetrics,
+      mockCancellation,
     );
   });
 

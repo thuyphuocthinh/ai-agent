@@ -61,6 +61,7 @@ import { MetricsRegistryService } from '../../infrastructure/resilience/metrics-
 import { MemoryManagerService } from '../../memory/memory-manager.service';
 import { AgentRankingService } from './agent-ranking.service';
 import { SupervisorPromptBuilder } from './supervisor-prompt.builder';
+import { AgentDiscoveryService } from '../discovery/agent-discovery.service';
 import { detectFrustration } from '../loop/utils/detect-frustration.util';
 import { AgentRankingCache } from './supervisor.interface';
 
@@ -85,6 +86,8 @@ export class SupervisorService {
     @Optional()
     @Inject(SKILL_CATALOG_READER)
     private readonly skillCatalog?: ISkillCatalogReader,
+    @Optional()
+    private readonly agentDiscovery?: AgentDiscoveryService,
   ) {}
 
   // Một lời gọi LLM của Supervisor: circuit breaker theo strategy + retry có timeout. `canRetry`
@@ -126,6 +129,9 @@ export class SupervisorService {
     userId: string,
     workspaceId?: string,
   ): Promise<AvailableAgentDto[]> {
+    if (this.agentDiscovery) {
+      return this.agentDiscovery.getAvailableAgents(userId, workspaceId);
+    }
     const statuses = await this.mcpAuthClient.getConnectionStatus(userId);
     const staticAgents = statuses
       .filter(

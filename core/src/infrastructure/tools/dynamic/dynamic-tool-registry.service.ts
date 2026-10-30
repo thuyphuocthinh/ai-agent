@@ -22,7 +22,9 @@ interface IndexableMcpTool extends McpToolDto {
   description: string;
 }
 
-const SEMANTIC_SEARCH_TOP_K = 20;
+const SEMANTIC_SEARCH_TOP_K = 8;
+const MAX_FALLBACK_TOOLS = 16;
+const DIRECT_TOOLS_THRESHOLD = 12;
 
 interface CacheEntry {
   data: DynamicProviderSpec;
@@ -175,8 +177,10 @@ export class DynamicToolRegistryService implements IDynamicToolRegistry, OnModul
     const entry = this.registry.get(providerId)!;
     const tools = entry.data.tools;
 
-    if (tools.length <= 128) return tools;
+    // Nếu số lượng tool nhỏ (<= 12), trả về toàn bộ (zero overhead, bảo toàn 100% schemas)
+    if (tools.length <= DIRECT_TOOLS_THRESHOLD) return tools;
 
+    // Với dynamic OpenAPI đồ sộ (> 12 endpoints): dùng SemanticToolIndex có sẵn để xếp hạng Top 8
     if (query) {
       try {
         const index = await this.getOrBuildSemanticIndex(entry, tools);
@@ -185,15 +189,12 @@ export class DynamicToolRegistryService implements IDynamicToolRegistry, OnModul
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
         this.logger.warn(
-          `Semantic tool search failed for provider ${providerId}, falling back to the first 128 tools: ${message}`,
+          `Semantic tool search thất bại cho provider ${providerId}, fallback về ${MAX_FALLBACK_TOOLS} tools đầu: ${message}`,
         );
       }
     }
 
-    this.logger.warn(
-      `Provider ${providerId} có ${tools.length} tools. Tạm thời cắt xuống 128 để tránh lỗi 400 từ OpenAI.`,
-    );
-    return tools.slice(0, 128);
+    return tools.slice(0, MAX_FALLBACK_TOOLS);
   }
 
   private async getOrBuildSemanticIndex(

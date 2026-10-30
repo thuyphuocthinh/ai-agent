@@ -34,19 +34,14 @@ const TARGETS: readonly Target[] = [
     methods: ['executeStageBatch', 'delegateRound', 'runPlanningStep'],
   },
   {
-    file: 'orchestrator/engines/single-agent.engine.ts',
-    className: 'SingleAgentEngine',
+    file: 'orchestrator/engines/autonomous.engine.ts',
+    className: 'AutonomousEngine',
     methods: ['execute', 'resume'],
   },
   {
-    file: 'orchestrator/engines/pipeline-chaining.engine.ts',
-    className: 'PipelineChainingEngine',
-    methods: ['executePipeline', 'resume'],
-  },
-  {
-    file: 'orchestrator/engines/dynamic-supervisor.engine.ts',
-    className: 'DynamicSupervisorEngine',
-    methods: ['resume'],
+    file: 'orchestrator/engines/deterministic.engine.ts',
+    className: 'DeterministicEngine',
+    methods: ['execute', 'resume'],
   },
 ];
 

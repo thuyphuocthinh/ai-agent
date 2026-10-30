@@ -33,6 +33,7 @@ import { MemoryManagerService } from '../../memory/memory-manager.service';
 import { READ_SKILL_TOOL_NAME } from '../../infrastructure/tools/native/read-skill.tool';
 import { ReactLoopRun } from './react-loop-run';
 import { ToolRepeatGuard } from './guards/tool-repeat-guard';
+import { TokenMicroBuffer } from './utils/token-micro-buffer.util';
 import { formatPersonaPrompt } from './utils/persona-prompt.util';
 import { resolveEffectiveTools } from './utils/effective-tools.util';
 import {
@@ -113,11 +114,15 @@ export class ReactLoopService {
         )
         .catch(() => {}); // fire and forget
     };
+    const microBuffer = new TokenMicroBuffer((bufferedText) => {
+      emitToken({ type: EAgentStreamStepType.TOKEN, text: bufferedText });
+    });
     const onToken = (chunk: string) => {
       confirmedText += chunk;
-      emitToken({ type: EAgentStreamStepType.TOKEN, text: chunk });
+      microBuffer.add(chunk);
     };
     const resync = (text: string) => {
+      microBuffer.flush();
       confirmedText = text;
       emitToken({ type: EAgentStreamStepType.RESYNC, text });
     };
@@ -126,23 +131,27 @@ export class ReactLoopService {
       dto.messageId,
       this.cancellation,
       async (signal) => {
-        const prepared = await this.prepareLoop(dto, signal);
-        const reactLoopRun = new ReactLoopRun(
-          {
-            dto,
-            mcpTools: prepared.effectiveTools,
-            strategy: prepared.strategy,
-            model: prepared.model,
-            reactModelId: prepared.reactModelId,
-            session: prepared.session,
-            signal,
-            repeatGuard,
-            toolToProviderMap: prepared.toolToProviderMap,
-          },
-          this.buildRunDeps(),
-        );
+        try {
+          const prepared = await this.prepareLoop(dto, signal);
+          const reactLoopRun = new ReactLoopRun(
+            {
+              dto,
+              mcpTools: prepared.effectiveTools,
+              strategy: prepared.strategy,
+              model: prepared.model,
+              reactModelId: prepared.reactModelId,
+              session: prepared.session,
+              signal,
+              repeatGuard,
+              toolToProviderMap: prepared.toolToProviderMap,
+            },
+            this.buildRunDeps(),
+          );
 
-        return reactLoopRun.execute(onToken, resync);
+          return await reactLoopRun.execute(onToken, resync);
+        } finally {
+          microBuffer.flush();
+        }
       },
       () => new TurnCancelledError(confirmedText || undefined),
       parentSignal,

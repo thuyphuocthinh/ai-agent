@@ -18,8 +18,8 @@ import { AgentCancellationService } from '../../engine/cancellation/agent-cancel
 import { RunReactLoopRequestDto } from '../../contracts/dtos/react-loop.dto';
 import { TurnCancelledError } from '../../engine/loop/errors/turn-cancelled.error';
 import { ApprovalRequiredError } from '../../engine/loop/errors/approval-required.error';
-import { PipelineChainingEngine } from '../../engine/orchestrator/engines/pipeline-chaining.engine';
-import { WorkflowRunnerService } from '../../engine/workflow/workflow-runner.service';
+import { DeterministicSequenceRunner } from '../../engine/orchestrator/engines/deterministic/deterministic-sequence.runner';
+import { DeterministicSingleRunner } from '../../engine/orchestrator/engines/deterministic/deterministic-single.runner';
 import { CheckpointPauseService } from '../../engine/hitl/checkpoint-pause.service';
 import { MetricsRegistryService } from '../../infrastructure/resilience/metrics-registry.service';
 import {
@@ -353,12 +353,10 @@ describe('Skill Auto-Loading & Progressive Disclosure - Advanced Production Eval
       ],
     };
 
-    const chainingEngine = new PipelineChainingEngine(
+    const chainingEngine = new DeterministicSequenceRunner(
       service,
-      mockCancellation as unknown as AgentCancellationService,
       mockCheckpointPause as unknown as CheckpointPauseService,
-      mockMetrics as unknown as MetricsRegistryService,
-      mockMcp as unknown as any,
+      mockCancellation as unknown as AgentCancellationService,
     );
 
     const execContext: EngineExecutionContext = {
@@ -404,10 +402,8 @@ describe('Skill Auto-Loading & Progressive Disclosure - Advanced Production Eval
       skills: ['sql-safe-write'],
     });
 
-    const workflowRunner = new WorkflowRunnerService(
+    const singleRunner = new DeterministicSingleRunner(
       service,
-      mockStreamSink,
-      mockCancellation as unknown as AgentCancellationService,
       mockCheckpointPause as unknown as CheckpointPauseService,
       mockMetrics as unknown as MetricsRegistryService,
     );
@@ -423,12 +419,12 @@ describe('Skill Auto-Loading & Progressive Disclosure - Advanced Production Eval
 
     const runSpy = jest.spyOn(service, 'run');
 
-    await workflowRunner.runWorkflow({
-      workflow,
+    await singleRunner.run(workflow, {
       prompt: 'Thực thi xóa bản ghi cũ',
       data: jobData,
       replyMessageId: 'reply-wf-01',
       history: [],
+      agents: [],
     });
 
     expect(runSpy).toHaveBeenCalledTimes(1);

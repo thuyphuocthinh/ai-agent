@@ -151,5 +151,51 @@ describe('AutonomousEngine', () => {
       const result = await engine.execute(largeContext);
       expect(result).toBeDefined();
     });
+
+    it('kích hoạt Tầng 2 khi tổng ngữ cảnh (prompt + history) vượt dynamic budget threshold của model', async () => {
+      const historyContext: EngineExecutionContext = {
+        ...baseContext,
+        prompt: 'x'.repeat(10000),
+        history: [
+          {
+            role: 'user',
+            text: 'y'.repeat(15000),
+          },
+          {
+            role: 'model',
+            text: 'z'.repeat(10000),
+          },
+        ],
+      };
+
+      const result = await engine.execute(historyContext);
+      expect(result).toBeDefined();
+    });
+
+    it('tự động nén lịch sử đàm thoại dài (> 10 turns) trước khi đưa vào Frontline ReAct', async () => {
+      const longHistory = Array.from({ length: 15 }, (_, i) => ({
+        role: i % 2 === 0 ? ('user' as const) : ('model' as const),
+        text: `Nội dung chat cũ ${i}`,
+      }));
+
+      const longContext: EngineExecutionContext = {
+        ...baseContext,
+        history: longHistory,
+      };
+
+      const result = await engine.execute(longContext);
+      expect(result).toBeDefined();
+      expect(mockReactLoop.run).toHaveBeenCalledWith(
+        expect.objectContaining({
+          // Sau khi nén: 2 anchor turns + 6 turns gần nhất = 8 turns
+          history: expect.arrayContaining([
+            expect.objectContaining({
+              text: expect.stringContaining('[TÓM TẮT BỐI CẢNH CÁC LƯỢT TRÒ CHUYỆN TRƯỚC ĐÓ]'),
+            }),
+          ]),
+        }),
+        undefined,
+      );
+    });
   });
 });

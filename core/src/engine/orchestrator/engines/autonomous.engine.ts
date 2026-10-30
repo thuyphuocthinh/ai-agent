@@ -28,6 +28,10 @@ import {
 } from '../../../contracts/dtos/react-loop.dto';
 import { ExecutedStepDto } from '../../../contracts/dtos/message-client.dto';
 import { SubAgentSpawnerService } from './sub-agent-spawner.service';
+import {
+  capToolResultSize,
+  resolveDataCharBudget,
+} from '../../../common/text/token-budget.util';
 import { buildReactRequestIdentity } from '../utils/react-request-identity.util';
 import {
   buildApprovalFollowUpPrompt,
@@ -42,6 +46,7 @@ import {
   SupervisorRoundDto,
 } from '../../../contracts/dtos/supervisor.dto';
 import { SupervisorService } from '../../supervisor/supervisor.service';
+import { AgentDiscoveryService } from '../../discovery/agent-discovery.service';
 import {
   IToolProvider,
   TOOL_PROVIDER,
@@ -55,6 +60,9 @@ import { MemoryManagerService } from '../../../memory/memory-manager.service';
 import { TurnResolverRun } from '../turn/turn-resolver-run';
 import { runCancellable } from '../../cancellation/cancellable-run.util';
 import { SPAWN_SUBAGENT_TOOL_SCHEMA } from '../../../contracts/engine/sub-agent-spawner.interface';
+import { CachedService } from '../../../infrastructure/redis/cached.service';
+import { LlmStrategyFactory } from '../../strategy/llm-strategy.factory';
+import { ConversationHistorySummarizer } from '../../loop/utils/conversation-history-summarizer.util';
 
 /**
  * AutonomousEngine
@@ -93,6 +101,12 @@ export class AutonomousEngine implements IExecutionEngine {
     private readonly toolProvider?: IToolProvider,
     @Optional()
     private readonly checkpointService?: CheckpointService,
+    @Optional()
+    private readonly agentDiscovery?: AgentDiscoveryService,
+    @Optional()
+    private readonly cachedService?: CachedService,
+    @Optional()
+    private readonly llmFactory?: LlmStrategyFactory,
   ) {}
 
   canHandle(context: EngineRoutingContext): boolean {
@@ -110,21 +124,40 @@ export class AutonomousEngine implements IExecutionEngine {
   }
 
   async execute(context: EngineExecutionContext): Promise<AnswerResult> {
-    const { replyMessageId, signal } = context;
-    await assertNotCancelled(this.cancellation, replyMessageId, signal);
+    const { replyMessageId, history, data } = context;
+
+    let effectiveHistory = history;
+    if (history && history.length > ConversationHistorySummarizer.MAX_RAW_TURNS) {
+      const convId = data?.conversationId ?? '';
+      const summarized = await ConversationHistorySummarizer.compress(
+        history,
+        convId,
+        this.cachedService,
+        this.llmFactory,
+      );
+      effectiveHistory = summarized.history;
+      this.logger.log(
+        `[AutonomousEngine] Đã nén lịch sử (${history.length} turns -> ${effectiveHistory.length} turns) cho turn ${replyMessageId}`,
+      );
+    }
+
+    const executionContext: EngineExecutionContext = {
+      ...context,
+      history: effectiveHistory,
+    };
 
     // Quyết định tầng thực thi: Frontline ReAct hay Dynamic Supervisor
-    if (this.shouldTriggerSupervisorPlanning(context)) {
+    if (this.shouldTriggerSupervisorPlanning(executionContext)) {
       this.logger.log(
         `[AutonomousEngine] Tác vụ phức tạp/phân rã -> Kích hoạt Tầng 2: Dynamic Supervisor Planning cho turn ${replyMessageId}`,
       );
-      return this.executeSupervisorPlanning(context);
+      return this.executeSupervisorPlanning(executionContext);
     }
 
     this.logger.log(
       `[AutonomousEngine] Tác vụ đàm thoại trực tiếp -> Kích hoạt Tầng 1: Frontline ReAct cho turn ${replyMessageId}`,
     );
-    return this.executeFrontlineReAct(context);
+    return this.executeFrontlineReAct(executionContext);
   }
 
   private shouldTriggerSupervisorPlanning(context: EngineExecutionContext): boolean {
@@ -142,9 +175,26 @@ export class AutonomousEngine implements IExecutionEngine {
       return false;
     }
 
-    // Ngưỡng dung lượng Payload an toàn (> 30.000 ký tự) cần Supervisor bẻ nhỏ
-    const promptLength = context.prompt?.length ?? 0;
-    if (promptLength > 30000) {
+    // Dynamic Context Budget: Tính toán dung lượng ngữ cảnh tổng thể (prompt + history)
+    const promptChars = context.prompt?.length ?? 0;
+    const historyChars = (context.history ?? []).reduce(
+      (sum, h) => sum + (h.text?.length ?? 0),
+      0,
+    );
+    const totalEstimatedChars = promptChars + historyChars;
+
+    const activeModel =
+      process.env.DEFAULT_REACT_MODEL ??
+      ORCHESTRATION_CONSTANTS.DEFAULT_REACT_MODEL;
+    const allowedDataBudget = resolveDataCharBudget(activeModel);
+
+    // Kích hoạt Tầng 2 (Supervisor Planning) khi tổng ngữ cảnh vượt quá 60% ngân sách an toàn của model (tối thiểu 30.000 ký tự)
+    const dynamicThreshold = Math.max(30_000, Math.floor(allowedDataBudget * 0.6));
+
+    if (totalEstimatedChars > dynamicThreshold) {
+      this.logger.log(
+        `[AutonomousEngine] Tổng ngữ cảnh (${totalEstimatedChars} chars) vượt ngưỡng dynamic (${dynamicThreshold} chars cho model ${activeModel}) -> Kích hoạt Supervisor`,
+      );
       return true;
     }
 
@@ -223,7 +273,7 @@ export class AutonomousEngine implements IExecutionEngine {
     );
   }
 
-  private async continueSupervisorRounds(
+  async continueSupervisorRounds(
     data: EngineExecutionContext['data'],
     replyMessageId: string,
     prompt: string,
@@ -273,6 +323,35 @@ export class AutonomousEngine implements IExecutionEngine {
           rounds.length > 0 ? rounds[rounds.length - 1].result : undefined;
         return new TurnCancelledError(partialText);
       },
+    );
+  }
+
+  /**
+   * Alias tương thích ngược cho continueSupervisorRounds
+   */
+  async continueRounds(
+    data: EngineExecutionContext['data'],
+    replyMessageId: string,
+    prompt: string,
+    agents: AvailableAgentDto[],
+    history: EngineExecutionContext['history'],
+    rounds: SupervisorRoundDto[],
+    toolCalls: ToolCallTraceDto[],
+    forcedStep?: DelegationDto,
+    remainingSteps?: DelegationDto[],
+    signal?: AbortSignal,
+  ): Promise<AnswerResult> {
+    return this.continueSupervisorRounds(
+      data,
+      replyMessageId,
+      prompt,
+      agents,
+      history,
+      rounds,
+      toolCalls,
+      forcedStep,
+      remainingSteps,
+      signal,
     );
   }
 
@@ -408,17 +487,24 @@ export class AutonomousEngine implements IExecutionEngine {
   // ==========================================
 
   async resume(checkpoint: CheckpointResponseDto): Promise<AnswerResult> {
-    const agents = this.supervisor
+    const agents = this.agentDiscovery
+      ? await this.agentDiscovery.getAvailableAgents(
+          checkpoint.userId,
+          checkpoint.workspaceId,
+        )
+      : this.supervisor
       ? await this.supervisor.getAvailableAgents(
           checkpoint.userId,
           checkpoint.workspaceId,
         )
       : [];
 
-    // Nếu checkpoint thuộc về chu trình Supervisor (có roundsSoFar hoặc remainingSteps)
+    // Nếu checkpoint thuộc về chu trình Supervisor (có pendingTask, roundsSoFar hoặc remainingSteps)
     const isSupervisorCheckpoint =
-      (checkpoint.roundsSoFar && checkpoint.roundsSoFar.length > 0) ||
-      (checkpoint.remainingSteps && checkpoint.remainingSteps.length > 0);
+      Boolean(checkpoint.pendingTask) ||
+      Boolean(checkpoint.roundsSoFar && checkpoint.roundsSoFar.length > 0) ||
+      Boolean(checkpoint.remainingSteps && checkpoint.remainingSteps.length > 0) ||
+      checkpoint.engineMode === 'dynamic_supervisor';
 
     if (isSupervisorCheckpoint && this.supervisor && this.streamSink && this.memoryManager) {
       this.logger.log(`[AutonomousEngine] Resume chu trình Dynamic Supervisor cho checkpoint ${checkpoint.id}`);
@@ -471,7 +557,7 @@ export class AutonomousEngine implements IExecutionEngine {
 
     // Approval resume
     const pendingTool = checkpoint.pendingTool!;
-    const { resultText } = await executeApprovedTool(
+    const { resultText, isError } = await executeApprovedTool(
       {
         toolProvider: this.toolProvider!,
         markToolExecuted: this.checkpointService
@@ -482,12 +568,23 @@ export class AutonomousEngine implements IExecutionEngine {
       pendingTool,
     );
 
+    if (isError) {
+      return buildAnswer(buildApprovedToolFailureMessage(pendingTool.name, resultText), []);
+    }
+
+    const budget = this.memoryManager?.buildBudget(
+      process.env.DEFAULT_REACT_MODEL ?? ORCHESTRATION_CONSTANTS.DEFAULT_REACT_MODEL,
+    );
+    const cappedResult = budget
+      ? capToolResultSize(resultText, budget.toolResultCharBudget)
+      : resultText;
+
     const rounds = [
       ...checkpoint.roundsSoFar,
       {
         agent: pendingTool.provider,
         task: checkpoint.pendingTask,
-        result: resultText,
+        result: cappedResult,
       },
     ];
 

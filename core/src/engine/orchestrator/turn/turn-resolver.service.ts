@@ -6,7 +6,6 @@ import {
   MESSAGE_SINK,
   IWorkflowRegistry,
   WORKFLOW_REGISTRY,
-  WORKFLOW_RUNNER,
   EXECUTION_ENGINE_REGISTRY,
   EXECUTION_ROUTER,
   EExecutionEngineMode,
@@ -14,7 +13,7 @@ import {
   IExecutionRouter,
 } from '../../../contracts';
 import { SupervisorService } from '../../supervisor/supervisor.service';
-import { WorkflowRunnerService } from '../../workflow/workflow-runner.service';
+import { AgentDiscoveryService } from '../../discovery/agent-discovery.service';
 import { AnswerResult } from '../../../contracts/engine/orchestration-answer.types';
 import { MemoryManagerService } from '../../../memory/memory-manager.service';
 
@@ -46,18 +45,19 @@ export class TurnResolverService {
     @Inject(WORKFLOW_REGISTRY)
     private readonly workflowRegistry?: IWorkflowRegistry,
     @Optional()
-    @Inject(WORKFLOW_RUNNER)
-    private readonly workflowRunner?: WorkflowRunnerService,
+    private readonly agentDiscovery?: AgentDiscoveryService,
   ) {}
 
-    async resolveAnswer(
+  async resolveAnswer(
     data: IProcessAiTriggerJobData,
     replyMessageId: string,
   ): Promise<AnswerResult> {
     const { userId, channelId, messageId, workspaceId, workflowId } = data;
     const [prompt, agents, history] = await Promise.all([
       this.messageSink.getMessageText({ id: messageId, userId }),
-      this.supervisor.getAvailableAgents(userId, workspaceId),
+      this.agentDiscovery
+        ? this.agentDiscovery.getAvailableAgents(userId, workspaceId)
+        : this.supervisor.getAvailableAgents(userId, workspaceId),
       this.messageSink.getRecentHistory({
         channelId,
         userId,
@@ -69,47 +69,6 @@ export class TurnResolverService {
         ).historyCharBudget,
       }),
     ]);
-
-    const isPipelineWorkflow =
-      workflowId &&
-      (this.engineRegistry
-        .get(EExecutionEngineMode.DETERMINISTIC)
-        ?.canHandle({
-          userId: data.userId,
-          workspaceId: data.workspaceId,
-          channelId: data.channelId,
-          workflowId,
-          prompt: '',
-        }) ||
-      this.engineRegistry
-        .get(EExecutionEngineMode.PIPELINE_CHAINING)
-        ?.canHandle({
-          userId: data.userId,
-          workspaceId: data.workspaceId,
-          channelId: data.channelId,
-          workflowId,
-          prompt: '',
-        }));
-
-    if (!isPipelineWorkflow && workflowId && this.workflowRegistry && this.workflowRunner) {
-      const workflow = this.workflowRegistry.get(workflowId);
-      if (workflow) {
-        this.logger.log(
-          `Routing trực tiếp tới fixed workflow "${workflowId}" (${workflow.name}) cho turn ${replyMessageId}`,
-        );
-        const answer = await this.workflowRunner.runWorkflow({
-          workflow,
-          prompt,
-          data,
-          replyMessageId,
-          history,
-        });
-        return { ...answer, routing: { mode: EExecutionEngineMode.WORKFLOW, label: workflow.name } };
-      }
-      this.logger.warn(
-        `Không tìm thấy workflowId="${workflowId}" trong registry. Fallback về Dynamic Supervisor.`,
-      );
-    }
 
     const decision = await this.router.route({
       prompt,
@@ -124,22 +83,7 @@ export class TurnResolverService {
     });
 
     const targetEngineId = decision.engineId ?? decision.mode;
-    let engine = this.engineRegistry.get(targetEngineId);
-
-    // Ánh xạ fallback nếu engine mới chưa đăng ký trong registry
-    if (!engine) {
-      if (decision.mode === EExecutionEngineMode.DETERMINISTIC) {
-        engine = this.engineRegistry.get(EExecutionEngineMode.PIPELINE_CHAINING);
-      } else if (decision.mode === EExecutionEngineMode.AUTONOMOUS) {
-        engine =
-          this.engineRegistry.get(EExecutionEngineMode.SINGLE_AGENT) ??
-          this.engineRegistry.get(EExecutionEngineMode.DYNAMIC_SUPERVISOR);
-      } else {
-        engine =
-          this.engineRegistry.get(EExecutionEngineMode.DYNAMIC_SUPERVISOR) ??
-          this.engineRegistry.get(EExecutionEngineMode.AUTONOMOUS);
-      }
-    }
+    const engine = this.engineRegistry.get(targetEngineId);
 
     if (engine) {
       const answer = await engine.execute({

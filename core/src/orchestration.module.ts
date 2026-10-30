@@ -16,6 +16,7 @@ import { EQueueName } from './infrastructure/queue';
 import { AiOrchestrationProcessor } from './engine/orchestrator/processors/ai-orchestration.processor';
 import { DynamicProviderProcessor } from './engine/orchestrator/processors/dynamic-provider.processor';
 import { ReactLoopService } from './engine/loop/react-loop.service';
+import { AgentDiscoveryService } from './engine/discovery/agent-discovery.service';
 import { SupervisorService } from './engine/supervisor/supervisor.service';
 import { AgentRankingService } from './engine/supervisor/agent-ranking.service';
 import { SupervisorPromptBuilder } from './engine/supervisor/supervisor-prompt.builder';
@@ -50,10 +51,6 @@ import { DeterministicSequenceRunner } from './engine/orchestrator/engines/deter
 import { DeterministicParallelRunner } from './engine/orchestrator/engines/deterministic/deterministic-parallel.runner';
 import { DeterministicEngine } from './engine/orchestrator/engines/deterministic.engine';
 import { AutonomousEngine } from './engine/orchestrator/engines/autonomous.engine';
-import { SingleAgentEngine } from './engine/orchestrator/engines/single-agent.engine';
-import { PipelineChainingEngine } from './engine/orchestrator/engines/pipeline-chaining.engine';
-import { ParallelFanoutEngine } from './engine/orchestrator/engines/parallel-fanout.engine';
-import { DynamicSupervisorEngine } from './engine/orchestrator/engines/dynamic-supervisor.engine';
 import { SubAgentSpawnerService } from './engine/orchestrator/engines/sub-agent-spawner.service';
 import { SmartExecutionRouter } from './engine/orchestrator/engines/smart-execution-router.service';
 import {
@@ -62,7 +59,6 @@ import {
   IExecutionEngine,
 } from './contracts/engine/execution-engine.interface';
 import { WorkflowRegistryService } from './engine/workflow/workflow-registry.service';
-import { WorkflowRunnerService } from './engine/workflow/workflow-runner.service';
 import { CheckpointPauseService } from './engine/hitl/checkpoint-pause.service';
 import { ApprovalRequestService } from './engine/hitl/approval-request.service';
 import { ApprovalExecutionService } from './engine/hitl/approval-execution.service';
@@ -74,7 +70,6 @@ import {
   STREAM_SINK,
   CHAT_SESSION_MANAGER,
   WORKFLOW_REGISTRY,
-  WORKFLOW_RUNNER,
 } from './contracts';
 import { HealthCheckService } from './infrastructure/resilience/health-check.service';
 import {
@@ -148,6 +143,7 @@ import { SecurityModule } from './security';
       inject: [AiOrchestrationProcessor, DynamicProviderProcessor],
     },
     ReactLoopService,
+    AgentDiscoveryService,
     SupervisorService,
     AgentRankingService,
     SupervisorPromptBuilder,
@@ -179,10 +175,6 @@ import { SecurityModule } from './security';
     DeterministicParallelRunner,
     DeterministicEngine,
     AutonomousEngine,
-    SingleAgentEngine,
-    PipelineChainingEngine,
-    ParallelFanoutEngine,
-    DynamicSupervisorEngine,
     {
       provide: EXECUTION_ENGINE_REGISTRY,
       useFactory: (...engines: IExecutionEngine[]) => {
@@ -193,24 +185,15 @@ import { SecurityModule } from './security';
       inject: [
         DeterministicEngine,
         AutonomousEngine,
-        SingleAgentEngine,
-        PipelineChainingEngine,
-        ParallelFanoutEngine,
-        DynamicSupervisorEngine,
       ],
     },
     SmartExecutionRouter,
     { provide: EXECUTION_ROUTER, useExisting: SmartExecutionRouter },
     PrismaWorkflowStore,
     WorkflowRegistryService,
-    WorkflowRunnerService,
     {
       provide: WORKFLOW_REGISTRY,
       useExisting: PrismaWorkflowStore,
-    },
-    {
-      provide: WORKFLOW_RUNNER,
-      useExisting: WorkflowRunnerService,
     },
     CheckpointPauseService,
     TurnEventRecorderService,
@@ -236,6 +219,7 @@ import { SecurityModule } from './security';
   exports: [
     AiOrchestrationProcessor,
     ReactLoopService,
+    AgentDiscoveryService,
     SupervisorService,
     LlmStrategyFactory,
     MessageClientService,
@@ -255,9 +239,7 @@ import { SecurityModule } from './security';
     DeterministicParallelRunner,
     DeterministicEngine,
     AutonomousEngine,
-    WorkflowRunnerService,
     WORKFLOW_REGISTRY,
-    WORKFLOW_RUNNER,
     SecurityModule,
   ],
 })

@@ -2,9 +2,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { SmartExecutionRouter } from '../../engine/orchestrator/engines/smart-execution-router.service';
 import { ExecutionEngineRegistryService } from '../../engine/orchestrator/engines/execution-engine-registry.service';
-import { PipelineChainingEngine } from '../../engine/orchestrator/engines/pipeline-chaining.engine';
-import { ParallelFanoutEngine } from '../../engine/orchestrator/engines/parallel-fanout.engine';
-import { SingleAgentEngine } from '../../engine/orchestrator/engines/single-agent.engine';
+import { DeterministicSequenceRunner } from '../../engine/orchestrator/engines/deterministic/deterministic-sequence.runner';
+import { DeterministicParallelRunner } from '../../engine/orchestrator/engines/deterministic/deterministic-parallel.runner';
+import { AutonomousEngine } from '../../engine/orchestrator/engines/autonomous.engine';
 import {
   EExecutionEngineMode,
   EngineRoutingContext,
@@ -77,9 +77,6 @@ describe('AI Agent Pluggable Engines - Production Evaluation Suite', () => {
 
     registry.register(createMockEngine(EExecutionEngineMode.DETERMINISTIC, 20));
     registry.register(createMockEngine(EExecutionEngineMode.AUTONOMOUS, 10));
-    registry.register(createMockEngine(EExecutionEngineMode.PIPELINE_CHAINING, 20));
-    registry.register(createMockEngine(EExecutionEngineMode.PARALLEL_FANOUT, 15));
-    registry.register(createMockEngine(EExecutionEngineMode.SINGLE_AGENT, 10));
 
     router = new SmartExecutionRouter(registry);
   });
@@ -141,11 +138,10 @@ describe('AI Agent Pluggable Engines - Production Evaluation Suite', () => {
       const mockCheckpoint = {} as CheckpointPauseService;
       const mockMetrics = { incrementBehaviorSignal: jest.fn() } as unknown as MetricsRegistryService;
 
-      const pipelineEngine = new PipelineChainingEngine(
+      const pipelineEngine = new DeterministicSequenceRunner(
         mockReactLoop,
-        mockCancellation,
         mockCheckpoint,
-        mockMetrics,
+        mockCancellation,
       );
 
       (mockReactLoop.run as jest.Mock)
@@ -203,10 +199,10 @@ describe('AI Agent Pluggable Engines - Production Evaluation Suite', () => {
         }),
       } as unknown as LlmStrategyFactory;
 
-      const fanoutEngine = new ParallelFanoutEngine(
+      const fanoutEngine = new DeterministicParallelRunner(
         mockReactLoop,
         mockCancellation,
-        mockMetrics,
+        {} as CheckpointPauseService,
         mockLlmStrategy,
       );
 
@@ -252,10 +248,10 @@ describe('AI Agent Pluggable Engines - Production Evaluation Suite', () => {
         }),
       } as unknown as LlmStrategyFactory;
 
-      const fanoutEngine = new ParallelFanoutEngine(
+      const fanoutEngine = new DeterministicParallelRunner(
         mockReactLoop,
         mockCancellation,
-        mockMetrics,
+        {} as CheckpointPauseService,
         mockLlmStrategy,
       );
 
@@ -288,7 +284,7 @@ describe('AI Agent Pluggable Engines - Production Evaluation Suite', () => {
       const mockCheckpoint = { pauseForApproval: jest.fn() } as unknown as CheckpointPauseService;
       const mockMetrics = { incrementBehaviorSignal: jest.fn() } as unknown as MetricsRegistryService;
 
-      const singleAgentEngine = new SingleAgentEngine(
+      const singleAgentEngine = new AutonomousEngine(
         mockReactLoop,
         mockCancellation,
         mockCheckpoint,
@@ -327,11 +323,10 @@ describe('AI Agent Pluggable Engines - Production Evaluation Suite', () => {
       const mockCheckpoint = {} as CheckpointPauseService;
       const mockMetrics = { incrementBehaviorSignal: jest.fn() } as unknown as MetricsRegistryService;
 
-      const pipelineEngine = new PipelineChainingEngine(
+      const pipelineEngine = new DeterministicSequenceRunner(
         mockReactLoop,
-        mockCancellation,
         mockCheckpoint,
-        mockMetrics,
+        mockCancellation,
       );
 
       const maliciousPayload = '$1 $& $\' '.repeat(100) + 'A'.repeat(60000);

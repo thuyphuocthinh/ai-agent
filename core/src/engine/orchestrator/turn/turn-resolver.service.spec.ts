@@ -2,8 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { IProcessAiTriggerJobData } from '@agent/core/infrastructure/queue';
 import { ORCHESTRATION_CONSTANTS } from '@agent/core/constants';
 import { TurnResolverService } from './turn-resolver.service';
-import { SingleAgentEngine } from '../engines/single-agent.engine';
-import { DynamicSupervisorEngine } from '../engines/dynamic-supervisor.engine';
+import { AutonomousEngine } from '../engines/autonomous.engine';
 import { SmartExecutionRouter } from '../engines/smart-execution-router.service';
 import { ExecutionEngineRegistryService } from '../engines/execution-engine-registry.service';
 import {
@@ -30,8 +29,8 @@ jest.mock('@agent/core/common', () => ({ extractTextFromMcpResult: jest.fn() }))
 
 describe('TurnResolverService (Plan-and-Execute, xem accuracy.md)', () => {
   let service: TurnResolverService;
-  // continueRounds() đã chuyển từ TurnResolverService sang DynamicSupervisorEngine.
-  let dynamicSupervisor: DynamicSupervisorEngine;
+  // continueRounds() chuyển sang AutonomousEngine.
+  let dynamicSupervisor: AutonomousEngine;
 
   const mockMessageClient = {
     getMessageText: jest.fn(),
@@ -92,18 +91,16 @@ describe('TurnResolverService (Plan-and-Execute, xem accuracy.md)', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TurnResolverService,
-        SingleAgentEngine,
-        DynamicSupervisorEngine,
+        AutonomousEngine,
         SmartExecutionRouter,
         {
           provide: EXECUTION_ENGINE_REGISTRY,
-          useFactory: (single: SingleAgentEngine, dynamic: DynamicSupervisorEngine) => {
+          useFactory: (autonomous: AutonomousEngine) => {
             const registry = new ExecutionEngineRegistryService();
-            registry.register(single);
-            registry.register(dynamic);
+            registry.register(autonomous);
             return registry;
           },
-          inject: [SingleAgentEngine, DynamicSupervisorEngine],
+          inject: [AutonomousEngine],
         },
         { provide: EXECUTION_ROUTER, useExisting: SmartExecutionRouter },
         { provide: MESSAGE_SINK, useValue: mockMessageClient },
@@ -125,7 +122,7 @@ describe('TurnResolverService (Plan-and-Execute, xem accuracy.md)', () => {
     }).compile();
 
     service = module.get<TurnResolverService>(TurnResolverService);
-    dynamicSupervisor = module.get<DynamicSupervisorEngine>(DynamicSupervisorEngine);
+    dynamicSupervisor = module.get<AutonomousEngine>(AutonomousEngine);
   });
 
   afterEach(() => {
@@ -133,6 +130,8 @@ describe('TurnResolverService (Plan-and-Execute, xem accuracy.md)', () => {
     jest.clearAllMocks();
     mockSupervisor.evaluate.mockReset();
     mockSupervisor.evaluate.mockResolvedValue({ verdict: 'done' });
+    mockCancellation.isCancelled.mockReset();
+    mockCancellation.isCancelled.mockResolvedValue(false);
   });
 
   const resolve = (jobData: IProcessAiTriggerJobData = data) =>
@@ -152,7 +151,7 @@ describe('TurnResolverService (Plan-and-Execute, xem accuracy.md)', () => {
     expect(result).toEqual({
       content: 'Chào bạn!',
       toolCalls: undefined,
-      routing: { mode: 'dynamic_supervisor' },
+      routing: { mode: 'autonomous' },
     });
   });
 
