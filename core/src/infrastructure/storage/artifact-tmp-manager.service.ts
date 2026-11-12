@@ -37,6 +37,10 @@ export class ArtifactTmpManagerService
     }
   }
 
+  getBaseDir(): string {
+    return this.baseDir;
+  }
+
   getTurnDir(turnId: string): string {
     const sanitizedTurnId = this.sanitizeTurnId(turnId);
     const turnDir = path.resolve(this.baseDir, sanitizedTurnId);
@@ -129,11 +133,29 @@ export class ArtifactTmpManagerService
       );
     }
 
-    const resolvedPath = path.isAbsolute(filenameOrPath)
-      ? path.resolve(filenameOrPath)
-      : path.resolve(baseTurnDir, filenameOrPath);
+    let cleanPath = filenameOrPath.trim();
+    const normalizedSlashPath = cleanPath.replace(/\\/g, '/');
 
-    if (!resolvedPath.startsWith(baseTurnDir + path.sep)) {
+    // Chuẩn hóa đường dẫn Linux Container dạng /tmp/artifacts/... -> map an toàn vào this.baseDir
+    if (normalizedSlashPath.startsWith('/tmp/artifacts/')) {
+      const subPath = normalizedSlashPath.slice('/tmp/artifacts/'.length);
+      const resolvedFromBase = path.resolve(this.baseDir, subPath);
+      if (!resolvedFromBase.startsWith(this.baseDir + path.sep)) {
+        throw new Error(
+          `[BẢO MẬT] Phát hiện tấn công Path Traversal: Đường dẫn container "${filenameOrPath}" vượt ngoài phạm vi "${this.baseDir}"`,
+        );
+      }
+      return resolvedFromBase;
+    }
+
+    const resolvedPath = path.isAbsolute(cleanPath)
+      ? path.resolve(cleanPath)
+      : path.resolve(baseTurnDir, cleanPath);
+
+    if (
+      !resolvedPath.startsWith(baseTurnDir + path.sep) &&
+      !resolvedPath.startsWith(this.baseDir + path.sep)
+    ) {
       throw new Error(
         `[BẢO MẬT] Phát hiện tấn công Path Traversal: Đường dẫn "${filenameOrPath}" vượt ngoài phạm vi "${baseTurnDir}"`,
       );

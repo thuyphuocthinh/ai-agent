@@ -1,4 +1,8 @@
-import { Injectable, Logger, Optional } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import {
+  ARTIFACT_TMP_MANAGER,
+  IArtifactTmpManager,
+} from '../../../contracts/storage/artifact-tmp.interface';
 import {
   IToolProvider,
   ToolContext,
@@ -17,7 +21,10 @@ import { createMockSheetsProvider } from './mock-sheets.provider';
 import { createMockMailProvider } from './mock-mail.provider';
 import { createMockSlackProvider } from './mock-slack.provider';
 import { createMockGithubProvider } from './mock-github.provider';
-import { createMockComputeProvider } from './mock-compute.provider';
+import {
+  MOCK_COMPUTE_PROVIDER_ID,
+  createMockComputeProvider,
+} from './mock-compute.provider';
 import { createMockKintoneProvider } from './mock-kintone.provider';
 
 const createMockProviders = (): MockProvider[] => [
@@ -46,7 +53,17 @@ export class MockToolConnectorService implements IToolProvider {
   constructor(
     @Optional()
     private readonly nativeRegistry?: NativeToolRegistryService,
-  ) {}
+    @Optional()
+    @Inject(ARTIFACT_TMP_MANAGER)
+    private readonly tmpManager?: IArtifactTmpManager,
+  ) {
+    if (this.tmpManager) {
+      this.providers.set(
+        MOCK_COMPUTE_PROVIDER_ID,
+        createMockComputeProvider(this.tmpManager),
+      );
+    }
+  }
 
   async getTools(
     provider: string,
@@ -63,8 +80,14 @@ export class MockToolConnectorService implements IToolProvider {
     signal?: AbortSignal,
     context?: ToolContext,
   ): Promise<CallToolResponseDto> {
+    const effectiveContext: ToolContext = context ?? {
+      userId: dto.ownerId ?? dto.userId,
+      workspaceId: dto.workspaceId,
+      messageId: dto.messageId ?? dto.workspaceId,
+      signal,
+    };
     if (this.nativeRegistry?.hasTool(dto.name)) {
-      return this.nativeRegistry.executeFromRequest(dto, context, signal);
+      return this.nativeRegistry.executeFromRequest(dto, effectiveContext, signal);
     }
     const id = dto.provider ?? MOCK_PROVIDER_ID;
     const provider = this.providers.get(id);
@@ -75,7 +98,7 @@ export class MockToolConnectorService implements IToolProvider {
       return errorResult(`Tool "${dto.name}" không tồn tại trong chế độ mock`);
     }
     this.logger.log(`[MockToolConnector] Calling ${id}:${dto.name}`);
-    return provider.call(dto.name, dto.args ?? {});
+    return await provider.call(dto.name, dto.args ?? {}, effectiveContext);
   }
 
   async getResources(

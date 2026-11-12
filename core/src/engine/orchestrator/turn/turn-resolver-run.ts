@@ -43,6 +43,7 @@ import { runCancellable } from '../../cancellation/cancellable-run.util';
 import { TurnCancelledError } from '../../loop/errors/turn-cancelled.error';
 import { describeExternalServiceError } from '../../loop/utils/external-service-error.util';
 import { CheckpointPauseService } from '../../hitl/checkpoint-pause.service';
+import { isStructuredPayload } from '../../../common/text/structured-payload.util';
 import { MetricsRegistryService } from '../../../infrastructure/resilience/metrics-registry.service';
 import { buildOnToken } from './agent-stream-token.util';
 import { capRoundResultsWeighted } from '../../../common/text/token-budget.util';
@@ -542,14 +543,14 @@ export class TurnResolverRun {
   }
 
   private async finalizeAnswer(answerHint?: string): Promise<AnswerResult> {
-    if (this.rounds.length === 1) {
+    if (this.rounds.length === 1 && !isStructuredPayload(this.rounds[0].result)) {
       return buildAnswer(
         await this.appendDisclaimers(this.rounds[0].result),
         this.toolCalls,
         this.executionSteps,
       );
     }
-    if (this.rounds.length > 1) {
+    if (this.rounds.length >= 1) {
       return this.synthesizeFinalAnswer();
     }
     return buildAnswer(

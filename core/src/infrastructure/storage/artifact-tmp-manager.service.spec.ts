@@ -25,6 +25,10 @@ describe('ArtifactTmpManagerService', () => {
   });
 
   describe('getTurnDir', () => {
+    it('returns the configured base directory via getBaseDir', () => {
+      expect(service.getBaseDir()).toBe(testBaseDir);
+    });
+
     it('creates turn directory inside baseDir with sanitized turnId', () => {
       const turnDir = service.getTurnDir('reply-msg-101');
       expect(fs.existsSync(turnDir)).toBe(true);
@@ -99,6 +103,34 @@ describe('ArtifactTmpManagerService', () => {
       const turnId = 'turn-attack-2';
       await expect(
         service.readJsonFromFile(turnId, '../../../../etc/hosts'),
+      ).rejects.toThrow(/Không được chứa ký tự điều hướng thư mục/);
+    });
+
+    it('accepts and normalizes container path /tmp/artifacts/{turnId}/filename', async () => {
+      const turnId = 'turn-container-ok';
+      await service.saveJsonToFile(turnId, 'matrix.json', [[1, 2], [3, 4]]);
+      const readData = await service.readJsonFromFile(
+        turnId,
+        `/tmp/artifacts/${turnId}/matrix.json`,
+      );
+      expect(readData).toEqual([[1, 2], [3, 4]]);
+    });
+
+    it('accepts container path created in previous message turn during approval resume', async () => {
+      const origTurnId = 'turn-original-msg';
+      const resumeTurnId = 'turn-approval-msg';
+      await service.saveJsonToFile(origTurnId, 'matrix.json', [[10, 20], [30, 40]]);
+      const readData = await service.readJsonFromFile(
+        resumeTurnId,
+        `/tmp/artifacts/${origTurnId}/matrix.json`,
+      );
+      expect(readData).toEqual([[10, 20], [30, 40]]);
+    });
+
+    it('rejects container path attempting traversal outside artifacts', async () => {
+      const turnId = 'turn-auth';
+      await expect(
+        service.readJsonFromFile(turnId, '/tmp/artifacts/../../escape.json'),
       ).rejects.toThrow(/Không được chứa ký tự điều hướng thư mục/);
     });
   });

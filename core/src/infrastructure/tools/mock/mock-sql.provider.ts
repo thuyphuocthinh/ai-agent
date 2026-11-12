@@ -19,7 +19,7 @@ const QUERY_SCHEMA = {
 const TOOLS: McpToolDto[] = [
   {
     name: 'table_schema',
-    description: 'Xem cấu trúc các bảng (products, orders, payments) hoặc 1 bảng cụ thể.',
+    description: 'Xem cấu trúc các bảng (products, orders, payments, orders_large) hoặc 1 bảng cụ thể.',
     inputSchema: {
       type: 'object',
       properties: { table: { type: 'string', description: 'Tên bảng (bỏ trống = tất cả)' } },
@@ -29,7 +29,7 @@ const TOOLS: McpToolDto[] = [
   {
     name: 'read_query',
     description:
-      'Chạy 1 câu SELECT chỉ đọc (SQLite: JOIN, GROUP BY, CASE, COUNT/SUM... đều dùng được) trên dữ liệu mẫu (products, orders, payments).',
+      'Chạy 1 câu SELECT chỉ đọc (SQLite: JOIN, GROUP BY, CASE, COUNT/SUM... đều dùng được) trên dữ liệu mẫu (products, orders, payments, orders_large).',
     inputSchema: QUERY_SCHEMA,
     annotations: { readOnlyHint: true },
   },
@@ -47,7 +47,7 @@ const TOOLS: McpToolDto[] = [
 const SCHEMA_RESOURCE: McpResourceDto = {
   uri: 'mock://sql_server/schema',
   name: 'Database schema',
-  description: 'Bảng và cột của dữ liệu mẫu (products, orders, payments)',
+  description: 'Bảng và cột của dữ liệu mẫu (products, orders, payments, orders_large)',
   mimeType: 'text/plain',
 };
 

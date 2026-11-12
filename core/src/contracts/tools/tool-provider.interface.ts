@@ -13,6 +13,7 @@ export interface ToolContext {
   userId?: string;
   tenantId?: string;
   workspaceId?: string;
+  messageId?: string;
   signal?: AbortSignal;
 }
 
@@ -38,6 +39,7 @@ export interface IToolProvider {
   callTool(
     dto: CallToolRequestDto,
     signal?: AbortSignal,
+    context?: ToolContext,
   ): Promise<CallToolResponseDto>;
 
   /**

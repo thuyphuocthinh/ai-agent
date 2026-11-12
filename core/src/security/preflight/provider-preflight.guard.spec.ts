@@ -82,6 +82,10 @@ describe('ProviderPreflightGuard', () => {
       const result = await guard.check('user-1', 'google_mail', ['search_emails']);
       expect(result.ready).toBe(true);
       expect(result.reason).toBe(EPreflightStatus.READY);
+
+      const computeResult = await guard.check('user-1', 'compute', []);
+      expect(computeResult.ready).toBe(true);
+      expect(computeResult.reason).toBe(EPreflightStatus.READY);
     } finally {
       process.env.MOCK_TOOLS = prev;
     }

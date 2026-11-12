@@ -286,6 +286,45 @@ describe('ToolRiskGate', () => {
       );
     });
 
+    it('checkPreflight() cho phép tool có authType SYSTEM (run_python) chạy ngay mà không đòi OAuth', async () => {
+      const mockPreflight = {
+        check: jest.fn().mockResolvedValue({
+          ready: true,
+          reason: 'READY',
+          provider: 'compute',
+        }),
+        formatActionableMessage: jest.fn(),
+      };
+
+      const gate = new ToolRiskGate({
+        dto: { ...baseDto, provider: 'compute' },
+        mcpTools: [
+          {
+            name: 'run_python',
+            authType: 'SYSTEM',
+            description: '',
+            inputSchema: {},
+          },
+        ],
+        strategy: createStrategy(),
+        model: 'gemini-2.0-flash',
+        circuitBreaker,
+        logger,
+        signal: new AbortController().signal,
+        insertAccumulator: new InsertAccumulator(),
+        preflightGuard: mockPreflight as never,
+      });
+
+      const error = await gate.checkPreflight('run_python');
+      expect(error).toBeNull();
+      expect(mockPreflight.check).toHaveBeenCalledWith(
+        'user-1',
+        'compute',
+        [],
+        EProviderAuthType.SYSTEM,
+      );
+    });
+
     it('evaluatePolicy() ưu tiên SemanticPolicyEvaluatorService khi được cung cấp', async () => {
       const mockSemanticEvaluator = {
         evaluate: jest.fn().mockResolvedValue({

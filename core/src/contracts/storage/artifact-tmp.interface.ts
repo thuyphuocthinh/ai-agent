@@ -1,5 +1,7 @@
 export interface SaveToTmpEnvelopeDto {
   status: 'saved_to_tmp';
+  filename?: string;
+  containerPath?: string;
   path: string;
   recordCount: number;
   byteSize: number;
@@ -48,6 +50,7 @@ export interface BatchUpdateValuesResponseDto {
 }
 
 export interface IArtifactTmpManager {
+  getBaseDir(): string;
   getTurnDir(turnId: string): string;
   saveJsonToFile(turnId: string, filename: string, data: unknown): Promise<string>;
   readJsonFromFile<T = unknown>(turnId: string, filenameOrPath: string): Promise<T>;

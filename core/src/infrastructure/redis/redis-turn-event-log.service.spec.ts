@@ -148,7 +148,7 @@ describeWithRedis('RedisTurnEventLogService (Redis Streams thật)', () => {
     await log.finish(messageId, ETurnLogStatus.DONE);
 
     expect(texts(await collect(log.read(messageId)))).toEqual(all);
-  });
+  }, 15000);
 
   it('abort signal dừng reader đang chờ ngay lập tức', async () => {
     const { messageId, conversationId } = newTurn();

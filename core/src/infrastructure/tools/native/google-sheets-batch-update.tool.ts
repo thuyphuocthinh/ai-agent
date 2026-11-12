@@ -123,7 +123,7 @@ export class GoogleSheetsBatchUpdateTool implements INativeTool, OnModuleInit {
           ? args.turnId.trim()
           : typeof args.turn_id === 'string' && args.turn_id.trim()
           ? args.turn_id.trim()
-          : context?.workspaceId ?? 'default-turn';
+          : context?.messageId ?? context?.workspaceId ?? 'default-turn';
 
       try {
         matrix = await this.tmpManager.readJsonFromFile<unknown[][]>(

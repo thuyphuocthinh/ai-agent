@@ -3,6 +3,7 @@ import {
   McpResourceDto,
   McpToolDto,
 } from '../../../contracts/dtos/mcp.dto';
+import { ToolContext } from '../../../contracts/tools/tool-provider.interface';
 
 export interface MockResource {
   dto: McpResourceDto;
@@ -18,7 +19,11 @@ export interface MockProvider {
   readonly id: string;
   readonly tools: McpToolDto[];
   readonly resources: MockResource[];
-  call(name: string, args: Record<string, unknown>): CallToolResponseDto;
+  call(
+    name: string,
+    args: Record<string, unknown>,
+    context?: ToolContext,
+  ): CallToolResponseDto | Promise<CallToolResponseDto>;
 }
 
 export const textResult = (text: string): CallToolResponseDto => ({

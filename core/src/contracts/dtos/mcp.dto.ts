@@ -28,6 +28,7 @@ export class CallToolRequestDto {
   // Tenant/Workspace ID (tuỳ chọn, phục vụ multi-tenant)
   workspaceId?: string;
   tenantId?: string;
+  messageId?: string;
 }
 
 export class CallToolResponseDto {

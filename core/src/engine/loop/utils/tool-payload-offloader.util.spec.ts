@@ -79,6 +79,8 @@ describe('tryOffloadPayloadToDisk', () => {
     const envelope = JSON.parse(result as string) as SaveToTmpEnvelopeDto;
     expect(envelope).toMatchObject({
       status: 'saved_to_tmp',
+      filename: 'source_sql_query_sales.json',
+      containerPath: '/tmp/artifacts/turn-1/source_sql_query_sales.json',
       path: '/tmp/artifacts/turn-1/source_query_sql.json',
       recordCount: 100,
       byteSize: rawText.length,

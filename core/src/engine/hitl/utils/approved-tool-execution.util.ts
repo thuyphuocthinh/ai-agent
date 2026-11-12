@@ -25,7 +25,10 @@ export async function executeApprovedTool(
     toolProvider: IToolProvider;
     markToolExecuted?: (dto: { id: string }) => Promise<void>;
   },
-  checkpoint: Pick<CheckpointResponseDto, 'id' | 'userId' | 'workspaceId'>,
+  checkpoint: Pick<
+    CheckpointResponseDto,
+    'id' | 'userId' | 'workspaceId' | 'replyMessageId'
+  >,
   pendingTool: PendingToolCall,
 ): Promise<ApprovedToolExecution> {
   const toolResult = await deps.toolProvider.callTool({
@@ -34,6 +37,7 @@ export async function executeApprovedTool(
     args: pendingTool.args,
     ownerId: checkpoint.userId,
     workspaceId: checkpoint.workspaceId,
+    messageId: checkpoint.replyMessageId,
   });
 
   const resultText = extractTextFromMcpResult(toolResult);

@@ -1,3 +1,4 @@
+import * as path from 'path';
 import {
   ORCHESTRATION_CONSTANTS,
   DIRECT_TO_DISK_OFFLOAD_NOTE,
@@ -31,11 +32,18 @@ export async function tryOffloadPayloadToDisk(
     const filename = `source_${safeToolSlug}.json`;
 
     const savedPath = await tmpManager.saveJsonToFile(turnId, filename, parsed);
+    const turnDir =
+      typeof tmpManager.getTurnDir === 'function'
+        ? tmpManager.getTurnDir(turnId)
+        : turnId;
+    const sanitizedTurnId = path.basename(turnDir);
     const recordCount = Array.isArray(parsed) ? parsed.length : 1;
     const sample = Array.isArray(parsed) ? parsed.slice(0, 2) : [parsed];
 
     const envelope: SaveToTmpEnvelopeDto = {
       status: 'saved_to_tmp',
+      filename,
+      containerPath: `/tmp/artifacts/${sanitizedTurnId}/${filename}`,
       path: savedPath,
       recordCount,
       byteSize: rawText.length,

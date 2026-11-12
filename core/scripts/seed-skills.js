@@ -127,8 +127,8 @@ Các bước:
     name: 'ETL nạp dữ liệu lớn bảo toàn mẫu Google Sheet',
     description:
       'Quy trình trích xuất dữ liệu lớn từ SQL/CRM/File và nạp vào Google Sheet theo mẫu có sẵn mà không làm hỏng công thức hoặc gây lỗi Rate-Limit HTTP 429.',
-    tools: ['get_sheet_structure', 'run_python', 'batch_update_values'],
-    tags: ['etl', 'google sheets', 'bảo toàn công thức', 'dữ liệu lớn', 'batch update'],
+    tools: ['read_query', 'get_sheet_structure', 'run_python', 'batch_update_values'],
+    tags: ['etl', 'google sheets', 'bảo toàn công thức', 'dữ liệu lớn', 'batch update', 'sql'],
     metadata: {
       autoLoad: true,
       triggers: [
@@ -136,33 +136,59 @@ Các bước:
         'nạp danh sách khách hàng vào bảng tính không ghi đè công thức',
         'chuyển dữ liệu lớn vào Sheet tự động',
         'ETL dữ liệu vào Google Sheet bảo toàn template',
+        'đọc dữ liệu đơn hàng từ bảng orders_large',
       ],
     },
     instructions: `# Quy trình ETL nạp dữ liệu lớn vào Google Sheet (Bảo toàn template & công thức)
 
-Khi xử lý tác vụ trích xuất dữ liệu lớn và nạp vào Google Sheet, BẮT BUỘC tuân thủ 4 bước nghiêm ngặt sau:
+Khi xử lý tác vụ trích xuất dữ liệu lớn và nạp vào Google Sheet, BẮT BUỘC tuân thủ 5 bước nghiêm ngặt sau:
 
 1. BƯỚC 1 - KIỂM TRA MẪU (Template Inspection):
    - Luôn gọi \`get_sheet_structure\` trước tiên để lấy metadata: headers, \`firstEmptyRowIndex\`, và danh sách các cột chứa công thức tính toán (\`protectedFormulaColumns\`).
    - Ghi nhớ các cột công thức (ví dụ: cột VAT, Tổng tiền) để KHÔNG ghi đè giá trị tĩnh vào các cột này.
 
-2. BƯỚC 2 - TRÍCH XUẤT DỮ LIỆU & DIRECT-TO-DISK:
-   - Thực thi truy vấn nguồn (SQL, CRM, v.v.).
+2. BƯỚC 2 - TRÍCH XUẤT DỮ LIỆU NGUỒN TỪ SQL DATABASE:
+   - Khi nguồn dữ liệu là bảng dữ liệu (như \`orders_large\`, \`customers\`, v.v.), BẮT BUỘC dùng tool SQL \`read_query\` (ví dụ: \`SELECT * FROM orders_large\`), KHÔNG gọi nhầm sang tool đọc Google Sheets.
    - Nếu dữ liệu lớn (>50KB), hệ thống sẽ tự động lưu ra file tạm an toàn và trả về envelope dạng:
-     \`{"status":"saved_to_tmp","path":"/tmp/artifacts/.../source_xxx.json",...}\`
-   - Đọc kỹ đường dẫn file tạm và mẫu 2 bản ghi để nắm bắt cấu trúc dữ liệu.
+     \`{"status":"saved_to_tmp","filename":"source_read_query.json","containerPath":"/tmp/artifacts/{turnId}/source_read_query.json",...}\`
+   - Đọc kỹ \`containerPath\` và mẫu 2 bản ghi để nắm bắt cấu trúc dữ liệu.
 
 3. BƯỚC 3 - CHUYỂN ĐỔI BẰNG SANDBOX (Python Compute):
    - KHÔNG bao giờ tự render toàn bộ mảng dữ liệu khổng lồ vào ngữ cảnh hội thoại.
-   - Sử dụng tool \`run_python\` để chạy script trong Sandbox Docker cách ly:
-     + Đọc file JSON từ đường dẫn nguồn (\`path\`).
-     + Chuyển đổi và sắp xếp đúng thứ tự các cột khớp với headers của Sheet (bỏ qua hoặc để trống các cột công thức).
-     + Xuất kết quả ma trận mảng 2D ra file JSON đích trên thư mục tạm (ví dụ: \`transformed_matrix.json\`).
+   - Sử dụng tool \`run_python\` để chạy script trong Docker Sandbox cách ly:
+     \`\`\`python
+     import json
+
+     source_path = '/tmp/artifacts/{turnId}/source_read_query.json'
+     output_path = '/tmp/artifacts/{turnId}/transformed_matrix.json'
+
+     with open(source_path, 'r', encoding='utf-8') as f:
+         records = json.load(f)
+
+     # Chỉ trích xuất các cột tương ứng theo headers (bỏ qua cột công thức)
+     matrix = [[r['id'], r['customer'], r['total']] for r in records]
+
+     with open(output_path, 'w', encoding='utf-8') as f:
+         json.dump(matrix, f)
+
+     print(f"TRANSFORMED_{len(matrix)}_ROWS")
+     \`\`\`
+   - Script BẮT BUỘC phải ghi ma trận 2D kết quả ra file \`transformed_matrix.json\` trên thư mục tạm.
 
 4. BƯỚC 4 - CẬP NHẬT NGUYÊN TỬ (Atomic Batch Update):
-   - Gọi tool \`batch_update_values\` TRONG ĐÚNG 1 LẦN DUY NHẤT.
-   - Truyền tham số \`payloadFilePath\` trỏ tới file JSON ma trận đã chuyển đổi và \`range\` bắt đầu từ dòng trống đầu tiên (\`firstEmptyRowIndex\`).
-   - Tuyệt đối KHÔNG gọi cập nhật từng dòng hoặc từng ô lẻ tẻ để tránh lỗi Rate-Limit HTTP 429 và quá tải API.`,
+   - Gọi tool \`batch_update_values\` TRONG ĐÚNG 1 LẦN DUY NHẤT:
+     \`\`\`json
+     {
+       "spreadsheetId": "sheet_prices",
+       "range": "Giá!A2",
+       "payloadFilePath": "transformed_matrix.json"
+     }
+     \`\`\`
+   - Tuyệt đối KHÔNG gọi cập nhật từng dòng hoặc từng ô lẻ tẻ để tránh lỗi Rate-Limit HTTP 429 và quá tải API.
+
+5. BƯỚC 5 - TỔNG KẾT THÂN THIỆN:
+   - Sau khi hoàn thành cập nhật, hãy trả lời người dùng bằng câu trả lời tự nhiên, thân thiện bằng tiếng Việt, thông báo rõ số dòng/cột đã cập nhật và trạng thái hoàn thành.
+   - Tuyệt đối KHÔNG trả về chuỗi JSON thô từ tool.`,
   },
 ];
 

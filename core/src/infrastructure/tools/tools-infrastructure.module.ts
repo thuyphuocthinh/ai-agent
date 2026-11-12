@@ -19,11 +19,12 @@ import { DynamicProviderRepository } from './dynamic/dynamic-provider.repository
 import { DynamicProviderService } from './dynamic/dynamic-provider.service';
 import { NativeToolRegistryService } from './native/native-tool-registry.service';
 import { ProviderSummaryService } from './dynamic/provider-summary.service';
+import { StorageModule } from '../storage/storage.module';
 
 const MOCK_TOOLS = process.env.MOCK_TOOLS === 'true';
 
 @Module({
-  imports: [DatabaseModule, ResilienceModule, EmbeddingModule],
+  imports: [DatabaseModule, ResilienceModule, EmbeddingModule, StorageModule],
   providers: [
     McpAuthClientService,
     OpenApiParserService,

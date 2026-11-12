@@ -35,9 +35,31 @@ const SAMPLE_DATABASE_SQL = `
   INSERT INTO payments VALUES
     (1, 101, 398000, 'success'),
     (2, 103, 99000, 'success');
+  CREATE TABLE orders_large (
+    id INTEGER PRIMARY KEY,
+    customer TEXT NOT NULL,
+    total INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    notes TEXT NOT NULL
+  );
+  WITH RECURSIVE cnt(x) AS (
+    SELECT 1
+    UNION ALL
+    SELECT x + 1 FROM cnt WHERE x < 1000
+  )
+  INSERT INTO orders_large
+  SELECT 
+    x,
+    'Khách Hàng ' || x,
+    x * 250000,
+    CASE WHEN x % 3 = 0 THEN 'pending' ELSE 'paid' END,
+    '2026-10-01',
+    'Ghi chú đơn hàng doanh nghiệp số ' || x || ' với đầy đủ thông tin hóa đơn và mã hợp đồng dịch vụ trực tuyến'
+  FROM cnt;
 `;
 
-const MAX_ROWS = 200;
+const MAX_ROWS = 2000;
 const READ_PATTERN = /^\s*(select|with)\b/i;
 const WRITE_PATTERN = /^\s*(insert|update|delete)\b/i;
 

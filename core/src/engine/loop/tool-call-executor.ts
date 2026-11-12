@@ -606,6 +606,24 @@ export class ToolCallExecutor {
     );
   }
 
+  private async executeToolCall(
+    name: string,
+    args: Record<string, unknown>,
+  ): Promise<CallToolResponseDto> {
+    const { provider, rawName } = this.resolveToolCall(name);
+    return this.toolProvider.callTool(
+      {
+        provider,
+        name: rawName,
+        args,
+        ownerId: this.dto.userId,
+        workspaceId: this.dto.workspaceId,
+        messageId: this.dto.messageId,
+      },
+      this.signal,
+    );
+  }
+
   private async runToolCall(
     name: string,
     args: Record<string, unknown>,
@@ -627,17 +645,7 @@ export class ToolCallExecutor {
     while (true) {
       transientAttempt++;
       try {
-        const { provider, rawName } = this.resolveToolCall(name);
-        result = await this.toolProvider.callTool(
-          {
-            provider,
-            name: rawName,
-            args,
-            ownerId: this.dto.userId,
-            workspaceId: this.dto.workspaceId,
-          },
-          this.signal,
-        );
+        result = await this.executeToolCall(name, args);
       } catch (error) {
         return this.handleCallFailure(
           error,

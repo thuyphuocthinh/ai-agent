@@ -205,6 +205,7 @@ describe('ApprovalExecutionService', () => {
         args: { query: "UPDATE Orders SET Status='Completed' WHERE OrderId=1" },
         ownerId: 'user-1',
         workspaceId: 'workspace-1',
+        messageId: 'approval-msg-1',
       });
       // Quay lại vòng lặp Supervisor với rounds đã gồm kết quả hành động vừa
       // duyệt — KHÔNG resume thẳng ReactLoop trên agent vừa dùng (bug cũ).

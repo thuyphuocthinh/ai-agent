@@ -80,6 +80,7 @@ export class NativeToolRegistryService {
       ownerId: userId ?? dto.ownerId,
       workspaceId: context?.workspaceId ?? dto.workspaceId,
       tenantId: context?.tenantId ?? dto.tenantId,
+      messageId: context?.messageId ?? dto.messageId,
       signal: signal ?? context?.signal,
     });
   }

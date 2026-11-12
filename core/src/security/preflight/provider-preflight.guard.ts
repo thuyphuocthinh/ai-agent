@@ -27,6 +27,7 @@ export class ProviderPreflightGuard {
     'slack',
     'github',
     'kintone',
+    'compute',
   ]);
 
   // Mock in-memory lưu trữ cấu hình kết nối khi chạy cục bộ / test
