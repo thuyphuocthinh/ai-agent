@@ -23,6 +23,7 @@ import { SupervisorPromptBuilder } from './engine/supervisor/supervisor-prompt.b
 import { LlmStrategyFactory } from './engine/strategy/llm-strategy.factory';
 import { GeminiStrategy } from './engine/strategy/gemini/gemini.strategy';
 import { OpenAiStrategy } from './engine/strategy/openai/openai.strategy';
+import { DeepSeekStrategy } from './engine/strategy/deepseek/deepseek.strategy';
 import { AnthropicStrategy } from './engine/strategy/anthropic/anthropic.strategy';
 import { MockStrategy } from './engine/strategy/mock/mock.strategy';
 import { ConversationMemoryService } from './memory/conversation-memory.service';
@@ -154,6 +155,7 @@ import { SecurityModule } from './security';
     LlmStrategyFactory,
     GeminiStrategy,
     OpenAiStrategy,
+    DeepSeekStrategy,
     AnthropicStrategy,
     MockStrategy,
     PrismaCheckpointService,

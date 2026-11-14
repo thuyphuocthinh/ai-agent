@@ -11,27 +11,9 @@ import {
   LlmStructuredOptions,
 } from '../../../contracts/engine/llm-strategy.interface';
 import { attachLlmCostMetadata } from '../../../common/text/llm-cost.util';
+import { stripNineRouterArtifacts } from '../../../common/text/router-artifact.util';
 import { toOpenAiStrictSchema } from './openai-strict-schema.util';
 import { OpenAiChatSession } from './openai-chat-session';
-
-// 9Router đôi khi gắn nhầm terminator SSE "data: [DONE]" vào cuối 1 response
-// JSON bình thường (không streaming), và đôi khi double-stringify cả body.
-// Chuỗi "[DONE]" tự chứa ký tự `[`/`]` nên bộ dò ngoặc của JsonExtractor dễ
-// nhận nhầm nó là 1 phần cấu trúc JSON — phải dọn rác này TRƯỚC khi extract/parse.
-function stripNineRouterArtifacts(rawText: string): string {
-  let text = rawText.replace(/data:\s*\[DONE\]\s*$/g, '').trim();
-
-  try {
-    const parsed = JSON.parse(text);
-    if (typeof parsed === 'string') {
-      text = parsed;
-    }
-  } catch {
-    // Không phải double-stringified, giữ nguyên text.
-  }
-
-  return text;
-}
 
 @Injectable()
 export class OpenAiStrategy implements LlmStrategy {

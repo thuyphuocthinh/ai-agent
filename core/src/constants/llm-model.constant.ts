@@ -1,4 +1,4 @@
-export type LlmStrategyId = 'gemini' | 'openai' | 'anthropic';
+export type LlmStrategyId = 'gemini' | 'openai' | 'anthropic' | 'deepseek';
 
 export interface LlmModelRegistryEntry {
   strategyId: LlmStrategyId;
@@ -81,6 +81,22 @@ export const LLM_MODEL_REGISTRY: Record<string, LlmModelRegistryEntry> = {
     pricePerMillionInputTokens: 3,
     pricePerMillionOutputTokens: 15,
     contextWindowTokens: 200_000,
+  },
+  'deepseek-chat': {
+    strategyId: 'deepseek',
+    model: 'deepseek-chat',
+    label: 'DeepSeek V3',
+    pricePerMillionInputTokens: 0.14,
+    pricePerMillionOutputTokens: 0.28,
+    contextWindowTokens: 64_000,
+  },
+  'deepseek-reasoner': {
+    strategyId: 'deepseek',
+    model: 'deepseek-reasoner',
+    label: 'DeepSeek R1',
+    pricePerMillionInputTokens: 0.55,
+    pricePerMillionOutputTokens: 2.19,
+    contextWindowTokens: 64_000,
   },
 };
 
