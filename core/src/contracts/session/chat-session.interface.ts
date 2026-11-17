@@ -18,6 +18,8 @@ export interface IChatSession {
   approvalMessageIds: Set<string>;
   state?: EConversationState;
   title?: string;
+  channelType?: string;
+  sessionType?: string;
   createdAt?: Date;
   lastSeenAt?: Date;
 }
@@ -49,4 +51,18 @@ export interface IChatSessionManager {
     meta: { limit: number; nextCursor?: string; hasMore: boolean };
   }>;
   updateTitle?(sessionId: string, title: string): Promise<void>;
+}
+
+/**
+ * Tùy chọn đầu vào cho tác vụ chat của người dùng.
+ * Hỗ trợ cả text prompt lẫn tài liệu hình ảnh (imageUrl / imageBase64).
+ */
+export interface ChatInputOptions {
+  prompt: string;
+  sessionId?: string;
+  workflowId?: string;
+  imageUrl?: string;
+  imageBase64?: string;
+  channelType?: string;
+  sessionType?: string;
 }

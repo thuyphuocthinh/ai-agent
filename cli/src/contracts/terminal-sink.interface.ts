@@ -87,6 +87,7 @@ export interface IMessageSink {
   addUserMessage(dto: {
     conversationId: string;
     text: string;
+    attachments?: any[];
   }): Promise<CreateOrchestrationMessageResponseDto>;
 }
 

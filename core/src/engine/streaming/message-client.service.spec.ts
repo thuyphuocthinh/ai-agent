@@ -156,6 +156,21 @@ describe('MessageClientService', () => {
     expect(recordSuccessfulCreateCalls).toHaveBeenCalledWith('c1', reply.id, toolCalls);
   });
 
+  it('lưu và truy vấn attachments trong getRecentHistory', async () => {
+    const attachment = { type: 'image' as const, url: 'https://example.com/receipt.jpg' };
+    await service.addUserMessage({
+      conversationId: 'c1',
+      text: 'Xem hoá đơn',
+      attachments: [attachment],
+    });
+    const next = await service.addUserMessage({ conversationId: 'c1', text: 'tiếp theo' });
+
+    const turns = await history('c1', next.id);
+    expect(turns).toEqual([
+      { role: EMessageRole.USER, text: 'Xem hoá đơn', attachments: [attachment] },
+    ]);
+  });
+
   it('tryUpdateMessage swallows failures', async () => {
     jest.spyOn(service, 'updateMessage').mockRejectedValue(new Error('db down'));
 

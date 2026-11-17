@@ -57,9 +57,7 @@ export class ChatController {
   @ApiOkResponse({ description: 'UI Message Stream (SSE)' })
   @ApiBadRequestResponse({ description: 'Dữ liệu prompt không hợp lệ hoặc thiếu thông tin' })
   async chat(@Body() dto: ChatRequestDto, @Res() res: ServerResponse): Promise<void> {
-    const turn = dto.workflowId
-      ? await this.chatService.chat(dto.prompt, dto.sessionId, dto.workflowId)
-      : await this.chatService.chat(dto.prompt, dto.sessionId);
+    const turn = await this.chatService.chat(dto);
     await this.streamPresenter.pipe(res, turn);
   }
 

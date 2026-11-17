@@ -3,6 +3,7 @@ import {
   ExecutionContext,
   Injectable,
   NestInterceptor,
+  StreamableFile,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { Observable } from 'rxjs';
@@ -17,14 +18,14 @@ import { ApiResponseDto } from '../dtos/api-response.dto';
  */
 @Injectable()
 export class TransformResponseInterceptor<T>
-  implements NestInterceptor<T, ApiResponseDto<T> | T>
+  implements NestInterceptor<T, ApiResponseDto<T> | T | StreamableFile>
 {
   constructor(private readonly reflector: Reflector) {}
 
   intercept(
     context: ExecutionContext,
     next: CallHandler,
-  ): Observable<ApiResponseDto<T> | T> {
+  ): Observable<ApiResponseDto<T> | T | StreamableFile> {
     const isBypass = this.reflector.getAllAndOverride<boolean>(
       BYPASS_TRANSFORM_KEY,
       [context.getHandler(), context.getClass()],
@@ -44,6 +45,11 @@ export class TransformResponseInterceptor<T>
 
     return next.handle().pipe(
       map((result) => {
+        // Lưới an toàn: Không bọc ApiResponseDto nếu handler trả về StreamableFile (nhị phân)
+        if (result instanceof StreamableFile) {
+          return result;
+        }
+
         const statusCode = res?.statusCode || 200;
         const traceId = (req?.headers?.['x-trace-id'] as string) || randomUUID();
 

@@ -232,6 +232,31 @@ describe('PrismaMessageSink', () => {
         createdAt: now,
       });
     });
+
+    it('lưu và truy vấn attachments trong getRecentHistory', async () => {
+      const now = new Date();
+      mockPrisma.conversationMessage.findMany.mockResolvedValue([
+        {
+          id: 'm1',
+          role: MessageRole.USER,
+          text: 'Xem ảnh',
+          attachments: [{ type: 'image', url: 'https://img.com/1.png' }],
+          metadata: {},
+          createdAt: now,
+        },
+      ]);
+
+      const history = await sink.getRecentHistory({
+        conversationId: 'conv-1',
+        userId: 'u1',
+        beforeMessageId: '',
+        limit: 10,
+      });
+
+      expect(history[0].attachments).toEqual([
+        { type: 'image', url: 'https://img.com/1.png' },
+      ]);
+    });
   });
 
   describe('Bảo mật lỗi (No SQL leak)', () => {

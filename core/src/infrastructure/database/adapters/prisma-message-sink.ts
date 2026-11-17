@@ -12,6 +12,7 @@ import {
   GetRecentHistoryRequestDto,
   UpdateOrchestrationMessageRequestDto,
 } from '../../../contracts/dtos/message-client.dto';
+import { IMessageAttachment } from '../../../contracts/storage/storage.interface';
 import { EMessageEventType, EMessageRole } from '@agent/core/constants';
 import { PrismaService } from '../prisma.service';
 import { sanitizePrismaError } from '../../../common/errors';
@@ -96,8 +97,9 @@ export class PrismaMessageSink implements IMessageSink {
   async addUserMessage(dto: {
     conversationId: string;
     text: string;
+    attachments?: IMessageAttachment[];
   }): Promise<CreateOrchestrationMessageResponseDto> {
-    return this.store(dto.conversationId, EMessageRole.USER, dto.text);
+    return this.store(dto.conversationId, EMessageRole.USER, dto.text, dto.attachments);
   }
 
   async getMessageText(dto: GetMessageTextRequestDto): Promise<string> {
@@ -129,6 +131,7 @@ export class PrismaMessageSink implements IMessageSink {
           id: true,
           role: true,
           text: true,
+          attachments: true,
           metadata: true,
           createdAt: true,
         },
@@ -168,6 +171,10 @@ export class PrismaMessageSink implements IMessageSink {
           id: m.id,
           role: m.role === MessageRole.USER ? EMessageRole.USER : EMessageRole.MODEL,
           text: m.text,
+          attachments:
+            Array.isArray(m.attachments) && m.attachments.length > 0
+              ? (m.attachments as unknown as IMessageAttachment[])
+              : undefined,
           metadata:
             m.metadata && typeof m.metadata === 'object' && !Array.isArray(m.metadata)
               ? (m.metadata as Record<string, unknown>)
@@ -281,6 +288,7 @@ export class PrismaMessageSink implements IMessageSink {
     conversationId: string,
     role: EMessageRole,
     content: string | Record<string, unknown>,
+    attachments?: IMessageAttachment[],
   ): Promise<CreateOrchestrationMessageResponseDto> {
     const id = uuidv7();
     const text = typeof content === 'string' ? content : JSON.stringify(content);
@@ -300,6 +308,10 @@ export class PrismaMessageSink implements IMessageSink {
           text,
           isText,
           metadata,
+          attachments:
+            attachments && attachments.length > 0
+              ? (attachments as unknown as Prisma.InputJsonValue)
+              : [],
         },
       });
 

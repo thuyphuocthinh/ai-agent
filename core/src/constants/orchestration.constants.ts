@@ -3,6 +3,7 @@ export const ORCHESTRATION_CONSTANTS = {
   // set — đổi model thật sự thì sửa env, không sửa 2 dòng này.
   DEFAULT_REACT_MODEL: 'gpt-4o-mini',
   SUPERVISOR_MODEL: 'gpt-4o-mini',
+  DEFAULT_VISION_MODEL: 'gemini-2.0-flash',
   MAX_REACT_STEPS: 8,
   // accuracy_problem.md — ĐÃ TÁCH khỏi ý nghĩa gốc "tổng ngân sách vòng lặp".
   // Giờ CHỈ đếm số lần "KHÔNG TIẾN TRIỂN" trong continueRounds() (guardrail

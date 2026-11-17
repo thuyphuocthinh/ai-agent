@@ -1,4 +1,4 @@
-import { ExecutionContext, CallHandler } from '@nestjs/common';
+import { ExecutionContext, CallHandler, StreamableFile } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { of } from 'rxjs';
 import { TransformResponseInterceptor } from './transform-response.interceptor';
@@ -107,5 +107,19 @@ describe('TransformResponseInterceptor', () => {
     const result = await new Promise<any>((resolve) => observable.subscribe(resolve));
 
     expect(result).toBe(rawData);
+  });
+
+  it('bypasses transformation and returns raw StreamableFile instance', async () => {
+    const context = createMockContext({ isBypass: false });
+    const file = new StreamableFile(Buffer.from('binary-content'));
+    const next: CallHandler = {
+      handle: () => of(file),
+    };
+
+    const observable = interceptor.intercept(context, next);
+    const result = await new Promise<any>((resolve) => observable.subscribe(resolve));
+
+    expect(result).toBe(file);
+    expect(result instanceof StreamableFile).toBe(true);
   });
 });

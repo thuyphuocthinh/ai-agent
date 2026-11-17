@@ -9,3 +9,4 @@ export * from './conversation.dto';
 export * from './stream-reconnect-query.dto';
 export * from './integrations.dto';
 export * from './skill.dto';
+export * from './presigned-url.dto';

@@ -54,7 +54,9 @@ export class TurnResolverService {
   ): Promise<AnswerResult> {
     const { userId, channelId, messageId, workspaceId, workflowId } = data;
     const [prompt, agents, history] = await Promise.all([
-      this.messageSink.getMessageText({ id: messageId, userId }),
+      data.prompt
+        ? Promise.resolve(data.prompt)
+        : this.messageSink.getMessageText({ id: messageId, userId }),
       this.agentDiscovery
         ? this.agentDiscovery.getAvailableAgents(userId, workspaceId)
         : this.supervisor.getAvailableAgents(userId, workspaceId),

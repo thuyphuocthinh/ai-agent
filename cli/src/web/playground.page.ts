@@ -88,6 +88,21 @@ export const PLAYGROUND_HTML = /* html */ `<!doctype html>
     line-height: 1.5;
     white-space: pre-wrap;
   }
+  .chat-attachment-thumb {
+    display: block;
+    max-width: 260px;
+    max-height: 180px;
+    border-radius: 8px;
+    object-fit: cover;
+    margin-bottom: 8px;
+    cursor: pointer;
+    border: 1px solid var(--line);
+    transition: transform 0.15s ease, opacity 0.15s ease;
+  }
+  .chat-attachment-thumb:hover {
+    opacity: 0.9;
+    transform: scale(1.02);
+  }
   .bot {
     max-width: 100%;
     display: flex;
@@ -620,6 +635,72 @@ export const PLAYGROUND_HTML = /* html */ `<!doctype html>
     margin-right: 2px;
   }
   #send:disabled { opacity: 0.3; cursor: default; }
+  .attach-btn {
+    background: transparent;
+    border: 0;
+    color: var(--text-muted);
+    cursor: pointer;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    flex-shrink: 0;
+    margin-bottom: 4px;
+    margin-left: 2px;
+    transition: all 0.15s ease;
+  }
+  .attach-btn:hover {
+    color: var(--text);
+    background: var(--surface);
+  }
+  .attachment-preview {
+    max-width: 800px;
+    width: 100%;
+    margin: 0 auto 8px;
+    display: flex;
+    align-items: center;
+  }
+  .attachment-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    padding: 4px 8px 4px 4px;
+    border-radius: 8px;
+    font-size: 12px;
+    color: var(--text);
+  }
+  .chip-thumb {
+    width: 28px;
+    height: 28px;
+    border-radius: 4px;
+    object-fit: cover;
+  }
+  .chip-name {
+    max-width: 160px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+  }
+  .chip-remove {
+    background: transparent;
+    border: 0;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 16px;
+    line-height: 1;
+    padding: 0 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .chip-remove:hover {
+    color: var(--err);
+  }
   .form-hint {
     max-width: 800px;
     width: 100%;
@@ -1055,7 +1136,20 @@ export const PLAYGROUND_HTML = /* html */ `<!doctype html>
         </div>
         <div class="progress-desc" id="global-progress-desc">Đang chuẩn bị...</div>
       </div>
+      <div id="attachment-preview" class="attachment-preview" style="display: none;">
+        <div class="attachment-chip">
+          <img id="attachment-preview-img" class="chip-thumb" src="" alt="preview" />
+          <span id="attachment-preview-name" class="chip-name"></span>
+          <button id="attachment-remove-btn" type="button" class="chip-remove" title="Xóa ảnh">&times;</button>
+        </div>
+      </div>
       <form id="form">
+        <input type="file" id="file-input" accept="image/png,image/jpeg,image/webp,image/gif" style="display: none;" />
+        <button id="attach-btn" type="button" class="attach-btn" aria-label="Đính kèm ảnh" title="Đính kèm ảnh (PNG, JPG, WEBP, GIF)">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path>
+          </svg>
+        </button>
         <textarea id="prompt" rows="1" placeholder="Nhập câu hỏi... (Enter để gửi, Shift+Enter xuống dòng)"></textarea>
         <button id="send" type="button" aria-label="Gửi">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
@@ -1195,6 +1289,81 @@ export const PLAYGROUND_HTML = /* html */ `<!doctype html>
     sessionId = localStorage.getItem('agent_playground_session_id') || null;
   } catch (e) {}
   var busy = false;
+
+  var currentAttachment = null;
+  var attachBtn = document.getElementById('attach-btn');
+  var fileInput = document.getElementById('file-input');
+  var previewWrap = document.getElementById('attachment-preview');
+  var previewImg = document.getElementById('attachment-preview-img');
+  var previewName = document.getElementById('attachment-preview-name');
+  var removeBtn = document.getElementById('attachment-remove-btn');
+
+  function clearAttachment() {
+    currentAttachment = null;
+    if (fileInput) fileInput.value = '';
+    if (previewWrap) previewWrap.style.display = 'none';
+    if (previewImg) previewImg.src = '';
+    if (previewName) previewName.textContent = '';
+  }
+
+  if (removeBtn) {
+    removeBtn.onclick = clearAttachment;
+  }
+
+  if (attachBtn && fileInput) {
+    attachBtn.onclick = function () {
+      fileInput.click();
+    };
+
+    fileInput.onchange = async function (e) {
+      var file = e.target.files && e.target.files[0];
+      if (!file) return;
+      if (!file.type || !file.type.startsWith('image/')) {
+        alert('Chỉ hỗ trợ file hình ảnh (PNG, JPG, WEBP, GIF)');
+        clearAttachment();
+        return;
+      }
+      if (file.size > 10 * 1024 * 1024) {
+        alert('Dung lượng ảnh tối đa là 10MB');
+        clearAttachment();
+        return;
+      }
+
+      var localUrl = URL.createObjectURL(file);
+      if (previewImg) previewImg.src = localUrl;
+      if (previewName) previewName.textContent = file.name;
+      if (previewWrap) previewWrap.style.display = 'flex';
+
+      try {
+        var res = await fetch('/api/storage/presigned-url', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ filename: file.name, contentType: file.type }),
+        });
+        if (!res.ok) {
+          throw new Error('Lỗi lấy pre-signed URL: ' + res.statusText);
+        }
+        var data = await res.json();
+        var uploadUrl = data.uploadUrl || (data.data && data.data.uploadUrl);
+        var publicUrl = data.publicUrl || (data.data && data.data.publicUrl);
+
+        var putRes = await fetch(uploadUrl, {
+          method: 'PUT',
+          headers: { 'Content-Type': file.type },
+          body: file,
+        });
+        if (!putRes.ok) {
+          throw new Error('Lỗi tải ảnh lên storage: ' + putRes.statusText);
+        }
+
+        currentAttachment = { publicUrl: publicUrl, file: file, localUrl: localUrl };
+      } catch (err) {
+        console.error('Upload failed:', err);
+        alert('Tải ảnh thất bại: ' + (err && err.message ? err.message : err));
+        clearAttachment();
+      }
+    };
+  }
   var LF = String.fromCharCode(10);
   var CRLF = String.fromCharCode(13, 10);
   var BT = String.fromCharCode(96);
@@ -2175,7 +2344,7 @@ export const PLAYGROUND_HTML = /* html */ `<!doctype html>
 
   function submit() {
     var text = promptBox.value.trim();
-    if (!text || busy) return;
+    if ((!text && !currentAttachment) || busy) return;
     promptBox.value = '';
     promptBox.style.height = '38px';
     promptBox.style.overflowY = 'hidden';
@@ -2183,10 +2352,33 @@ export const PLAYGROUND_HTML = /* html */ `<!doctype html>
     var hint = log.querySelector('.hint-empty');
     if (hint) hint.remove();
 
-    log.appendChild(el('div', 'msg user', text));
+    var userBubble = el('div', 'msg user');
+    var activeImageUrl = currentAttachment ? currentAttachment.publicUrl : undefined;
+    if (currentAttachment) {
+      var img = document.createElement('img');
+      img.className = 'chat-attachment-thumb';
+      img.src = currentAttachment.localUrl || currentAttachment.publicUrl;
+      img.title = 'Bấm để mở ảnh gốc';
+      img.onclick = function () { window.open(activeImageUrl, '_blank'); };
+      userBubble.appendChild(img);
+    }
+    if (text) {
+      var textDiv = document.createElement('div');
+      textDiv.textContent = text;
+      userBubble.appendChild(textDiv);
+    }
+    log.appendChild(userBubble);
+
+    clearAttachment();
+
     showGlobalProgress(10, 'Đang gửi yêu cầu và khởi tạo bộ điều phối...', 'Khởi tạo');
     var selectedWf = (workflowSelect && workflowSelect.value) ? workflowSelect.value : undefined;
-    run('/api/chat', { prompt: text, sessionId: sessionId || undefined, workflowId: selectedWf });
+    run('/api/chat', {
+      prompt: text || 'Phân tích tài liệu hình ảnh đính kèm',
+      imageUrl: activeImageUrl,
+      sessionId: sessionId || undefined,
+      workflowId: selectedWf,
+    });
   }
 
   promptBox.addEventListener('input', autoResize);
@@ -2395,7 +2587,25 @@ export const PLAYGROUND_HTML = /* html */ `<!doctype html>
 
         historyTurns.forEach(function (turn, idx) {
           if (turn.role === 'user') {
-            log.appendChild(el('div', 'msg user', turn.text));
+            var userBubble = el('div', 'msg user');
+            if (Array.isArray(turn.attachments) && turn.attachments.length > 0) {
+              turn.attachments.forEach(function (att) {
+                if (att.type === 'image' && att.url) {
+                  var img = document.createElement('img');
+                  img.className = 'chat-attachment-thumb';
+                  img.src = att.url;
+                  img.title = 'Bấm để mở ảnh gốc';
+                  img.onclick = function () { window.open(att.url, '_blank'); };
+                  userBubble.appendChild(img);
+                }
+              });
+            }
+            if (turn.text) {
+              var textDiv = document.createElement('div');
+              textDiv.textContent = turn.text;
+              userBubble.appendChild(textDiv);
+            }
+            log.appendChild(userBubble);
           } else {
             var msgWrap = el('div', 'msg');
             var botBox = el('div', 'bot');

@@ -12,6 +12,7 @@ import {
   GetRecentHistoryRequestDto,
   UpdateOrchestrationMessageRequestDto,
 } from '../../contracts/dtos/message-client.dto';
+import { IMessageAttachment } from '../../contracts/storage/storage.interface';
 import { EMessageEventType, EMessageRole } from '@agent/core/constants';
 import { ConversationMemoryService } from '../../memory/conversation-memory.service';
 
@@ -22,6 +23,7 @@ interface StoredMessage {
   conversationId: string;
   role: EMessageRole;
   text: string;
+  attachments?: IMessageAttachment[];
   // Chỉ message dạng chữ mới vào lịch sử hội thoại (message approval_request
   // là object JSON, không phải 1 lượt chat).
   isText: boolean;
@@ -53,8 +55,9 @@ export class MessageClientService implements IMessageSink {
   async addUserMessage(dto: {
     conversationId: string;
     text: string;
+    attachments?: IMessageAttachment[];
   }): Promise<CreateOrchestrationMessageResponseDto> {
-    return this.store(dto.conversationId, EMessageRole.USER, dto.text);
+    return this.store(dto.conversationId, EMessageRole.USER, dto.text, dto.attachments);
   }
 
   async getMessageText(dto: GetMessageTextRequestDto): Promise<string> {
@@ -86,7 +89,11 @@ export class MessageClientService implements IMessageSink {
         }
         return true;
       })
-      .map((m) => ({ role: m.role, text: m.text }))
+      .map((m) => ({
+        role: m.role,
+        text: m.text,
+        ...(m.attachments ? { attachments: m.attachments } : {}),
+      }))
       .slice(-limit);
   }
 
@@ -150,6 +157,7 @@ export class MessageClientService implements IMessageSink {
     conversationId: string,
     role: EMessageRole,
     content: string | Record<string, unknown>,
+    attachments?: IMessageAttachment[],
   ): CreateOrchestrationMessageResponseDto {
     // UUID: các cột Postgres tham chiếu message id (reply/trigger/checkpoint)
     // có kiểu uuid; id dạng "msg-1" làm mọi turn chết ngay ở lần ghi DB đầu tiên.
@@ -159,6 +167,7 @@ export class MessageClientService implements IMessageSink {
       conversationId,
       role,
       text: typeof content === 'string' ? content : JSON.stringify(content),
+      attachments,
       isText: typeof content === 'string',
     });
     this.notify({ type: EMessageEventType.CREATED, id, conversationId, role, content });

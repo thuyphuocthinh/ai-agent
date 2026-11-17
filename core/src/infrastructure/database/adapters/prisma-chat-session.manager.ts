@@ -248,6 +248,7 @@ export class PrismaChatSessionManager implements IChatSessionManager {
     approvalMessageIds: string[];
     state: ConversationState;
     title?: string | null;
+    channelType?: string | null;
     createdAt: Date;
     lastSeenAt: Date;
   }): IChatSession {
@@ -265,6 +266,8 @@ export class PrismaChatSessionManager implements IChatSessionManager {
       approvalMessageIds: new Set(conv.approvalMessageIds || []),
       state: appState,
       title: conv.title ?? undefined,
+      channelType: conv.channelType ?? 'web',
+      sessionType: conv.channelType ?? 'web',
       createdAt: conv.createdAt,
       lastSeenAt: conv.lastSeenAt,
     };

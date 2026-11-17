@@ -4,6 +4,7 @@ export * from './presentation/controllers/integrations.controller';
 export * from './presentation/controllers/skill.controller';
 export * from './presentation/controllers/metrics.controller';
 export * from './presentation/controllers/health.controller';
+export * from './presentation/controllers/storage.controller';
 export * from './presentation/presenters/ui-stream.presenter';
 export * from './presentation/dtos';
 export * from './presentation/decorators';

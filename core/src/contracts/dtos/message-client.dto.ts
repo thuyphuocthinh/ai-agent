@@ -1,5 +1,7 @@
+import { ApiPropertyOptional } from '@nestjs/swagger';
 import { EStepExecutionStatus, EMessageRole } from '@agent/core/constants';
 import { PersonaDto } from './supervisor.dto';
+import { IMessageAttachment } from '../storage/storage.interface';
 export class CreateOrchestrationMessageRequestDto {
   channelId?: string;
   conversationId?: string;
@@ -80,6 +82,13 @@ export class ChatHistoryTurnDto {
   id?: string;
   role: EMessageRole;
   text: string;
+
+  @ApiPropertyOptional({
+    description: 'Danh sách tệp đính kèm (hình ảnh, tài liệu) liên quan đến lượt chat',
+    example: [{ type: 'image', url: 'https://storage.mycompany.com/temp/invoices/inv-001.jpg' }],
+  })
+  attachments?: IMessageAttachment[];
+
   metadata?: Record<string, unknown>;
   createdAt?: Date;
 }

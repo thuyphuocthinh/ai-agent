@@ -76,6 +76,11 @@ import {
   WORKFLOW_REGISTRY,
 } from './contracts';
 import { HealthCheckService } from './infrastructure/resilience/health-check.service';
+import { GeminiVisionProvider } from './engine/ocr/providers/gemini-vision.provider';
+import { OpenAiVisionProvider } from './engine/ocr/providers/openai-vision.provider';
+import { VisionProviderResolver } from './engine/ocr/vision-provider.resolver';
+import { VisionLlmOcrService } from './engine/ocr/vision-llm-ocr.service';
+import { IMAGE_OCR_SERVICE } from './contracts/ocr/image-ocr.interface';
 import {
   ChatController,
   WorkflowController,
@@ -83,6 +88,7 @@ import {
   SkillController,
   MetricsController,
   HealthController,
+  StorageController,
   ChatService,
   IntegrationsService,
   ChatSessionManager,
@@ -118,6 +124,7 @@ import { SecurityModule } from './security';
     SkillController,
     MetricsController,
     HealthController,
+    StorageController,
   ],
   providers: [
     PrismaChatSessionManager,
@@ -223,6 +230,14 @@ import { SecurityModule } from './security';
       useExisting: AgentStreamService,
     },
     HealthCheckService,
+    GeminiVisionProvider,
+    OpenAiVisionProvider,
+    VisionProviderResolver,
+    VisionLlmOcrService,
+    {
+      provide: IMAGE_OCR_SERVICE,
+      useClass: VisionLlmOcrService,
+    },
   ],
   exports: [
     AiOrchestrationProcessor,
@@ -249,6 +264,11 @@ import { SecurityModule } from './security';
     AutonomousEngine,
     WORKFLOW_REGISTRY,
     SecurityModule,
+    GeminiVisionProvider,
+    OpenAiVisionProvider,
+    VisionProviderResolver,
+    VisionLlmOcrService,
+    IMAGE_OCR_SERVICE,
   ],
 })
 export class OrchestrationModule {}

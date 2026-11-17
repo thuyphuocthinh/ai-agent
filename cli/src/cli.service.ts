@@ -64,6 +64,7 @@ export class CliService implements IMessageSink, IStreamSink {
   async addUserMessage(dto: {
     conversationId: string;
     text: string;
+    attachments?: any[];
   }): Promise<CreateOrchestrationMessageResponseDto> {
     const id = `cli-msg-${++this.messageCounter}`;
     this.messages.set(id, dto.text);

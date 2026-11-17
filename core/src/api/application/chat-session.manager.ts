@@ -34,6 +34,8 @@ export class InMemoryChatSessionManager implements IChatSessionManager {
       botUserId: randomUUID(),
       approvalMessageIds: new Set<string>(),
       state: EConversationState.AI_ACTIVE,
+      channelType: 'web',
+      sessionType: 'web',
       createdAt: new Date(),
       lastSeenAt: new Date(),
     };

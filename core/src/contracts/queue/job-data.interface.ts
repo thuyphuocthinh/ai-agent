@@ -12,6 +12,11 @@ export interface IProcessAiTriggerJobData {
   sessionType?: string;
   channelType?: string;
   workflowId?: string;
+  /**
+   * Prompt đã qua xử lý OCR và Layer 2 Security.
+   * Nếu có, TurnResolverService sẽ dùng trực tiếp mà không cần đọc lại từ DB (giữ DB sạch cho UI).
+   */
+  prompt?: string;
 }
 
 export interface IProcessApprovalJobData {

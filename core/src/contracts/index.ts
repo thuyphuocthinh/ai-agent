@@ -21,3 +21,6 @@ export * from './dtos';
 export * from './streaming/vercel-ui-stream.adapter';
 export * from './observability';
 export * from './storage/artifact-tmp.interface';
+export * from './storage/storage.interface';
+export * from './ocr/image-ocr.interface';
+export * from './ocr/vision-provider.interface';

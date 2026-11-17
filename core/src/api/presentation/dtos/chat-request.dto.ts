@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsNotEmpty, IsOptional, IsString, IsUrl, IsUUID } from 'class-validator';
 
 const trim = ({ value }: { value: unknown }) =>
   typeof value === 'string' ? value.trim() : value;
@@ -31,4 +31,40 @@ export class ChatRequestDto {
   @IsOptional()
   @IsString()
   workflowId?: string;
+
+  @ApiPropertyOptional({
+    description: 'Đường dẫn công khai hoặc Pre-signed URL của ảnh cần phân tích (khuyên dùng Direct-to-Cloud).',
+    example: 'https://storage.mycompany.com/temp/invoices/inv-001.jpg',
+  })
+  @Transform(trim)
+  @IsOptional()
+  @IsUrl(
+    { require_protocol: true, protocols: ['http', 'https'], require_tld: false },
+    { message: 'imageUrl phải là một URL hợp lệ bắt đầu bằng http:// hoặc https://' },
+  )
+  imageUrl?: string;
+
+  @ApiPropertyOptional({
+    description: 'Dữ liệu ảnh dạng Base64 nếu gửi trực tiếp qua API (data:image/... hoặc raw base64).',
+    example: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...',
+  })
+  @IsOptional()
+  @IsString({ message: 'imageBase64 phải là chuỗi ký tự base64' })
+  imageBase64?: string;
+
+  @ApiPropertyOptional({
+    description: 'Kênh hội thoại (web, api, telegram, slack). Mặc định là web.',
+    example: 'web',
+  })
+  @IsOptional()
+  @IsString()
+  channelType?: string;
+
+  @ApiPropertyOptional({
+    description: 'Loại phiên làm việc (web, direct, group). Mặc định đồng bộ theo channelType.',
+    example: 'direct',
+  })
+  @IsOptional()
+  @IsString()
+  sessionType?: string;
 }

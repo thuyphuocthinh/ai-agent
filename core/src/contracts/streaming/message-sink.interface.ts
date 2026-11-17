@@ -1,4 +1,5 @@
 import { EMessageEventType, EMessageRole } from '@agent/core/constants';
+import { IMessageAttachment } from '../storage/storage.interface';
 import {
   ChatHistoryTurnDto,
   CreateOrchestrationMessageRequestDto,
@@ -30,5 +31,6 @@ export interface IMessageSink {
   addUserMessage(dto: {
     conversationId: string;
     text: string;
+    attachments?: IMessageAttachment[];
   }): Promise<CreateOrchestrationMessageResponseDto>;
 }

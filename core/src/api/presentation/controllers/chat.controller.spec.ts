@@ -72,7 +72,30 @@ describe('ChatController', () => {
       expect(text).toContain('data: {"type":"start","messageId":"m1"}');
       expect(text).toContain('data: {"type":"finish","finishReason":"stop"}');
       expect(text).toContain('data: [DONE]');
-      expect(service.chat).toHaveBeenCalledWith('xin chào', SESSION);
+      expect(service.chat).toHaveBeenCalledWith(
+        expect.objectContaining({ prompt: 'xin chào', sessionId: SESSION }),
+      );
+    });
+
+    it('passes imageUrl and imageBase64 to chatService when provided', async () => {
+      service.chat.mockResolvedValue(
+        finishedTurn([{ type: 'start', messageId: 'm2' }, { type: 'finish', finishReason: 'stop' }]),
+      );
+
+      const response = await post('/api/chat', {
+        prompt: 'đọc hóa đơn',
+        sessionId: SESSION,
+        imageUrl: 'https://example.com/inv.jpg',
+      });
+
+      expect(response.status).toBe(200);
+      expect(service.chat).toHaveBeenCalledWith(
+        expect.objectContaining({
+          prompt: 'đọc hóa đơn',
+          sessionId: SESSION,
+          imageUrl: 'https://example.com/inv.jpg',
+        }),
+      );
     });
 
     it.each([
