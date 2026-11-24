@@ -16,6 +16,13 @@ import { InMemoryAuditStore } from './adapters/in-memory-audit.store';
 import { InMemoryIdempotencyStore } from './adapters/in-memory-idempotency.store';
 import { InMemoryEscalationStore } from './adapters/in-memory-escalation.store';
 import { PrismaAuditStore } from './adapters/prisma-audit.store';
+import { PrismaReceiptAuditStore } from './adapters/prisma-receipt-audit.store';
+import { Ed25519SignerService } from './crypto/ed25519-signer.service';
+import { ReceiptChainEngine } from './crypto/receipt-chain.engine';
+import {
+  CRYPTOGRAPHIC_SIGNER,
+  RECEIPT_CHAIN_ENGINE,
+} from './constants/receipt.constants';
 import { DatabaseModule } from '../infrastructure/database/database.module';
 
 @Module({
@@ -33,6 +40,17 @@ import { DatabaseModule } from '../infrastructure/database/database.module';
     InMemoryIdempotencyStore,
     InMemoryEscalationStore,
     PrismaAuditStore,
+    PrismaReceiptAuditStore,
+    Ed25519SignerService,
+    ReceiptChainEngine,
+    {
+      provide: CRYPTOGRAPHIC_SIGNER,
+      useClass: Ed25519SignerService,
+    },
+    {
+      provide: RECEIPT_CHAIN_ENGINE,
+      useClass: ReceiptChainEngine,
+    },
     {
       provide: AUDIT_STORE,
       useClass: PrismaAuditStore,
@@ -58,10 +76,15 @@ import { DatabaseModule } from '../infrastructure/database/database.module';
     AUDIT_STORE,
     IDEMPOTENCY_STORE,
     ESCALATION_STORE,
+    CRYPTOGRAPHIC_SIGNER,
+    RECEIPT_CHAIN_ENGINE,
     InMemoryAuditStore,
     InMemoryIdempotencyStore,
     InMemoryEscalationStore,
     PrismaAuditStore,
+    PrismaReceiptAuditStore,
+    Ed25519SignerService,
+    ReceiptChainEngine,
   ],
 })
 export class SecurityModule {}

@@ -282,8 +282,18 @@ model AuditLog {
   status         AuditStatus @default(EXECUTED)
   metadata       Json?       @default("{}")
 
+  // Cryptographic Receipts (Hash-Chaining & Ed25519 Signatures)
+  sequenceNumber      Int         @default(1) @map("sequence_number")
+  previousReceiptHash String      @default("0000000000000000000000000000000000000000000000000000000000000000") @map("previous_receipt_hash") @db.VarChar(64)
+  currentReceiptHash  String      @default("") @map("current_receipt_hash") @db.VarChar(64)
+  signature           String      @default("") @map("signature") @db.VarChar(128)
+  keyId               String      @default("agent-core-prod-v1") @map("key_id") @db.VarChar(100)
+
   user           User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
 
+  @@unique([conversationId, sequenceNumber], map: "uq_audit_conversation_sequence")
+  @@index([currentReceiptHash], map: "idx_audit_current_receipt_hash")
+  @@index([previousReceiptHash], map: "idx_audit_previous_receipt_hash")
   @@index([timestamp(sort: Desc)])
   @@index([userId, timestamp(sort: Desc)])
   @@index([fingerprint])

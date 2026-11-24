@@ -1,0 +1,3 @@
+export const CRYPTOGRAPHIC_SIGNER = Symbol.for('CRYPTOGRAPHIC_SIGNER');
+export const RECEIPT_CHAIN_ENGINE = Symbol.for('RECEIPT_CHAIN_ENGINE');
+export const RECEIPT_AUDIT_STORE = Symbol.for('RECEIPT_AUDIT_STORE');
