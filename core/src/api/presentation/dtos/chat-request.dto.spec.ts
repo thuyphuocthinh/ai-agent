@@ -61,4 +61,50 @@ describe('ChatRequestDto validation', () => {
     });
     expect(errors).toContain('imageBase64');
   });
+
+  it('accepts valid images array with up to 5 URLs', async () => {
+    const errors = await errorsOf({
+      prompt: 'Analyze these multi invoices',
+      images: [
+        'https://example.com/inv1.jpg',
+        'http://localhost:3000/api/storage/local/attachments/inv2.png',
+        'https://example.com/inv3.webp',
+      ],
+    });
+    expect(errors).toEqual([]);
+  });
+
+  it('rejects images when exceeding 5 items', async () => {
+    const errors = await errorsOf({
+      prompt: 'Too many images',
+      images: [
+        'https://example.com/1.jpg',
+        'https://example.com/2.jpg',
+        'https://example.com/3.jpg',
+        'https://example.com/4.jpg',
+        'https://example.com/5.jpg',
+        'https://example.com/6.jpg',
+      ],
+    });
+    expect(errors).toContain('images');
+  });
+
+  it('rejects images when containing an invalid URL string', async () => {
+    const errors = await errorsOf({
+      prompt: 'Invalid URL inside images',
+      images: ['https://example.com/valid.jpg', 'invalid-non-url-path'],
+    });
+    expect(errors).toContain('images');
+  });
+
+  it('applies @Trim() to remove leading and trailing whitespaces', () => {
+    const instance = plainToInstance(ChatRequestDto, {
+      prompt: '   Prompt with whitespaces   ',
+      imageUrl: '  https://example.com/test.png  ',
+      workflowId: '   custom-workflow   ',
+    });
+    expect(instance.prompt).toBe('Prompt with whitespaces');
+    expect(instance.imageUrl).toBe('https://example.com/test.png');
+    expect(instance.workflowId).toBe('custom-workflow');
+  });
 });

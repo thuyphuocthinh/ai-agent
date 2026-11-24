@@ -154,27 +154,46 @@ export class ChatService {
   }
 
   /**
-   * Xử lý OCR và ghép prompt nếu người dùng gửi kèm ảnh.
+   * Xử lý OCR và ghép prompt nếu người dùng gửi kèm ảnh (đơn ảnh hoặc danh sách tối đa 5 ảnh).
    */
   private async resolvePromptWithOcr(
     options: ChatInputOptions,
     turnId: string,
   ): Promise<string> {
-    const { imageUrl, imageBase64, prompt } = options;
-    if ((!imageUrl && !imageBase64) || !this.ocrService) {
+    const { prompt } = options;
+    if (!this.ocrService) {
+      return prompt;
+    }
+
+    const imageUrls = options.images?.length
+      ? options.images
+      : options.imageUrl
+        ? [options.imageUrl]
+        : [];
+
+    if (imageUrls.length === 0 && !options.imageBase64) {
       return prompt;
     }
 
     try {
+      if (imageUrls.length > 0) {
+        const ocrResults = await Promise.all(
+          imageUrls.map((imageUrl) =>
+            this.ocrService!.extractText({ imageUrl, turnId }),
+          ),
+        );
+        return ImagePromptEnricherUtil.enrich({ ocrResults, userPrompt: prompt });
+      }
+
       const ocrResult = await this.ocrService.extractText({
-        imageUrl,
-        imageBase64,
+        imageBase64: options.imageBase64,
         turnId,
       });
       return ImagePromptEnricherUtil.enrich({ ocrResult, userPrompt: prompt });
-    } catch (err) {
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
       this.logger.warn(
-        `OCR bóc tách ảnh thất bại: ${(err as Error).message}. Tiếp tục xử lý với prompt gốc.`,
+        `OCR bóc tách ảnh thất bại: ${message}. Tiếp tục xử lý với prompt gốc.`,
       );
       return prompt;
     }
@@ -231,6 +250,9 @@ export class ChatService {
    * Bóc tách thông tin file đính kèm từ ChatInputOptions.
    */
   private resolveAttachments(options: ChatInputOptions): IMessageAttachment[] | undefined {
+    if (options.images && options.images.length > 0) {
+      return options.images.map((url) => ({ type: 'image', url }));
+    }
     if (options.imageUrl) {
       return [{ type: 'image', url: options.imageUrl }];
     }

@@ -1,4 +1,5 @@
-import { RpcException } from '@nestjs/microservices';
+import { ELlmProvider } from '@agent/core/constants';
+import { OcrException } from '../../common/errors';
 import { VisionProviderResolver } from './vision-provider.resolver';
 import { GeminiVisionProvider } from './providers/gemini-vision.provider';
 import { OpenAiVisionProvider } from './providers/openai-vision.provider';
@@ -14,13 +15,13 @@ describe('VisionProviderResolver', () => {
     delete process.env.OCR_VISION_PROVIDER;
 
     mockGemini = {
-      id: 'gemini',
+      id: ELlmProvider.GEMINI,
       isAvailable: jest.fn(),
       generateText: jest.fn(),
     } as unknown as jest.Mocked<GeminiVisionProvider>;
 
     mockOpenAi = {
-      id: 'openai',
+      id: ELlmProvider.OPENAI,
       isAvailable: jest.fn(),
       generateText: jest.fn(),
     } as unknown as jest.Mocked<OpenAiVisionProvider>;
@@ -33,60 +34,42 @@ describe('VisionProviderResolver', () => {
     jest.restoreAllMocks();
   });
 
-  describe('Auto-detection', () => {
-    it('ưu tiên Gemini khi Gemini có sẵn', () => {
+  describe('Auto-detection (Mặc định: Gemini -> OpenAI)', () => {
+    it('ưu tiên Gemini làm primary và OpenAI làm fallback khi cả hai có sẵn', () => {
       mockGemini.isAvailable.mockReturnValue(true);
       mockOpenAi.isAvailable.mockReturnValue(true);
 
-      const provider = resolver.resolve();
-      expect(provider).toBe(mockGemini);
+      const resolved = resolver.resolve();
+      expect(resolved.primary).toBe(mockGemini);
+      expect(resolved.fallback).toBe(mockOpenAi);
     });
 
-    it('fallback sang OpenAI khi Gemini không có sẵn nhưng OpenAI có sẵn', () => {
+    it('chuyển OpenAI làm primary khi Gemini không có sẵn', () => {
       mockGemini.isAvailable.mockReturnValue(false);
       mockOpenAi.isAvailable.mockReturnValue(true);
 
-      const provider = resolver.resolve();
-      expect(provider).toBe(mockOpenAi);
+      const resolved = resolver.resolve();
+      expect(resolved.primary).toBe(mockOpenAi);
+      expect(resolved.fallback).toBeUndefined();
     });
 
-    it('ném RpcException khi cả hai provider đều không có sẵn', () => {
+    it('ném OcrException (503) khi cả hai provider đều không có sẵn', () => {
       mockGemini.isAvailable.mockReturnValue(false);
       mockOpenAi.isAvailable.mockReturnValue(false);
 
-      expect(() => resolver.resolve()).toThrow(RpcException);
+      expect(() => resolver.resolve()).toThrow(OcrException);
     });
   });
 
-  describe('Explicit Override (OCR_VISION_PROVIDER)', () => {
-    it('chọn Gemini khi OCR_VISION_PROVIDER=gemini và Gemini có sẵn', () => {
-      process.env.OCR_VISION_PROVIDER = 'gemini';
+  describe('Explicit Override (OCR_VISION_PROVIDER=openai)', () => {
+    it('đặt OpenAI làm primary và Gemini làm fallback khi cấu hình ưu tiên openai', () => {
+      process.env.OCR_VISION_PROVIDER = ELlmProvider.OPENAI;
       mockGemini.isAvailable.mockReturnValue(true);
-
-      const provider = resolver.resolve();
-      expect(provider).toBe(mockGemini);
-    });
-
-    it('ném RpcException khi OCR_VISION_PROVIDER=gemini nhưng Gemini không có sẵn', () => {
-      process.env.OCR_VISION_PROVIDER = 'gemini';
-      mockGemini.isAvailable.mockReturnValue(false);
-
-      expect(() => resolver.resolve()).toThrow(RpcException);
-    });
-
-    it('chọn OpenAI khi OCR_VISION_PROVIDER=openai và OpenAI có sẵn', () => {
-      process.env.OCR_VISION_PROVIDER = 'openai';
       mockOpenAi.isAvailable.mockReturnValue(true);
 
-      const provider = resolver.resolve();
-      expect(provider).toBe(mockOpenAi);
-    });
-
-    it('ném RpcException khi OCR_VISION_PROVIDER=openai nhưng OpenAI không có sẵn', () => {
-      process.env.OCR_VISION_PROVIDER = 'openai';
-      mockOpenAi.isAvailable.mockReturnValue(false);
-
-      expect(() => resolver.resolve()).toThrow(RpcException);
+      const resolved = resolver.resolve();
+      expect(resolved.primary).toBe(mockOpenAi);
+      expect(resolved.fallback).toBe(mockGemini);
     });
   });
 });

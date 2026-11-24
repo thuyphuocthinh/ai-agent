@@ -216,4 +216,62 @@ describe('Multimodal Chat & Dynamic Agentic Workflow (Integration)', () => {
       }),
     );
   });
+
+  // AC-12: Small-Batch Multi-Image Ingestion (Max 5 Images)
+  it('[AC-12] Xử lý danh sách nhiều ảnh (images) song song và lưu attachments đầy đủ', async () => {
+    ocrService.extractText
+      .mockResolvedValueOnce({
+        markdown: 'Dữ liệu trang 1: Doanh thu',
+        hasText: true,
+        detectedDocumentType: 'general_text',
+        characterCount: 26,
+      })
+      .mockResolvedValueOnce({
+        markdown: 'Dữ liệu trang 2: Chi phí',
+        hasText: true,
+        detectedDocumentType: 'general_text',
+        characterCount: 24,
+      });
+
+    const dto = {
+      sessionId: currentSession.id,
+      prompt: 'Tổng hợp báo cáo từ 2 ảnh này',
+      images: [
+        'https://storage.googleapis.com/test-bucket/doc-page-1.png',
+        'https://storage.googleapis.com/test-bucket/doc-page-2.png',
+      ],
+    };
+
+    await controller.chat(dto, mockRes);
+
+    expect(ocrService.extractText).toHaveBeenCalledTimes(2);
+    expect(ocrService.extractText).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ imageUrl: dto.images[0] }),
+    );
+    expect(ocrService.extractText).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ imageUrl: dto.images[1] }),
+    );
+
+    expect(messages.addUserMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        conversationId: currentSession.conversationId,
+        text: 'Tổng hợp báo cáo từ 2 ảnh này',
+        attachments: [
+          { type: 'image', url: dto.images[0] },
+          { type: 'image', url: dto.images[1] },
+        ],
+      }),
+    );
+
+    expect(queueDispatcher.dispatch).toHaveBeenCalledWith(
+      EQueueName.AI_ORCHESTRATION_QUEUE,
+      EJobName.PROCESS_AI_TRIGGER,
+      expect.objectContaining({
+        conversationId: currentSession.conversationId,
+        prompt: expect.stringMatching(/### \[Tài liệu ảnh 1\/2\].*Dữ liệu trang 1: Doanh thu/s),
+      }),
+    );
+  });
 });

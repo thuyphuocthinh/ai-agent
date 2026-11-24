@@ -1,4 +1,11 @@
-export type LlmStrategyId = 'gemini' | 'openai' | 'anthropic' | 'deepseek';
+export enum ELlmProvider {
+  GEMINI = 'gemini',
+  OPENAI = 'openai',
+  ANTHROPIC = 'anthropic',
+  DEEPSEEK = 'deepseek',
+}
+
+export type LlmStrategyId = `${ELlmProvider}`;
 
 export interface LlmModelRegistryEntry {
   strategyId: LlmStrategyId;

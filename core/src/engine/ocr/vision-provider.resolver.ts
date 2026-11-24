@@ -1,7 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { RpcException } from '@nestjs/microservices';
-import { ORCHESTRATION_ERROR } from '@agent/core/constants';
-import { IVisionLlmProvider } from '../../contracts';
+import { ELlmProvider } from '@agent/core/constants';
+import {
+  ResolvedVisionProviders,
+} from '../../contracts';
+import { OcrException } from '../../common/errors';
 import { GeminiVisionProvider } from './providers/gemini-vision.provider';
 import { OpenAiVisionProvider } from './providers/openai-vision.provider';
 
@@ -15,34 +17,39 @@ export class VisionProviderResolver {
   ) {}
 
   /**
-   * Tự động giải quyết provider khả dụng theo thứ tự ưu tiên:
-   * 1. Cấu hình ép buộc qua biến môi trường OCR_VISION_PROVIDER ('gemini' | 'openai').
-   * 2. Ưu tiên Gemini nếu có GEMINI_API_KEY.
-   * 3. Fallback sang OpenAI nếu có OPENAI_API_KEY.
+   * Phân giải Provider chính (primary) và Provider dự phòng (fallback).
+   * Thứ tự mặc định: Gemini -> OpenAI (hoặc OpenAI -> Gemini nếu OCR_VISION_PROVIDER=openai).
    */
-  resolve(): IVisionLlmProvider {
-    const preferred = process.env.OCR_VISION_PROVIDER?.toLowerCase();
+  resolve(): ResolvedVisionProviders {
+    const preference = process.env.OCR_VISION_PROVIDER?.trim().toLowerCase();
 
-    if (preferred === 'gemini') {
-      if (this.geminiProvider.isAvailable()) return this.geminiProvider;
-      throw new RpcException(ORCHESTRATION_ERROR.LLM_PROVIDER_NOT_CONFIGURED);
+    const [primaryCandidate, fallbackCandidate] =
+      preference === ELlmProvider.OPENAI
+        ? [this.openaiProvider, this.geminiProvider]
+        : [this.geminiProvider, this.openaiProvider];
+
+    if (primaryCandidate.isAvailable()) {
+      return {
+        primary: primaryCandidate,
+        fallback: fallbackCandidate.isAvailable() ? fallbackCandidate : undefined,
+      };
     }
 
-    if (preferred === 'openai') {
-      if (this.openaiProvider.isAvailable()) return this.openaiProvider;
-      throw new RpcException(ORCHESTRATION_ERROR.LLM_PROVIDER_NOT_CONFIGURED);
+    if (fallbackCandidate.isAvailable()) {
+      return {
+        primary: fallbackCandidate,
+      };
     }
 
-    // Auto-detection fallback
-    if (this.geminiProvider.isAvailable()) {
-      return this.geminiProvider;
-    }
-
-    if (this.openaiProvider.isAvailable()) {
-      return this.openaiProvider;
-    }
-
-    this.logger.error('Không tìm thấy bất kỳ Vision LLM Provider nào được cấu hình API Key!');
-    throw new RpcException(ORCHESTRATION_ERROR.LLM_PROVIDER_NOT_CONFIGURED);
+    this.logger.error('Không tìm thấy Vision LLM Provider nào khả dụng (thiếu API Key)!');
+    throw new OcrException(
+      'Không tìm thấy Vision LLM Provider nào được cấu hình API Key khả dụng',
+      {
+        code: 'OCR_PROVIDER_NOT_CONFIGURED',
+        statusCode: 503,
+        userFriendlyMessage:
+          'Dịch vụ nhận diện tài liệu ảnh hiện chưa được cấu hình nhà cung cấp AI khả dụng.',
+      },
+    );
   }
 }

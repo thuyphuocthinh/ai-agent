@@ -52,7 +52,7 @@ describe('Storage Upload & Multimodal End-to-End Flow (Integration)', () => {
         .mockResolvedValue('| Dịch vụ | Thành tiền |\n| Phí lưu kho | 1.500.000đ |'),
     };
     const mockResolver = {
-      resolve: jest.fn().mockReturnValue(mockProvider),
+      resolve: jest.fn().mockReturnValue({ primary: mockProvider }),
     } as unknown as VisionProviderResolver;
 
     ocrService = new VisionLlmOcrService(mockResolver, localStorageService);

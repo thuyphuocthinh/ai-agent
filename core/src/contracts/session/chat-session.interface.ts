@@ -63,6 +63,7 @@ export interface ChatInputOptions {
   workflowId?: string;
   imageUrl?: string;
   imageBase64?: string;
+  images?: string[];
   channelType?: string;
   sessionType?: string;
 }

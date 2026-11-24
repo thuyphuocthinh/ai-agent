@@ -13,6 +13,11 @@ export interface OcrExtractionOptions {
   imageBase64?: string;
 
   /**
+   * Danh sách nhiều đường dẫn URL ảnh (tối đa 5 ảnh) để xử lý song song.
+   */
+  images?: string[];
+
+  /**
    * Turn ID hiện tại để phục vụ việc lưu trữ tạm thời an toàn nếu cần offload đĩa.
    */
   turnId?: string;
@@ -21,6 +26,27 @@ export interface OcrExtractionOptions {
    * Timeout tối đa cho tác vụ OCR (mặc định: 30000ms).
    */
   timeoutMs?: number;
+}
+
+/**
+ * Cấu hình tiền xử lý ảnh trước khi gửi sang Vision LLM.
+ */
+export interface ImagePreprocessOptions {
+  maxDimension?: number;
+  quality?: number;
+  sizeThresholdBytes?: number;
+}
+
+/**
+ * Kết quả tiền xử lý ảnh đã được chuẩn hóa.
+ */
+export interface PreprocessedImageResult {
+  buffer: Buffer;
+  mimeType: string;
+  base64Data: string;
+  width?: number;
+  height?: number;
+  wasProcessed: boolean;
 }
 
 /**
@@ -72,6 +98,7 @@ export interface OcrResult {
  */
 export interface ImagePromptEnrichOptions {
   ocrResult?: OcrResult;
+  ocrResults?: OcrResult[];
   userPrompt: string;
   maxOcrCharacters?: number;
 }

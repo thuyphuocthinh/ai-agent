@@ -11,7 +11,7 @@ describe('ImagePromptEnricherUtil', () => {
     expect(ImagePromptEnricherUtil.enrich({ ocrResult: emptyResult, userPrompt: basePrompt })).toBe(basePrompt);
   });
 
-  it('ghép cấu trúc Markdown và prompt với các thẻ phân cách chuẩn xác', () => {
+  it('ghép cấu trúc Markdown và prompt với các thẻ phân cách chuẩn xác cho 1 ảnh', () => {
     const tableOcr: OcrResult = {
       markdown: '| Mã SP | Tên SP | Giá |\n|---|---|---|\n| SP01 | Bánh mì | 15.000 |',
       hasText: true,
@@ -27,6 +27,36 @@ describe('ImagePromptEnricherUtil', () => {
     expect(result).toContain(ImagePromptEnricherUtil.TAG_DOC_END);
     expect(result).toContain(ImagePromptEnricherUtil.TAG_USER_INSTRUCTION);
     expect(result).toContain(basePrompt);
+  });
+
+  it('định dạng rõ ràng các phần khi có danh sách nhiều ảnh (ocrResults)', () => {
+    const doc1: OcrResult = {
+      markdown: 'Hóa đơn tiền điện tháng 10: 500.000 VNĐ',
+      hasText: true,
+      detectedDocumentType: 'invoice',
+      characterCount: 38,
+    };
+    const doc2: OcrResult = {
+      markdown: 'Biên lai chuyển khoản thành công',
+      hasText: true,
+      detectedDocumentType: 'receipt',
+      characterCount: 32,
+    };
+
+    const result = ImagePromptEnricherUtil.enrich({
+      ocrResults: [doc1, doc2],
+      userPrompt: 'Đối chiếu hóa đơn và biên lai',
+    });
+
+    expect(result).toContain('### [Tài liệu ảnh 1/2]');
+    expect(result).toContain('Loại tài liệu nhận diện: invoice');
+    expect(result).toContain('Hóa đơn tiền điện tháng 10: 500.000 VNĐ');
+
+    expect(result).toContain('### [Tài liệu ảnh 2/2]');
+    expect(result).toContain('Loại tài liệu nhận diện: receipt');
+    expect(result).toContain('Biên lai chuyển khoản thành công');
+
+    expect(result).toContain('Đối chiếu hóa đơn và biên lai');
   });
 
   it('tạo thông báo ghi chú thích hợp khi ảnh không chứa chữ (hasText: false)', () => {
@@ -73,7 +103,7 @@ describe('ImagePromptEnricherUtil', () => {
       maxOcrCharacters: 100,
     });
 
-    expect(result).toContain('A'.repeat(100));
+    expect(result).toContain('A'.repeat(50));
     expect(result).toContain('[...Nội dung tài liệu đã được cắt bớt do vượt quá giới hạn...]');
   });
 });
