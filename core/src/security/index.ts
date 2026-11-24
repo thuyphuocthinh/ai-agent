@@ -29,4 +29,8 @@ export * from './crypto/ed25519-signer.service';
 export * from './crypto/receipt-chain.engine';
 export * from './crypto/auditor-chain-verifier.util';
 export * from './adapters/prisma-receipt-audit.store';
+export * from './contracts/indirect-injection.interface';
+export * from './constants/indirect-injection.constants';
+export * from './guardrails/untrusted-content-sanitizer.util';
+export * from './guardrails/indirect-prompt-injection.guard';
 export * from './security.module';

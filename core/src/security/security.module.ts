@@ -24,11 +24,14 @@ import {
   RECEIPT_CHAIN_ENGINE,
 } from './constants/receipt.constants';
 import { DatabaseModule } from '../infrastructure/database/database.module';
+import { IndirectPromptInjectionGuard } from './guardrails/indirect-prompt-injection.guard';
+import { INDIRECT_INJECTION_GUARD } from './constants/indirect-injection.constants';
 
 @Module({
   imports: [DatabaseModule],
   providers: [
     PromptInjectionGuard,
+    IndirectPromptInjectionGuard,
     ProviderPreflightGuard,
     BusinessPolicyEngine,
     PolicyCorpusService,
@@ -43,6 +46,10 @@ import { DatabaseModule } from '../infrastructure/database/database.module';
     PrismaReceiptAuditStore,
     Ed25519SignerService,
     ReceiptChainEngine,
+    {
+      provide: INDIRECT_INJECTION_GUARD,
+      useClass: IndirectPromptInjectionGuard,
+    },
     {
       provide: CRYPTOGRAPHIC_SIGNER,
       useClass: Ed25519SignerService,
@@ -66,6 +73,8 @@ import { DatabaseModule } from '../infrastructure/database/database.module';
   ],
   exports: [
     PromptInjectionGuard,
+    IndirectPromptInjectionGuard,
+    INDIRECT_INJECTION_GUARD,
     ProviderPreflightGuard,
     BusinessPolicyEngine,
     PolicyCorpusService,
