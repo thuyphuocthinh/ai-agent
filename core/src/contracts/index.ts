@@ -17,6 +17,8 @@ export * from './engine/sub-agent-spawner.interface';
 export * from './engine/pipeline-chaining.interface';
 export * from './engine/parallel-fanout.interface';
 export * from './engine/deterministic-graph.interface';
+export * from './engine/tool-reflection.interface';
+export * from './engine/critic-reflection.interface';
 export * from './dtos';
 export * from './streaming/vercel-ui-stream.adapter';
 export * from './observability';

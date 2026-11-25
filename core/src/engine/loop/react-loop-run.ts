@@ -21,6 +21,7 @@ import {
 import { withLlmRetry } from './utils/with-llm-retry.util';
 import { CircuitBreakerService } from '../../infrastructure/resilience/circuit-breaker.service';
 import { ToolRepeatGuard } from './guards/tool-repeat-guard';
+import { ResponseCriticGate } from './guards/response-critic.gate';
 import { InsertAccumulator } from './guards/insert-accumulator';
 import { ToolRiskGate } from './guards/tool-risk-gate';
 import { ToolCallExecutor } from './tool-call-executor';
@@ -56,6 +57,7 @@ export class ReactLoopRun {
   private readonly logger: Logger;
 
   private readonly toolExecutor: ToolCallExecutor;
+  private readonly criticGate: ResponseCriticGate;
 
   constructor(options: ReactLoopRunOptions, deps: ReactLoopRunDeps) {
     this.dto = options.dto;
@@ -105,6 +107,14 @@ export class ReactLoopRun {
         tmpManager: deps.tmpManager,
       },
     );
+
+    this.criticGate = new ResponseCriticGate({
+      enabled: options.dto.enableCriticReflection ?? false,
+      maxSteps: ORCHESTRATION_CONSTANTS.MAX_REACT_STEPS,
+      userPrompt: options.dto.prompt,
+      sendMessage: (prompt, onToken) => this.sendMessage(prompt, onToken),
+      logger: deps.logger,
+    });
   }
 
   async execute(
@@ -154,95 +164,141 @@ export class ReactLoopRun {
     | { done: false; nextTurn: LlmTurnResult }
   > {
     const toolCalls = this.toolExecutor.getToolCalls();
-    // Cần chừa 1 bước để xử lý tool call do nudge sinh ra, không thì mất luôn.
-    const hasBudgetForSelfCheck =
-      step < ORCHESTRATION_CONSTANTS.MAX_REACT_STEPS - 1;
-    if (selfChecked || toolCalls.length === 0 || !hasBudgetForSelfCheck) {
-      this.logger.log(
-        `run() done at step=${step} toolCalls=${toolCalls.length}`,
-      );
+    const hasBudget = step < ORCHESTRATION_CONSTANTS.MAX_REACT_STEPS - 1;
+
+    // 1. Dừng sớm nếu không đủ điều kiện Nudge (đã self-check, không có tool calls, hoặc hết ngân sách)
+    if (selfChecked || toolCalls.length === 0 || !hasBudget) {
+      this.logger.log(`run() done at step=${step} toolCalls=${toolCalls.length}`);
       return {
         done: true,
-        response: {
-          answer: turn.text || DEFAULT_EMPTY_ANSWER,
-          toolCalls,
-        },
+        response: this.buildResponse(turn.text || DEFAULT_EMPTY_ANSWER),
       };
     }
 
-    const answerBeforeSelfCheck = turn.text;
-    const { requiredCount, achievedCount } = await this.checkQuantity();
-    if (requiredCount > 0 && requiredCount !== achievedCount) {
-      this.logger.log(
-        `quantity mismatch requiredCount=${requiredCount} achievedCount=${achievedCount} — nudging to continue`,
-      );
-      const nudgeTurn = await this.sendMessage(
-        buildQuantityNudgePrompt(requiredCount, achievedCount),
-        onToken,
-      );
-      if (nudgeTurn.toolCalls.length > 0) {
-        resync('');
-        return { done: false, nextTurn: nudgeTurn };
-      }
-      this.logger.warn(
-        `run() done at step=${step} toolCalls=${toolCalls.length} (quantity vẫn thiếu nhưng model không gọi thêm tool) requiredCount=${requiredCount} achievedCount=${achievedCount}`,
-      );
-      // Bug thật (HH1) — model từng báo "đã xong đủ N" dù achievedCount thật
-      // KHÁC N (bịa số/lặp lại số đã yêu cầu). KHÔNG tin nguyên văn câu trả lời
-      // của model ở nhánh này — luôn tự chèn CON SỐ THẬT đã tính được, để user
-      // không bị đọc nhầm là đã xong đủ.
-      const baseAnswer =
-        answerBeforeSelfCheck || DEFAULT_EMPTY_ANSWER;
-      const answer = buildQuantityMismatchAnswer(
-        baseAnswer,
-        requiredCount,
-        achievedCount,
-      );
-      resync(answer);
-      return { done: true, response: { answer, toolCalls } };
+    // 2. Chặng 1: Nudge số lượng (Quantity Shortfall)
+    const quantityResult = await this.evaluateQuantityNudge(turn.text, onToken);
+    if (quantityResult?.action === 'continue') {
+      return this.continueLoop(quantityResult.nextTurn, resync);
+    }
+    if (quantityResult?.action === 'mismatch_done') {
+      return this.finish(quantityResult.forcedAnswer, resync);
     }
 
-    // Fast-path: nếu đã có ít nhất 1 tool gọi dữ liệu/hành động thật (không chỉ metadata/schema)
-    // thành công và số lượng (nếu có) đã khớp, thì bỏ qua self-check nudge để tiết kiệm 1 LLM call (1.5-2.5s).
-    if (this.hasRealDataExecution(toolCalls)) {
+    // 3. Chặng 2: Nudge phản xạ ảo giác số liệu (Critic Fact-Grounding Gate)
+    const criticOutcome = await this.criticGate.evaluateOutcome({
+      turn,
+      step,
+      toolCalls,
+      selfChecked,
+      onToken,
+      resync,
+    });
+    if (criticOutcome) {
+      return criticOutcome;
+    }
+
+    // 4. Chặng 3: Nudge dữ liệu thật (Metadata Fast-path)
+    if (!this.hasRealDataExecution(toolCalls)) {
+      const metadataRetryTurn = await this.evaluateMetadataNudge(onToken);
+      if (metadataRetryTurn) {
+        return this.continueLoop(metadataRetryTurn, resync);
+      }
+      this.logger.log(
+        `run() done at step=${step} toolCalls=${toolCalls.length} (giữ câu trả lời TRƯỚC self-check)`,
+      );
+    } else {
       this.logger.log(
         `run() done at step=${step} toolCalls=${toolCalls.length} (fast-path: real data fetched, bypassing self-check)`,
       );
-      const answer =
-        answerBeforeSelfCheck || DEFAULT_EMPTY_ANSWER;
-      resync(answer);
-      return { done: true, response: { answer, toolCalls } };
     }
 
-    this.logger.log('self-check nudge triggered');
-    const selfCheckTurn = await this.sendMessage(
-      ORCHESTRATION_SELF_CHECK_PROMPT,
-      onToken,
-    );
-    if (selfCheckTurn.toolCalls.length > 0) {
-      resync('');
-      return { done: false, nextTurn: selfCheckTurn };
-    }
-    this.logger.log(
-      `run() done at step=${step} toolCalls=${toolCalls.length} (giữ câu trả lời TRƯỚC self-check)`,
-    );
-    const answer =
-      answerBeforeSelfCheck || DEFAULT_EMPTY_ANSWER;
-    resync(answer);
-    return { done: true, response: { answer, toolCalls } };
+    // 5. Toàn bộ chặng kiểm tra thông qua -> Hoàn tất thành công
+    return this.finish(turn.text, resync);
+  }
+
+  private finish(
+    answerText: string | undefined,
+    resync: (text: string) => void,
+  ): { done: true; response: RunReactLoopResponseDto } {
+    const finalAnswer = answerText || DEFAULT_EMPTY_ANSWER;
+    resync(finalAnswer);
+    return {
+      done: true,
+      response: this.buildResponse(finalAnswer),
+    };
+  }
+
+  private continueLoop(
+    nextTurn: LlmTurnResult,
+    resync: (text: string) => void,
+  ): { done: false; nextTurn: LlmTurnResult } {
+    resync('');
+    return { done: false, nextTurn };
+  }
+
+  private buildResponse(answer: string): RunReactLoopResponseDto {
+    return {
+      answer,
+      toolCalls: this.toolExecutor.getToolCalls(),
+    };
   }
 
   private buildMaxStepsResponse(turn: LlmTurnResult): RunReactLoopResponseDto {
     this.logger.warn(
       `run() hit MAX_REACT_STEPS=${ORCHESTRATION_CONSTANTS.MAX_REACT_STEPS} userId=${this.dto.userId}`,
     );
-    return {
-      answer: buildMaxStepsAnswer(
-        turn.text,
-        this.toolExecutor.hasAnySuccessfulToolCall(),
-      ),
-      toolCalls: this.toolExecutor.getToolCalls(),
-    };
+    const answer = buildMaxStepsAnswer(
+      turn.text,
+      this.toolExecutor.hasAnySuccessfulToolCall(),
+    );
+    return this.buildResponse(answer);
+  }
+
+  private async evaluateQuantityNudge(
+    answerBeforeCheck: string,
+    onToken: (chunk: string) => void,
+  ): Promise<
+    | { action: 'continue'; nextTurn: LlmTurnResult }
+    | { action: 'mismatch_done'; forcedAnswer: string }
+    | undefined
+  > {
+    const { requiredCount, achievedCount } = await this.checkQuantity();
+    if (requiredCount <= 0 || requiredCount === achievedCount) {
+      return undefined;
+    }
+
+    this.logger.log(
+      `quantity mismatch requiredCount=${requiredCount} achievedCount=${achievedCount} — nudging to continue`,
+    );
+    const nudgeTurn = await this.sendMessage(
+      buildQuantityNudgePrompt(requiredCount, achievedCount),
+      onToken,
+    );
+    if (nudgeTurn.toolCalls.length > 0) {
+      return { action: 'continue', nextTurn: nudgeTurn };
+    }
+
+    this.logger.warn(
+      `run() done at step (quantity vẫn thiếu nhưng model không gọi thêm tool) requiredCount=${requiredCount} achievedCount=${achievedCount}`,
+    );
+    const baseAnswer = answerBeforeCheck || DEFAULT_EMPTY_ANSWER;
+    const forcedAnswer = buildQuantityMismatchAnswer(
+      baseAnswer,
+      requiredCount,
+      achievedCount,
+    );
+    return { action: 'mismatch_done', forcedAnswer };
+  }
+
+  private async evaluateMetadataNudge(
+    onToken: (chunk: string) => void,
+  ): Promise<LlmTurnResult | undefined> {
+    this.logger.log('self-check nudge triggered');
+    const selfCheckTurn = await this.sendMessage(
+      ORCHESTRATION_SELF_CHECK_PROMPT,
+      onToken,
+    );
+    return selfCheckTurn.toolCalls.length > 0 ? selfCheckTurn : undefined;
   }
 
   // streamedAnything reset lại MỖI lần thử (đầu fn()) — chỉ cho retry khi lần

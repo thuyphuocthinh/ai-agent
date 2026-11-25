@@ -46,6 +46,9 @@ export class RunReactLoopRequestDto {
   // Số lần tự sửa lỗi tối đa khi gọi tool fail (Hard cap: mặc định 2 lần, không retry vô tận)
   maxSelfCorrectionRetries?: number;
   selfCorrectionCount?: number;
+  // Bật/tắt bộ thẩm định phản xạ (Critic Grounding Check) trước khi chốt câu trả lời cuối.
+  // Mặc định: true. Nếu tắt (false), loop bypass kiểm tra hoàn toàn (Zero Cost / Fast path).
+  enableCriticReflection?: boolean;
 }
 
 export class ToolCallTraceDto {

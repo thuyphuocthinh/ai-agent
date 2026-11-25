@@ -392,21 +392,22 @@ describe('ToolCallExecutor', () => {
       });
       const { executor } = createExecutor();
 
-      // Lần 1: Lỗi đầu tiên -> Gợi ý tự sửa lỗi
+      // Lần 1: Lỗi đầu tiên -> Gợi ý tự sửa lỗi qua ToolFailureReflector
       const result1 = await executor.run([
         { id: 'call-1', name: 'execute_read_query', args: { query: 'SELECT * FROM invalid_tbl' } },
       ]);
-      expect(result1[0].content).toContain('[LỖI THỰC THI CÔNG CỤ]:');
-      expect(result1[0].content).toContain('[HƯỚNG DẪN TỰ SỬA]:');
-      expect(result1[0].content).not.toContain('[DỪNG THỬ LẠI - FAIL-FAST]:');
+      expect(result1[0].content).toContain('[LỖI CÔNG CỤ "sql_server.execute_read_query"]:');
+      expect(result1[0].content).toContain('--- [HỆ THỐNG PHẢN XẠ & CHẨN ĐOÁN LỖI CÔNG CỤ] ---');
+      expect(result1[0].content).toContain('Chỉ dẫn tự sửa (Actionable Guidance):');
+      expect(result1[0].content).not.toContain('[FAIL-FAST - NGỪNG THỬ LẠI]');
 
       // Lần 2: Lỗi tiếp trên cùng tool (khác args nên không bị ToolRepeatGuard chặn) -> Kích hoạt Fail-Fast
       const result2 = await executor.run([
         { id: 'call-2', name: 'execute_read_query', args: { query: 'SELECT * FROM invalid_tbl_2' } },
       ]);
-      expect(result2[0].content).toContain('[LỖI THỰC THI CÔNG CỤ]:');
-      expect(result2[0].content).toContain('[DỪNG THỬ LẠI - FAIL-FAST]:');
-      expect(result2[0].content).toContain('Đã thử lại 2 lần liên tiếp');
+      expect(result2[0].content).toContain('[FAIL-FAST - NGỪNG THỬ LẠI]');
+      expect(result2[0].content).toContain('đã thất bại liên tiếp 2 lần');
+      expect(result2[0].content).toContain('Không tiếp tục gọi lại công cụ này nữa');
     });
 
     it('offloads huge JSON results (> 50KB) to disk and returns lightweight envelope to save tokens', async () => {

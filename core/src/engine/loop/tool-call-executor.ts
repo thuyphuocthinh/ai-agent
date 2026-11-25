@@ -39,6 +39,7 @@ import { MemoryManagerService } from '../../memory/memory-manager.service';
 import { ToolRepeatGuard } from './guards/tool-repeat-guard';
 import { InsertAccumulator } from './guards/insert-accumulator';
 import { ToolRiskGate } from './guards/tool-risk-gate';
+import { ToolFailureReflector } from './reflection/tool-failure-reflector';
 import { tryOffloadPayloadToDisk } from './utils/tool-payload-offloader.util';
 import {
   EPolicyStatus,
@@ -103,6 +104,7 @@ export class ToolCallExecutor {
   private readonly riskGate: ToolRiskGate;
   private readonly actionAudit?: ActionAuditService;
   private readonly tmpManager?: IArtifactTmpManager;
+  private readonly reflector: ToolFailureReflector;
 
   private readonly toolCalls: ToolCallTraceDto[] = [];
   private readonly toolToProviderMap?: Map<string, string>;
@@ -131,6 +133,7 @@ export class ToolCallExecutor {
     this.riskGate = deps.riskGate;
     this.actionAudit = deps.actionAudit;
     this.tmpManager = deps.tmpManager;
+    this.reflector = new ToolFailureReflector();
 
     this.tracedHandleToolCall = traceable(
       (name: string, args: Record<string, unknown>) =>
@@ -680,7 +683,7 @@ export class ToolCallExecutor {
 
     if (status === 'error') {
       this.logger.warn(`tool_result ${displayName} FAILED: ${resultPreview}`);
-      text = this.formatToolFailureMessage(name, displayName, text);
+      text = this.formatToolFailureMessage(name, displayName, text, args);
     } else {
       this.logger.log(`tool_result ${displayName} ok: ${resultPreview}`);
       this.consecutiveFailuresByTool.delete(name);
@@ -706,6 +709,7 @@ export class ToolCallExecutor {
     name: string,
     displayName: string,
     rawErrorText: string,
+    args: Record<string, unknown> = {},
   ): string {
     const failures = (this.consecutiveFailuresByTool.get(name) ?? 0) + 1;
     this.consecutiveFailuresByTool.set(name, failures);
@@ -713,13 +717,14 @@ export class ToolCallExecutor {
     const maxRetries =
       this.dto.maxSelfCorrectionRetries ??
       ORCHESTRATION_CONSTANTS.MAX_SELF_CORRECTION_RETRIES;
-    const isFailFast = failures >= maxRetries;
-    return buildToolExecutionErrorMessage(
-      rawErrorText,
+    return this.reflector.reflect({
+      toolName: name,
       displayName,
-      isFailFast,
-      failures,
-    );
+      rawErrorMessage: rawErrorText,
+      args,
+      consecutiveFailures: failures,
+      maxRetries,
+    });
   }
 
   // Tool ném exception: huỷ/hỏi-lại thì ném tiếp; còn lại ghi tool_result ERROR (đã scrub PII)
