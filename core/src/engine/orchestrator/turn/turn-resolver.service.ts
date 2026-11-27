@@ -16,6 +16,8 @@ import { SupervisorService } from '../../supervisor/supervisor.service';
 import { AgentDiscoveryService } from '../../discovery/agent-discovery.service';
 import { AnswerResult } from '../../../contracts/engine/orchestration-answer.types';
 import { MemoryManagerService } from '../../../memory/memory-manager.service';
+import { EffectiveConversationContext } from '../../../contracts/memory/conversation-compaction.interface';
+import { ConversationCompactionService } from '../context/conversation-compaction.service';
 
 /**
  * TurnResolverService
@@ -46,6 +48,8 @@ export class TurnResolverService {
     private readonly workflowRegistry?: IWorkflowRegistry,
     @Optional()
     private readonly agentDiscovery?: AgentDiscoveryService,
+    @Optional()
+    private readonly compactionService?: ConversationCompactionService,
   ) {}
 
   async resolveAnswer(
@@ -53,24 +57,29 @@ export class TurnResolverService {
     replyMessageId: string,
   ): Promise<AnswerResult> {
     const { userId, channelId, messageId, workspaceId, workflowId } = data;
-    const [prompt, agents, history] = await Promise.all([
+    const conversationId = data.conversationId ?? channelId;
+    const modelId =
+      process.env.DEFAULT_REACT_MODEL ??
+      ORCHESTRATION_CONSTANTS.DEFAULT_REACT_MODEL;
+    const charBudget = this.memoryManager.buildBudget(modelId).historyCharBudget;
+
+    const [prompt, agents, effectiveContext] = await Promise.all([
       data.prompt
         ? Promise.resolve(data.prompt)
         : this.messageSink.getMessageText({ id: messageId, userId }),
       this.agentDiscovery
         ? this.agentDiscovery.getAvailableAgents(userId, workspaceId)
         : this.supervisor.getAvailableAgents(userId, workspaceId),
-      this.messageSink.getRecentHistory({
+      this.resolveContextTurns(
+        conversationId,
         channelId,
         userId,
-        beforeMessageId: messageId,
-        limit: ORCHESTRATION_CONSTANTS.CHAT_HISTORY_LIMIT,
-        charBudget: this.memoryManager.buildBudget(
-          process.env.DEFAULT_REACT_MODEL ??
-            ORCHESTRATION_CONSTANTS.DEFAULT_REACT_MODEL,
-        ).historyCharBudget,
-      }),
+        messageId,
+        modelId,
+        charBudget,
+      ),
     ]);
+    const { summary: contextSummary, recentTurns: history } = effectiveContext;
 
     const decision = await this.router.route({
       prompt,
@@ -94,6 +103,7 @@ export class TurnResolverService {
         prompt,
         agents,
         history,
+        ...(contextSummary ? { contextSummary } : {}),
         metadata: {
           forcedMode: this.forcedModeFromEnv(),
           routingDecision: decision,
@@ -105,6 +115,33 @@ export class TurnResolverService {
     throw new Error(
       `[TurnResolverService] Không tìm thấy engine "${targetEngineId}" để thực thi turn ${replyMessageId}`,
     );
+  }
+
+  private async resolveContextTurns(
+    conversationId: string | undefined,
+    channelId: string | undefined,
+    userId: string,
+    beforeMessageId: string,
+    modelId: string,
+    charBudget: number,
+  ): Promise<EffectiveConversationContext> {
+    if (this.compactionService && conversationId) {
+      const compacted = await this.compactionService.loadEffectiveContext(
+        conversationId,
+        modelId,
+      );
+      if (compacted.summary || compacted.recentTurns.length > 0) {
+        return compacted;
+      }
+    }
+    const recentTurns = await this.messageSink.getRecentHistory({
+      channelId,
+      userId,
+      beforeMessageId,
+      limit: ORCHESTRATION_CONSTANTS.CHAT_HISTORY_LIMIT,
+      charBudget,
+    });
+    return { recentTurns };
   }
 
   private forcedModeFromEnv(): string {

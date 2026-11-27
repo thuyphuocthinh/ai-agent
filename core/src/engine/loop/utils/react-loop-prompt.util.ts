@@ -1,4 +1,5 @@
 import {
+  CONVERSATION_SUMMARY_SECTION_HEADER,
   MAX_STEPS_FALLBACK_ANSWER,
   NO_OTHER_TOOLS_SUGGESTION,
   PARTIAL_WRITE_CAVEAT,
@@ -117,6 +118,13 @@ export function buildMaxStepsAnswer(
     (partialText || MAX_STEPS_FALLBACK_ANSWER) +
     (hasSuccessfulToolCall ? PARTIAL_WRITE_CAVEAT : '')
   );
+}
+
+// Tiêm tóm tắt ngữ cảnh cuộc trò chuyện hiện tại vào ReAct system instruction.
+export function buildContextSummaryPrompt(contextSummary?: string): string {
+  const trimmed = contextSummary?.trim();
+  if (!trimmed) return '';
+  return `\n\n${CONVERSATION_SUMMARY_SECTION_HEADER}\n${trimmed}`;
 }
 
 // Định dạng khối ký ức dài hạn tiêm vào ReAct system instruction.

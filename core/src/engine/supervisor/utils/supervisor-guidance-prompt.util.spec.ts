@@ -1,4 +1,10 @@
 import {
+  CONTEXT_EDITED_HISTORY_SECTION_HEADER,
+  CONVERSATION_SUMMARY_SECTION_HEADER,
+  EMessageRole,
+} from '@agent/core/constants';
+import {
+  buildConversationSummarySection,
   buildEvaluatePrompt,
   buildSynthesisPrompt,
   buildIngressApprovalRequiredAnswer,
@@ -123,16 +129,24 @@ describe('supervisor guidance prompt sections (golden)', () => {
     );
   });
 
-  it('hides old AI answers in the history and keeps the user turns', () => {
+  it('keeps context-edited AI answers in the history next to user turns (AC-12)', () => {
     expect(
       buildHistorySection([
-        { role: 'user', text: 'Bảng Orders có bao nhiêu dòng?' },
-        { role: 'model', text: 'Có 42 dòng' },
+        { role: EMessageRole.USER, text: 'Bảng Orders có bao nhiêu dòng?' },
+        { role: EMessageRole.MODEL, text: 'Có 42 dòng' },
       ]),
     ).toBe(
-      'Lịch sử hội thoại gần đây (chỉ để hiểu ngữ cảnh câu hỏi của user, KHÔNG phải yêu cầu mới):\n' +
+      `${CONTEXT_EDITED_HISTORY_SECTION_HEADER}\n` +
         'User: Bảng Orders có bao nhiêu dòng?\n' +
-        'AI: (nội dung câu trả lời cũ đã ẩn khỏi ngữ cảnh này — KHÔNG được dùng làm dữ liệu; nếu câu hỏi hiện tại cần dữ liệu/số liệu cụ thể, PHẢI delegate lại để lấy MỚI)',
+        'AI: Có 42 dòng',
+    );
+  });
+
+  it('builds the conversation summary section when summary is present', () => {
+    expect(buildConversationSummarySection(undefined)).toBe('');
+    expect(buildConversationSummarySection('   ')).toBe('');
+    expect(buildConversationSummarySection('Đã tạo sheet s1')).toBe(
+      `${CONVERSATION_SUMMARY_SECTION_HEADER}\nĐã tạo sheet s1\n`,
     );
   });
 
@@ -189,6 +203,13 @@ describe('supervisor guidance prompt sections (golden)', () => {
           '1. a\n\n' +
           'Hãy tổng hợp các dữ liệu trên thành một câu trả lời hoàn chỉnh cho người dùng.',
       );
+    });
+
+    it('includes contextSummary in the synthesis prompt when provided', () => {
+      const prompt = buildSynthesisPrompt('hỏi', '1. a', 'Tóm tắt lượt trước');
+      expect(prompt).toContain(CONVERSATION_SUMMARY_SECTION_HEADER);
+      expect(prompt).toContain('Tóm tắt lượt trước');
+      expect(prompt).toContain('Dữ liệu đã thu thập được:\n1. a');
     });
   });
 });

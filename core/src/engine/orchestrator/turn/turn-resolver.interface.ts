@@ -20,6 +20,7 @@ export interface TurnResolverRunOptions {
   prompt: string;
   agents: AvailableAgentDto[];
   history: ChatHistoryTurnDto[];
+  contextSummary?: string;
   rounds: SupervisorRoundDto[];
   toolCalls: ToolCallTraceDto[];
   signal?: AbortSignal;

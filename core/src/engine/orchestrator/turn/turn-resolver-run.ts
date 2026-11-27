@@ -112,6 +112,7 @@ export class TurnResolverRun {
   private readonly prompt: string;
   private readonly agents: AvailableAgentDto[];
   private readonly history: ChatHistoryTurnDto[];
+  private readonly contextSummary?: string;
   private readonly rounds: SupervisorRoundDto[];
   private readonly toolCalls: ToolCallTraceDto[];
   private readonly executionSteps: ExecutedStepDto[] = [];
@@ -145,6 +146,7 @@ export class TurnResolverRun {
     this.prompt = options.prompt;
     this.agents = options.agents;
     this.history = options.history;
+    this.contextSummary = options.contextSummary;
     this.rounds = options.rounds;
     this.priorRoundResults = options.rounds.map((r) => r.result);
     this.toolCalls = options.toolCalls;
@@ -270,27 +272,32 @@ export class TurnResolverRun {
       )
       .catch(() => {});
 
-    const plan = await this.supervisor.plan(
-      this.prompt,
-      this.agents,
-      this.rounds,
-      this.history,
-      agentRankingCache,
-      this.signal,
-      conversationId,
-      this.data.workspaceId,
-    );
+    const plan =
+      typeof this.supervisor.planWithContext === 'function'
+        ? await this.supervisor.planWithContext({
+            prompt: this.prompt,
+            agents: this.agents,
+            rounds: this.rounds,
+            history: this.history,
+            contextSummary: this.contextSummary,
+            rankingCache: agentRankingCache,
+            signal: this.signal,
+            channelId: conversationId,
+            workspaceId: this.data.workspaceId,
+          })
+        : await this.supervisor.plan(
+            this.prompt,
+            this.agents,
+            this.rounds,
+            this.history,
+            agentRankingCache,
+            this.signal,
+            conversationId,
+            this.data.workspaceId,
+          );
 
     if (plan.action === 'respond') {
-      if (plan.rememberFact) {
-        this.recordDeclaredFact(conversationId, plan.rememberFact);
-      }
-      const answerHint =
-        plan.answer ||
-        (plan.rememberFact
-          ? `Mình đã ghi nhớ: ${plan.rememberFact}.`
-          : plan.answer);
-      return { done: true, answer: await this.finalizeAnswer(answerHint) };
+      return { done: true, answer: await this.finalizeAnswer(plan.answer) };
     }
 
     const steps = plan.steps ?? [];
@@ -328,17 +335,6 @@ export class TurnResolverRun {
     }
 
     return { done: false, steps };
-  }
-
-  // Fire-and-forget: ghi nhớ fact người dùng tự khai báo, lỗi chỉ cảnh báo.
-  private recordDeclaredFact(conversationId: string, fact: string): void {
-    this.memoryManager
-      .recordUserDeclaredFact(conversationId, this.replyMessageId, fact)
-      .catch((error) =>
-        this.logger.warn(
-          `recordUserDeclaredFact() failed: ${(error as Error).message}`,
-        ),
-      );
   }
 
   /** true nghĩa là ĐÃ push round guardrail + cần re-plan — gọi nơi gọi tự
@@ -579,20 +575,30 @@ export class TurnResolverRun {
     const finalAnswer = await runCancellable(
       this.replyMessageId,
       this.cancellation,
-      (sig) =>
-        this.supervisor.synthesize(
-          this.prompt,
-          this.rounds,
-          buildOnToken(
-            this.agentStream,
-            userId,
-            conversationId,
-            this.replyMessageId,
-            sessionType,
-            accumulator,
-          ),
-          sig,
-        ),
+      (sig) => {
+        const onToken = buildOnToken(
+          this.agentStream,
+          userId,
+          conversationId,
+          this.replyMessageId,
+          sessionType,
+          accumulator,
+        );
+        return this.contextSummary
+          ? this.supervisor.synthesize(
+              this.prompt,
+              this.rounds,
+              onToken,
+              sig,
+              this.contextSummary,
+            )
+          : this.supervisor.synthesize(
+              this.prompt,
+              this.rounds,
+              onToken,
+              sig,
+            );
+      },
       () =>
         new TurnCancelledError(
           buildCancelledPartialText(this.rounds, accumulator.text),
@@ -785,6 +791,7 @@ export class TurnResolverRun {
           sessionType,
           channelType: sessionType,
           history: this.history,
+          ...(this.contextSummary ? { contextSummary: this.contextSummary } : {}),
           streamKey,
           persona: delegation.persona,
         },

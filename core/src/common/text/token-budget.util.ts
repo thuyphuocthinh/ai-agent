@@ -5,6 +5,7 @@ import {
   PayloadCompressor,
   JsonValue,
 } from 'agentic-io-parser';
+import { LLM_MODEL_REGISTRY } from '@agent/core/constants';
 import { ToolOutputCompressor } from './tool-output-compressor';
 
 const DEFAULT_MODEL_CONTEXT_TOKENS: Record<string, number> = {
@@ -167,7 +168,11 @@ const DATA_BUDGET_FRACTION = 0.3;
 const MAX_DATA_CHARS_CEILING = 200_000;
 
 export function resolveDataCharBudget(modelId: string): number {
-  const tokens = DEFAULT_MODEL_CONTEXT_TOKENS[modelId];
+  const entry = Object.values(LLM_MODEL_REGISTRY).find(
+    (item) => item.model === modelId,
+  );
+  const tokens =
+    entry?.contextWindowTokens ?? DEFAULT_MODEL_CONTEXT_TOKENS[modelId];
   if (!tokens) return MAX_TOOL_RESULT_CHARS;
 
   const scaled = Math.floor(

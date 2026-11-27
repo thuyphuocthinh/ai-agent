@@ -57,6 +57,7 @@ export interface EngineExecutionContext {
   prompt: string;
   agents: AvailableAgentDto[];
   history: ChatHistoryTurnDto[];
+  contextSummary?: string;
   signal?: AbortSignal;
   workflowConfig?: AgentWorkflowConfig;
   metadata?: Record<string, unknown>;

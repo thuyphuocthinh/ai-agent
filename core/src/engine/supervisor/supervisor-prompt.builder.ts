@@ -6,15 +6,24 @@ import { MemoryManagerService } from '../../memory/memory-manager.service';
 import { capRoundResults } from '../../common/text/token-budget.util';
 import { detectFrustration } from '../loop/utils/detect-frustration.util';
 import {
+  buildConversationSummarySection,
   buildFrustrationWarning,
   buildHistorySection,
-  buildMemoriesSection,
   buildOriginalPromptSection,
   buildRoundsSection,
   buildSkillCatalogSection,
 } from './utils/supervisor-guidance-prompt.util';
 
-// Ghép conversation_memory + skill catalog + lịch sử hội thoại + prompt gốc + các round đã chạy
+export interface SupervisorPlanPromptOptions {
+  readonly originalPrompt: string;
+  readonly previousRounds: SupervisorRoundDto[];
+  readonly history: ChatHistoryTurnDto[];
+  readonly modelId: string;
+  readonly contextSummary?: string;
+  readonly skillCatalog?: string;
+}
+
+// Ghép tóm tắt hội thoại + skill catalog + lịch sử hội thoại + prompt gốc + các round đã chạy
 // thành 1 prompt duy nhất, đúng thứ tự.
 @Injectable()
 export class SupervisorPromptBuilder {
@@ -24,28 +33,40 @@ export class SupervisorPromptBuilder {
     originalPrompt: string,
     previousRounds: SupervisorRoundDto[],
     history: ChatHistoryTurnDto[],
-    memories: ConversationMemoryEntity[],
+    _memories: ConversationMemoryEntity[],
     modelId: string,
     skillCatalog = '',
   ): string {
+    return this.buildPlanPrompt({
+      originalPrompt,
+      previousRounds,
+      history,
+      modelId,
+      skillCatalog,
+    });
+  }
+
+  buildPlanPrompt(options: SupervisorPlanPromptOptions): string {
+    const {
+      originalPrompt,
+      previousRounds,
+      history,
+      modelId,
+      contextSummary,
+      skillCatalog = '',
+    } = options;
     const sections: string[] = [];
 
-    // ver3.md mục 5 — đứng ĐẦU TIÊN (trước cả channel_memory), vì đây là tín
-    // hiệu khẩn của CHÍNH lượt đang xử lý, không phải thông tin nền.
     const frustrationPattern = detectFrustration(originalPrompt);
     if (frustrationPattern) {
       sections.push(buildFrustrationWarning(frustrationPattern));
     }
 
-    // ver3.md mục 1 (dài hạn) — đứng TRƯỚC lịch sử hội thoại, framing rõ là
-    // GỢI Ý tham khảo, không phải cam kết tuyệt đối (thực thể vẫn có thể bị
-    // đổi/xoá bởi người khác sau đó).
-    if (memories.length > 0) {
-      sections.push(buildMemoriesSection(memories.map((m) => m.content)));
+    const summarySection = buildConversationSummarySection(contextSummary);
+    if (summarySection) {
+      sections.push(summarySection);
     }
 
-    // Level 1 của skill: Supervisor chỉ lập kế hoạch (không gọi tool), nên catalog
-    // để nó nêu slug trong task giao cho agent — agent tự đọc bằng read_skill.
     if (skillCatalog) {
       sections.push(buildSkillCatalogSection(skillCatalog));
     }

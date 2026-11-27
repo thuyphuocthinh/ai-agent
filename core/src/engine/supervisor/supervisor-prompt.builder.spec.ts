@@ -1,4 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import {
+  CONTEXT_EDITED_HISTORY_SECTION_HEADER,
+  CONVERSATION_SUMMARY_SECTION_HEADER,
+  EMessageRole,
+  ORCHESTRATION_CONSTANTS,
+} from '@agent/core/constants';
 import { SupervisorPromptBuilder } from './supervisor-prompt.builder';
 import { MemoryManagerService } from '../../memory/memory-manager.service';
 import {
@@ -37,35 +43,45 @@ describe('SupervisorPromptBuilder', () => {
     expect(result).toBe('Câu hỏi gốc của user: câu hỏi');
   });
 
-  it('includes channel_memory framed as a reference, not an instruction', () => {
-    const result = builder.build(
+  it('includes contextSummary in buildPlanPrompt while ignoring legacy memories in build() (AC-11 & AC-13)', () => {
+    const withSummary = builder.buildPlanPrompt({
+      originalPrompt: 'câu hỏi',
+      previousRounds: [],
+      history: [],
+      modelId: MODEL_ID,
+      contextSummary: 'notion.create_page: Page "Roadmap" (id=abc123)',
+    });
+
+    expect(withSummary).toContain(CONVERSATION_SUMMARY_SECTION_HEADER);
+    expect(withSummary).toContain('notion.create_page: Page "Roadmap" (id=abc123)');
+
+    const legacyResult = builder.build(
       'câu hỏi',
       [],
       [],
-      [{ content: 'notion.create_page: Page "Roadmap" (id=abc123)' } as any],
+      [{ content: 'legacy fact' } as never],
       MODEL_ID,
     );
-
-    expect(result).toContain('Thông tin đã xác nhận trước đó');
-    expect(result).toContain('GỢI Ý tham khảo');
-    expect(result).toContain('notion.create_page: Page "Roadmap" (id=abc123)');
+    expect(legacyResult).toBe('Câu hỏi gốc của user: câu hỏi');
   });
 
-  it('redacts old AI answers in history so stale data cannot be reused as fact', () => {
-    const result = builder.build(
-      'câu hỏi',
-      [],
-      [
-        { role: 'user', text: 'Bảng Orders có bao nhiêu dòng?' } as any,
-        { role: 'model', text: 'Có 42 dòng' } as any,
+  it('preserves context-edited AI answers in history and truncates oversized AI replies (AC-12)', () => {
+    const longAi = `HEAD_${'X'.repeat(ORCHESTRATION_CONSTANTS.CONTEXT_EDIT_AI_TEXT_MAX_CHARS + 500)}_TAIL`;
+    const result = builder.buildPlanPrompt({
+      originalPrompt: 'câu hỏi',
+      previousRounds: [],
+      history: [
+        { role: EMessageRole.USER, text: 'Bảng Orders có bao nhiêu dòng?' },
+        { role: EMessageRole.MODEL, text: 'Có 42 dòng' },
+        { role: EMessageRole.MODEL, text: longAi },
       ],
-      [],
-      MODEL_ID,
-    );
+      modelId: MODEL_ID,
+    });
 
+    expect(result).toContain(CONTEXT_EDITED_HISTORY_SECTION_HEADER);
     expect(result).toContain('User: Bảng Orders có bao nhiêu dòng?');
-    expect(result).not.toContain('42 dòng');
-    expect(result).toContain('nội dung câu trả lời cũ đã ẩn');
+    expect(result).toContain('AI: Có 42 dòng');
+    expect(result).toContain('đã lược bỏ');
   });
 
   it('includes rounds already run this turn, capped by the budget for the given model', () => {
@@ -82,35 +98,36 @@ describe('SupervisorPromptBuilder', () => {
   });
 
   it('prepends a frustration warning before every other section when the prompt matches a frustration pattern', () => {
-    const result = builder.build(
-      'sao vẫn lỗi hoài vậy',
-      [],
-      [],
-      [{ content: 'fact cũ' } as any],
-      MODEL_ID,
-    );
+    const result = builder.buildPlanPrompt({
+      originalPrompt: 'sao vẫn lỗi hoài vậy',
+      previousRounds: [],
+      history: [],
+      modelId: MODEL_ID,
+      contextSummary: 'tóm tắt cũ',
+    });
 
     expect(result).toContain('dấu hiệu không hài lòng/bực bội');
     expect(result.indexOf('không hài lòng/bực bội')).toBeLessThan(
-      result.indexOf('Thông tin đã xác nhận trước đó'),
+      result.indexOf(CONVERSATION_SUMMARY_SECTION_HEADER),
     );
   });
 
-  it('orders sections as: memory, then history, then original prompt, then rounds', () => {
-    const result = builder.build(
-      'câu hỏi',
-      [{ agent: 'sql_server', task: 't', result: 'r' } as any],
-      [{ role: 'user', text: 'trước đó' } as any],
-      [{ content: 'fact cũ' } as any],
-      MODEL_ID,
-    );
+  it('orders sections as: summary, then history, then original prompt, then rounds', () => {
+    const result = builder.buildPlanPrompt({
+      originalPrompt: 'câu hỏi',
+      previousRounds: [{ agent: 'sql_server', task: 't', result: 'r' }],
+      history: [{ role: EMessageRole.USER, text: 'trước đó' }],
+      modelId: MODEL_ID,
+      contextSummary: 'tóm tắt cũ',
+    });
 
-    const memoryIdx = result.indexOf('Thông tin đã xác nhận trước đó');
-    const historyIdx = result.indexOf('Lịch sử hội thoại gần đây');
+    const summaryIdx = result.indexOf(CONVERSATION_SUMMARY_SECTION_HEADER);
+    const historyIdx = result.indexOf(CONTEXT_EDITED_HISTORY_SECTION_HEADER);
     const promptIdx = result.indexOf('Câu hỏi gốc của user');
     const roundsIdx = result.indexOf('Các bước đã thực hiện trong turn này');
 
-    expect(memoryIdx).toBeLessThan(historyIdx);
+    expect(summaryIdx).toBeGreaterThanOrEqual(0);
+    expect(summaryIdx).toBeLessThan(historyIdx);
     expect(historyIdx).toBeLessThan(promptIdx);
     expect(promptIdx).toBeLessThan(roundsIdx);
   });
@@ -128,21 +145,21 @@ describe('SupervisorPromptBuilder', () => {
     expect(builder.build('câu hỏi', [], [], [], MODEL_ID)).not.toContain('read_skill');
   });
 
-  it('places the skill catalog after memory and before history', () => {
-    const result = builder.build(
-      'câu hỏi',
-      [],
-      [{ role: 'user', text: 'trước đó' } as any],
-      [{ content: 'fact cũ' } as any],
-      MODEL_ID,
-      '- a (A): mô tả',
-    );
+  it('places the skill catalog after summary and before history', () => {
+    const result = builder.buildPlanPrompt({
+      originalPrompt: 'câu hỏi',
+      previousRounds: [],
+      history: [{ role: EMessageRole.USER, text: 'trước đó' }],
+      modelId: MODEL_ID,
+      contextSummary: 'tóm tắt cũ',
+      skillCatalog: '- a (A): mô tả',
+    });
 
-    const memoryIdx = result.indexOf('Thông tin đã xác nhận trước đó');
+    const summaryIdx = result.indexOf(CONVERSATION_SUMMARY_SECTION_HEADER);
     const skillIdx = result.indexOf('Skill (playbook nghiệp vụ)');
-    const historyIdx = result.indexOf('Lịch sử hội thoại gần đây');
+    const historyIdx = result.indexOf(CONTEXT_EDITED_HISTORY_SECTION_HEADER);
 
-    expect(memoryIdx).toBeLessThan(skillIdx);
+    expect(summaryIdx).toBeLessThan(skillIdx);
     expect(skillIdx).toBeLessThan(historyIdx);
   });
 });

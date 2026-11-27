@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { IProcessAiTriggerJobData } from '@agent/core/infrastructure/queue';
 import { ORCHESTRATION_CONSTANTS } from '@agent/core/constants';
 import { TurnResolverService } from './turn-resolver.service';
+import { ConversationCompactionService } from '../context/conversation-compaction.service';
 import { AutonomousEngine } from '../engines/autonomous.engine';
 import { SmartExecutionRouter } from '../engines/smart-execution-router.service';
 import { ExecutionEngineRegistryService } from '../engines/execution-engine-registry.service';
@@ -2226,6 +2227,55 @@ describe('TurnResolverService (Plan-and-Execute, xem accuracy.md)', () => {
         [],
       );
       expect(result.content).toBe('Yêu cầu duyệt xóa issue SP-123');
+    });
+  });
+
+  describe('ConversationCompactionService wiring (AC-11)', () => {
+    it('loads summary and recentTurns from compactionService and forwards contextSummary to engine.execute()', async () => {
+      const mockEngine = {
+        id: 'autonomous',
+        execute: jest.fn().mockResolvedValue({ content: 'ok', toolCalls: [] }),
+        resume: jest.fn(),
+      };
+      const mockCompaction = {
+        loadEffectiveContext: jest.fn().mockResolvedValue({
+          summary: 'Tóm tắt các lượt trước',
+          recentTurns: [{ role: 'user', text: 'turn gần nhất' }],
+        }),
+      } as unknown as ConversationCompactionService;
+
+      const wiredService = new TurnResolverService(
+        mockMessageClient as never,
+        mockSupervisor as never,
+        mockMemoryManager as never,
+        { get: jest.fn().mockReturnValue(mockEngine) } as never,
+        { route: jest.fn().mockResolvedValue({ mode: 'autonomous', engineId: 'autonomous' }) } as never,
+        undefined,
+        undefined,
+        mockCompaction,
+      );
+
+      await wiredService.resolveAnswer(
+        {
+          userId: 'usr-1',
+          channelId: 'conv-comp',
+          conversationId: 'conv-comp',
+          messageId: 'msg-1',
+        },
+        'reply-1',
+      );
+
+      expect(mockCompaction.loadEffectiveContext).toHaveBeenCalledWith(
+        'conv-comp',
+        expect.any(String),
+      );
+      expect(mockMessageClient.getRecentHistory).not.toHaveBeenCalled();
+      expect(mockEngine.execute).toHaveBeenCalledWith(
+        expect.objectContaining({
+          contextSummary: 'Tóm tắt các lượt trước',
+          history: [{ role: 'user', text: 'turn gần nhất' }],
+        }),
+      );
     });
   });
 });

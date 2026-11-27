@@ -145,15 +145,32 @@ describe('MessageClientService', () => {
     });
   });
 
-  it('records successful create calls into conversation memory when tool calls are attached', async () => {
+  it('does not record create calls into legacy conversation memory on updateMessage (AC-13)', async () => {
     const recordSuccessfulCreateCalls = jest.fn().mockResolvedValue(undefined);
-    const withMemory = new MessageClientService({ recordSuccessfulCreateCalls } as never);
+    const withMemory = new MessageClientService();
     const reply = await withMemory.createMessage({ channelId: 'c1', content: 'x' });
     const toolCalls = [{ tool: 'sql.write', status: 'success' as never }];
 
     await withMemory.updateMessage({ id: reply.id, channelId: 'c1', content: 'xong', toolCalls });
 
-    expect(recordSuccessfulCreateCalls).toHaveBeenCalledWith('c1', reply.id, toolCalls);
+    expect(recordSuccessfulCreateCalls).not.toHaveBeenCalled();
+  });
+
+  it('applies trimTurnsToCharBudget when charBudget is provided to getRecentHistory', async () => {
+    await service.addUserMessage({ conversationId: 'c-budget', text: 'turn-1-' + 'a'.repeat(40) });
+    await service.createMessage({ channelId: 'c-budget', content: 'ai-2-' + 'b'.repeat(40) });
+    const latest = await service.addUserMessage({ conversationId: 'c-budget', text: 'latest-turn' });
+
+    const turns = await service.getRecentHistory({
+      conversationId: 'c-budget',
+      userId: 'u1',
+      beforeMessageId: latest.id,
+      limit: 10,
+      charBudget: 50,
+    });
+
+    expect(turns).toHaveLength(1);
+    expect(turns[0].text).toContain('ai-2-');
   });
 
   it('lưu và truy vấn attachments trong getRecentHistory', async () => {

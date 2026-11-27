@@ -197,6 +197,21 @@ export const ORCHESTRATION_CONSTANTS = {
   // ở ChannelMemoryEntity), không phải nguồn sự thật lâu dài — tự xoá sau
   // TTL này để không phình vô hạn và không đọc phải fact đã quá cũ.
   CHANNEL_MEMORY_TTL_HOURS: 24 * 30,
+  // Nén ngữ cảnh lũy tiến trong 1 conversation (Compaction + Context Editing)
+  COMPACTION_KEEP_RECENT_TURNS: 6,
+  COMPACTION_TRIGGER_TURNS: 10,
+  COMPACTION_FETCH_CAP: 100,
+  COMPACTION_SUMMARY_MAX_WORDS: 350,
+  COMPACTION_LLM_TEMPERATURE: 0.1,
+  CONTEXT_EDIT_AI_TEXT_MAX_CHARS: 1200,
+  CONTEXT_EDIT_HEAD_RATIO: 0.6,
+  CONTEXT_EDIT_TAIL_RATIO: 0.35,
+  // Artifact Handoff (Direct-to-Disk theo conversationId, TTL 4h)
+  ARTIFACT_TTL_HOURS: 4,
+  ARTIFACT_CLEANUP_INTERVAL_MINUTES: 30,
+  ARTIFACT_SHORT_ID_LENGTH: 8,
+  ARTIFACT_JSON_SAMPLE_COUNT: 2,
+  ARTIFACT_TEXT_PREVIEW_LINES: 5,
 };
 
 export const ORCHESTRATION_SYSTEM_PROMPT = `Bạn là một Trợ lý Trí tuệ Nhân tạo (AI Assistant) chuyên nghiệp — nói chuyện tự nhiên, ngắn gọn, chính xác và hữu ích, không xưng "tôi là 1 mô hình AI".

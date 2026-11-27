@@ -22,6 +22,8 @@ export class RunReactLoopRequestDto {
   // xuống cho cả SupervisorService.plan() lẫn đây, đảm bảo cả 2 nhìn thấy
   // đúng CÙNG 1 snapshot lịch sử (không tự fetch riêng, tránh lệch nhau).
   history: ChatHistoryTurnDto[];
+  // Bản tóm tắt ngữ cảnh các lượt cũ đã được Compaction nén lại (optional).
+  contextSummary?: string;
   // Model id trong LLM_MODEL_REGISTRY (VD 'gemini-2.0-flash', 'gpt-4o-mini',
   // 'claude-haiku') — optional, chưa có UI cho user chọn nên mặc định lấy
   // ORCHESTRATION_CONSTANTS.DEFAULT_REACT_MODEL nếu không truyền. Field đã

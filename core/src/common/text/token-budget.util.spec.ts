@@ -76,6 +76,19 @@ describe('token-budget.util', () => {
       expect(gpt4oBudget).toBeGreaterThan(MAX_TOOL_RESULT_CHARS);
       expect(gpt4oBudget).toBeLessThanOrEqual(200_000);
     });
+
+    it('resolves contextWindowTokens from LLM_MODEL_REGISTRY before fallback table', () => {
+      const deepseekBudget = resolveDataCharBudget('deepseek-chat');
+      const geminiFlashBudget = resolveDataCharBudget('gemini-2.5-flash');
+      expect(deepseekBudget).toBe(Math.floor(64_000 * CHARS_PER_TOKEN_ESTIMATE * 0.3));
+      expect(geminiFlashBudget).toBe(200_000);
+      expect(resolveMemoryCharBudget('deepseek-chat')).toBe(
+        Math.floor(deepseekBudget * 0.1),
+      );
+      expect(resolveHistoryCharBudget('deepseek-chat')).toBe(
+        Math.floor(deepseekBudget * 0.5),
+      );
+    });
   });
 
   describe('isLikelyReadOnlyRound', () => {

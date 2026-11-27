@@ -21,6 +21,10 @@ import {
   IConversationMemoryRecorder,
 } from '../../../contracts/memory/conversation-memory-recorder.interface';
 import { MessageRole, Prisma } from '@prisma/client';
+import { trimTurnsToCharBudget } from '../../../common/text/context-edit.util';
+import { asJsonObject } from '../../../common/text/structured-payload.util';
+import { resolveHistoryCharBudget } from '../../../common/text/token-budget.util';
+import { isEligibleHistoryMessage } from '../utils/prisma-history-filter.util';
 import { DEFAULT_DEV_USER_ID } from './prisma-chat-session.manager';
 
 const DEFAULT_CONVERSATION = '00000000-0000-7000-8000-000000000002';
@@ -145,28 +149,15 @@ export class PrismaMessageSink implements IMessageSink {
         }
       }
 
-      return eligible
+      const turns = eligible
         .filter((m, idx) => {
           const hasText = Boolean(m.text && m.text.trim());
-          const hasMetadata = Boolean(
-            m.metadata &&
-              typeof m.metadata === 'object' &&
-              !Array.isArray(m.metadata) &&
-              Object.keys(m.metadata).length > 0,
-          );
+          const metaObj = asJsonObject(m.metadata);
+          const hasMetadata = Boolean(metaObj && Object.keys(metaObj).length > 0);
           const isLatest = idx === eligible.length - 1;
           return hasText || hasMetadata || isLatest;
         })
-        .filter((m) => {
-          if (
-            m.text.startsWith('⏸️') ||
-            m.text.includes('Cần bạn duyệt') ||
-            m.text.includes('Cần bạn làm rõ')
-          ) {
-            return false;
-          }
-          return true;
-        })
+        .filter((m) => isEligibleHistoryMessage(m.text))
         .map((m) => ({
           id: m.id,
           role: m.role === MessageRole.USER ? EMessageRole.USER : EMessageRole.MODEL,
@@ -175,13 +166,11 @@ export class PrismaMessageSink implements IMessageSink {
             Array.isArray(m.attachments) && m.attachments.length > 0
               ? (m.attachments as unknown as IMessageAttachment[])
               : undefined,
-          metadata:
-            m.metadata && typeof m.metadata === 'object' && !Array.isArray(m.metadata)
-              ? (m.metadata as Record<string, unknown>)
-              : undefined,
+          metadata: asJsonObject(m.metadata) ?? undefined,
           createdAt: m.createdAt,
         }))
         .slice(-limit);
+      return trimTurnsToCharBudget(turns, resolveHistoryCharBudget(''));
     } catch (error) {
       throw sanitizePrismaError(error, 'PrismaMessageSink.getRecentHistory');
     }
@@ -219,10 +208,7 @@ export class PrismaMessageSink implements IMessageSink {
         });
       }
 
-      const existingMetadata =
-        existing.metadata && typeof existing.metadata === 'object' && !Array.isArray(existing.metadata)
-          ? (existing.metadata as Record<string, unknown>)
-          : {};
+      const existingMetadata = asJsonObject(existing.metadata) ?? {};
 
       const updatedMetadata: Prisma.InputJsonObject = {
         ...existingMetadata,
@@ -262,15 +248,6 @@ export class PrismaMessageSink implements IMessageSink {
         role: existing.role === MessageRole.USER ? EMessageRole.USER : EMessageRole.MODEL,
         content: dto.content,
       });
-
-      if (dto.toolCalls && dto.toolCalls.length > 0 && this.channelMemory) {
-        const convId = dto.conversationId ?? dto.channelId ?? existing.conversationId;
-        await this.channelMemory.recordSuccessfulCreateCalls(
-          convId,
-          dto.id,
-          dto.toolCalls as any,
-        );
-      }
     } catch (error) {
       throw sanitizePrismaError(error, 'PrismaMessageSink.updateMessage');
     }

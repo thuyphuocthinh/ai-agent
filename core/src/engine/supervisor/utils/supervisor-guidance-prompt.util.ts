@@ -8,14 +8,18 @@ import {
   SUPERVISOR_SECURITY_RULES,
   FRUSTRATION_WARNING_HEAD,
   FRUSTRATION_WARNING_TAIL,
-  HIDDEN_AI_ANSWER_PLACEHOLDER,
-  HISTORY_SECTION_HEADER,
+  CONTEXT_EDITED_HISTORY_SECTION_HEADER,
+  CONVERSATION_SUMMARY_SECTION_HEADER,
   MEMORIES_SECTION_HEADER,
   NO_AGENT_CONNECTED_TEXT,
   ROUNDS_SECTION_FOOTER,
   ROUNDS_SECTION_HEADER,
   SKILL_CATALOG_SECTION_HEADER,
 } from '../../../constants/prompts';
+import {
+  editTurnForContext,
+  formatTurnRoleLabel,
+} from '../../../common/text/context-edit.util';
 import { ChatHistoryTurnDto } from '../../../contracts/dtos/message-client.dto';
 import {
   AvailableAgentDto,
@@ -99,16 +103,23 @@ export function buildSkillCatalogSection(skillCatalog: string): string {
   return `${SKILL_CATALOG_SECTION_HEADER}\n${skillCatalog}`;
 }
 
-// Câu trả lời cũ của AI bị thay bằng placeholder: không được dùng lại làm dữ liệu.
+export function buildConversationSummarySection(summary?: string): string {
+  const trimmed = summary?.trim();
+  if (!trimmed) return '';
+  return `${CONVERSATION_SUMMARY_SECTION_HEADER}\n${trimmed}\n`;
+}
+
+// Câu trả lời cũ của AI được rút gọn qua context editing thay vì thay bằng placeholder.
 export function buildHistorySection(
   history: readonly Pick<ChatHistoryTurnDto, 'role' | 'text'>[],
 ): string {
   const historyText = history
-    .map((h) =>
-      h.role === 'model' ? HIDDEN_AI_ANSWER_PLACEHOLDER : `User: ${h.text}`,
-    )
+    .map((h) => {
+      const edited = editTurnForContext(h);
+      return `${formatTurnRoleLabel(edited.role)}: ${edited.text}`;
+    })
     .join('\n');
-  return `${HISTORY_SECTION_HEADER}\n${historyText}`;
+  return `${CONTEXT_EDITED_HISTORY_SECTION_HEADER}\n${historyText}`;
 }
 
 export function buildOriginalPromptSection(originalPrompt: string): string {
@@ -147,6 +158,9 @@ export function buildEvaluatePrompt(params: {
 export function buildSynthesisPrompt(
   originalPrompt: string,
   roundsText: string,
+  contextSummary?: string,
 ): string {
-  return `Câu hỏi gốc: ${originalPrompt}\n\nDữ liệu đã thu thập được:\n${roundsText}\n\nHãy tổng hợp các dữ liệu trên thành một câu trả lời hoàn chỉnh cho người dùng.`;
+  const summaryBlock = buildConversationSummarySection(contextSummary);
+  const summarySection = summaryBlock ? `\n\n${summaryBlock}` : '';
+  return `Câu hỏi gốc: ${originalPrompt}${summarySection}\n\nDữ liệu đã thu thập được:\n${roundsText}\n\nHãy tổng hợp các dữ liệu trên thành một câu trả lời hoàn chỉnh cho người dùng.`;
 }

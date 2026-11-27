@@ -60,11 +60,11 @@ import { CheckpointService } from '../../hitl/checkpoint.service';
 import { executeApprovedTool } from '../../hitl/utils/approved-tool-execution.util';
 import { MemoryManagerService } from '../../../memory/memory-manager.service';
 import { TurnResolverRun } from '../turn/turn-resolver-run';
+import { TurnResolverRunOptions } from '../turn/turn-resolver.interface';
 import { runCancellable } from '../../cancellation/cancellable-run.util';
 import { SPAWN_SUBAGENT_TOOL_SCHEMA } from '../../../contracts/engine/sub-agent-spawner.interface';
 import { CachedService } from '../../../infrastructure/redis/cached.service';
 import { LlmStrategyFactory } from '../../strategy/llm-strategy.factory';
-import { ConversationHistorySummarizer } from '../../loop/utils/conversation-history-summarizer.util';
 
 /**
  * AutonomousEngine
@@ -128,40 +128,20 @@ export class AutonomousEngine implements IExecutionEngine {
   }
 
   async execute(context: EngineExecutionContext): Promise<AnswerResult> {
-    const { replyMessageId, history, data } = context;
-
-    let effectiveHistory = history;
-    if (history && history.length > ConversationHistorySummarizer.MAX_RAW_TURNS) {
-      const convId = data?.conversationId ?? '';
-      const summarized = await ConversationHistorySummarizer.compress(
-        history,
-        convId,
-        this.cachedService,
-        this.llmFactory,
-      );
-      effectiveHistory = summarized.history;
-      this.logger.log(
-        `[AutonomousEngine] Đã nén lịch sử (${history.length} turns -> ${effectiveHistory.length} turns) cho turn ${replyMessageId}`,
-      );
-    }
-
-    const executionContext: EngineExecutionContext = {
-      ...context,
-      history: effectiveHistory,
-    };
+    const { replyMessageId } = context;
 
     // Quyết định tầng thực thi: Frontline ReAct hay Dynamic Supervisor
-    if (this.shouldTriggerSupervisorPlanning(executionContext)) {
+    if (this.shouldTriggerSupervisorPlanning(context)) {
       this.logger.log(
         `[AutonomousEngine] Tác vụ phức tạp/phân rã -> Kích hoạt Tầng 2: Dynamic Supervisor Planning cho turn ${replyMessageId}`,
       );
-      return this.executeSupervisorPlanning(executionContext);
+      return this.executeSupervisorPlanning(context);
     }
 
     this.logger.log(
       `[AutonomousEngine] Tác vụ đàm thoại trực tiếp -> Kích hoạt Tầng 1: Frontline ReAct cho turn ${replyMessageId}`,
     );
-    return this.executeFrontlineReAct(executionContext);
+    return this.executeFrontlineReAct(context);
   }
 
   private shouldTriggerSupervisorPlanning(context: EngineExecutionContext): boolean {
@@ -242,6 +222,7 @@ export class AutonomousEngine implements IExecutionEngine {
       ...buildReactRequestIdentity(data),
       messageId: replyMessageId,
       history,
+      ...(context.contextSummary ? { contextSummary: context.contextSummary } : {}),
       model: process.env.DEFAULT_REACT_MODEL ?? ORCHESTRATION_CONSTANTS.DEFAULT_REACT_MODEL,
       maxSelfCorrectionRetries: 2,
     };
@@ -284,44 +265,29 @@ export class AutonomousEngine implements IExecutionEngine {
       return this.executeFrontlineReAct(context);
     }
 
-    return this.continueSupervisorRounds(
-      context.data,
-      context.replyMessageId,
-      context.prompt,
-      context.agents,
-      context.history,
-      [],
-      [],
-      undefined,
-      undefined,
-      context.signal,
-    );
+    return this.runSupervisorLoop({
+      data: context.data,
+      replyMessageId: context.replyMessageId,
+      prompt: context.prompt,
+      agents: context.agents,
+      history: context.history,
+      contextSummary: context.contextSummary,
+      rounds: [],
+      toolCalls: [],
+      signal: context.signal,
+    });
   }
 
-  async continueSupervisorRounds(
-    data: EngineExecutionContext['data'],
-    replyMessageId: string,
-    prompt: string,
-    agents: AvailableAgentDto[],
-    history: EngineExecutionContext['history'],
-    rounds: SupervisorRoundDto[],
-    toolCalls: ToolCallTraceDto[],
-    forcedStep?: DelegationDto,
-    remainingSteps?: DelegationDto[],
-    signal?: AbortSignal,
+  async runSupervisorLoop(
+    options: TurnResolverRunOptions & {
+      forcedStep?: DelegationDto;
+      remainingSteps?: DelegationDto[];
+    },
   ): Promise<AnswerResult> {
+    const { forcedStep, remainingSteps, signal, ...runOptions } = options;
     const runTurn = (sig?: AbortSignal) =>
       new TurnResolverRun(
-        {
-          data,
-          replyMessageId,
-          prompt,
-          agents,
-          history,
-          rounds,
-          toolCalls,
-          signal: sig,
-        },
+        { ...runOptions, signal: sig },
         {
           reactLoop: this.reactLoop,
           supervisor: this.supervisor!,
@@ -340,15 +306,43 @@ export class AutonomousEngine implements IExecutionEngine {
     }
 
     return runCancellable(
-      replyMessageId,
+      runOptions.replyMessageId,
       this.cancellation,
       (sig) => runTurn(sig),
       () => {
         const partialText =
-          rounds.length > 0 ? rounds[rounds.length - 1].result : undefined;
+          runOptions.rounds.length > 0
+            ? runOptions.rounds[runOptions.rounds.length - 1].result
+            : undefined;
         return new TurnCancelledError(partialText);
       },
     );
+  }
+
+  async continueSupervisorRounds(
+    data: EngineExecutionContext['data'],
+    replyMessageId: string,
+    prompt: string,
+    agents: AvailableAgentDto[],
+    history: EngineExecutionContext['history'],
+    rounds: SupervisorRoundDto[],
+    toolCalls: ToolCallTraceDto[],
+    forcedStep?: DelegationDto,
+    remainingSteps?: DelegationDto[],
+    signal?: AbortSignal,
+  ): Promise<AnswerResult> {
+    return this.runSupervisorLoop({
+      data,
+      replyMessageId,
+      prompt,
+      agents,
+      history,
+      rounds,
+      toolCalls,
+      forcedStep,
+      remainingSteps,
+      signal,
+    });
   }
 
   /**

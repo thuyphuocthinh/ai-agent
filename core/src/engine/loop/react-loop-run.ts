@@ -105,6 +105,7 @@ export class ReactLoopRun {
         riskGate,
         actionAudit: deps.actionAudit,
         tmpManager: deps.tmpManager,
+        conversationArtifactStore: deps.conversationArtifactStore,
       },
     );
 

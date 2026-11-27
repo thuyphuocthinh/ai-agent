@@ -1,5 +1,6 @@
 import { Logger } from '@nestjs/common';
 import { IStreamSink, IToolProvider, IArtifactTmpManager } from '../../contracts';
+import { IConversationArtifactStore } from '../../contracts/storage/conversation-artifact.interface';
 import { RunReactLoopRequestDto } from '../../contracts/dtos/react-loop.dto';
 import { McpToolDto } from '../../contracts/dtos/mcp.dto';
 import { MemoryManagerService } from '../../memory/memory-manager.service';
@@ -28,4 +29,5 @@ export interface ToolCallExecutorDeps {
   riskGate: ToolRiskGate;
   actionAudit?: ActionAuditService;
   tmpManager?: IArtifactTmpManager;
+  conversationArtifactStore?: IConversationArtifactStore;
 }

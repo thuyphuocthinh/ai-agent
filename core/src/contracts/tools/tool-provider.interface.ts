@@ -13,6 +13,7 @@ export interface ToolContext {
   userId?: string;
   tenantId?: string;
   workspaceId?: string;
+  conversationId?: string;
   messageId?: string;
   signal?: AbortSignal;
 }

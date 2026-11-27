@@ -66,6 +66,18 @@ import { detectFrustration } from '../loop/utils/detect-frustration.util';
 import { AgentRankingCache } from './supervisor.interface';
 
 // Ghi chú thiết kế đầy đủ (WHY): docs/orchestration/code-notes/supervisor.service.md
+export interface SupervisorPlanRequestOptions {
+  readonly prompt: string;
+  readonly agents: AvailableAgentDto[];
+  readonly rounds?: SupervisorRoundDto[];
+  readonly history?: ChatHistoryTurnDto[];
+  readonly contextSummary?: string;
+  readonly rankingCache?: AgentRankingCache;
+  readonly signal?: AbortSignal;
+  readonly channelId?: string;
+  readonly workspaceId?: string;
+}
+
 @Injectable()
 export class SupervisorService {
   private readonly logger = new Logger(SupervisorService.name);
@@ -168,15 +180,35 @@ export class SupervisorService {
     history: ChatHistoryTurnDto[] = [],
     rankingCache?: AgentRankingCache,
     signal?: AbortSignal,
-    // ver3.md mục 1 (dài hạn) — optional, THÊM CUỐI CÙNG có chủ đích: giữ
-    // nguyên tính tương thích vị trí (positional) của MỌI call site/test đã
-    // có từ trước (rounds/history truyền theo vị trí thứ 3/4) — không dùng
-    // channelId thì bỏ qua an toàn (memories = []).
     channelId?: string,
-    // Cùng lý do trên — thêm cuối cùng. Skill scope theo workspace (không
-    // theo channel như channel_memory), không truyền thì bỏ qua an toàn.
     workspaceId?: string,
   ): Promise<SupervisorPlanDto> {
+    return this.planWithContext({
+      prompt,
+      agents,
+      rounds,
+      history,
+      rankingCache,
+      signal,
+      channelId,
+      workspaceId,
+    });
+  }
+
+  async planWithContext(
+    options: SupervisorPlanRequestOptions,
+  ): Promise<SupervisorPlanDto> {
+    const {
+      prompt,
+      agents,
+      rounds = [],
+      history = [],
+      contextSummary,
+      rankingCache,
+      signal,
+      channelId,
+      workspaceId,
+    } = options;
     const { shown, omittedCount } =
       rankingCache?.current ??
       (await this.agentRanking.rankAgentsForPrompt(prompt, agents));
@@ -190,31 +222,25 @@ export class SupervisorService {
     try {
       const planModelId = resolveSupervisorModelId('plan');
       const { strategy, model } = this.llmFactory.resolve(planModelId);
-      const memories = channelId
-        ? await this.memoryManager.getMemories(channelId, planModelId, prompt)
-        : [];
       const skillCatalogText = await loadSkillCatalogSafely(
         this.skillCatalog,
         this.logger,
         workspaceId,
       );
-      // ver3.md mục 5 — chỉ để harvest thủ công cho eval dataset sau này
-      // (grep log theo tag), KHÔNG ảnh hưởng tới prompt (đã xử lý trong
-      // buildPrompt() riêng).
       this.logFrustrationSignal(prompt, channelId);
       const blocked = await this.applyPolicyGuard(prompt, agents, rounds);
       if (blocked) return blocked;
 
       const policyGuidance = await this.buildPolicyGuidance(prompt);
 
-      const fullPrompt = this.promptBuilder.build(
-        prompt,
-        rounds,
+      const fullPrompt = this.promptBuilder.buildPlanPrompt({
+        originalPrompt: prompt,
+        previousRounds: rounds,
         history,
-        memories,
-        planModelId,
-        skillCatalogText,
-      );
+        modelId: planModelId,
+        contextSummary,
+        skillCatalog: skillCatalogText,
+      });
       this.logger.log(
         `plan() model=${model} agents=${agents.length} historyTurns=${history.length} prompt=${fullPrompt}`,
       );
@@ -529,6 +555,7 @@ export class SupervisorService {
     rounds: SupervisorRoundDto[],
     onToken?: (chunk: string) => void,
     signal?: AbortSignal,
+    contextSummary?: string,
   ): Promise<string> {
     try {
       const modelId = resolveSupervisorModelId('synthesize');
@@ -551,7 +578,11 @@ export class SupervisorService {
         history: [],
       });
 
-      const prompt = buildSynthesisPrompt(originalPrompt, roundsText);
+      const prompt = buildSynthesisPrompt(
+        originalPrompt,
+        roundsText,
+        contextSummary,
+      );
 
       // streamedAnything reset lại MỖI lần thử (đầu fn()) — chỉ cho retry khi
       // lần vừa lỗi CHƯA stream ra token nào (xem ORCHESTRATION_CONSTANTS.MAX_LLM_CALL_RETRY_ATTEMPTS).

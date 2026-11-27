@@ -1,6 +1,7 @@
 import { Logger } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import {
+  CONVERSATION_SUMMARY_SECTION_HEADER,
   ORCHESTRATION_CONSTANTS,
   ORCHESTRATION_SELF_CHECK_PROMPT,
 } from '@agent/core/constants';
@@ -554,23 +555,23 @@ describe('ReactLoopService', () => {
     );
   });
 
-  it('injects recalled long-term memories into systemInstruction when available', async () => {
-    mockMemoryManager.getMemories.mockResolvedValueOnce([
-      { content: 'User prefers concise summaries' },
-      { content: 'User timezone is Asia/Ho_Chi_Minh' },
-    ]);
+  it('injects contextSummary into systemInstruction and skips legacy getMemories (AC-11 & AC-13)', async () => {
     mockSession.sendMessage.mockResolvedValueOnce({
       text: 'ok',
       toolCalls: [],
     });
 
-    await service.run(baseDto);
+    await service.run({
+      ...baseDto,
+      contextSummary: 'User prefers concise summaries; Page Roadmap id=abc123',
+    });
 
+    expect(mockMemoryManager.getMemories).not.toHaveBeenCalled();
     const callArgs = mockStrategy.startChat.mock.calls[0][0];
     const systemInstruction = callArgs.systemInstruction;
-    expect(systemInstruction).toContain('=== KÝ ỨC VÀ SỰ THẬT ĐÃ BIẾT VỀ NGƯỜI DÙNG ===');
+    expect(systemInstruction).toContain(CONVERSATION_SUMMARY_SECTION_HEADER);
     expect(systemInstruction).toContain('User prefers concise summaries');
-    expect(systemInstruction).toContain('User timezone is Asia/Ho_Chi_Minh');
+    expect(systemInstruction).toContain('Page Roadmap id=abc123');
   });
 
   describe('native tools (read_skill) dùng chung cho mọi agent', () => {

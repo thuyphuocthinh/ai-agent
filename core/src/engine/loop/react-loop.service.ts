@@ -27,6 +27,10 @@ import {
   ARTIFACT_TMP_MANAGER,
   IArtifactTmpManager,
 } from '../../contracts';
+import {
+  CONVERSATION_ARTIFACT_STORE,
+  IConversationArtifactStore,
+} from '../../contracts/storage/conversation-artifact.interface';
 import { CircuitBreakerService } from '../../infrastructure/resilience/circuit-breaker.service';
 import { AgentCancellationService } from '../cancellation/agent-cancellation.service';
 import { runCancellable } from '../cancellation/cancellable-run.util';
@@ -41,7 +45,7 @@ import { formatPersonaPrompt } from './utils/persona-prompt.util';
 import { resolveEffectiveTools } from './utils/effective-tools.util';
 import {
   buildPolicyGroundingPrompt,
-  buildRecalledMemoriesPrompt,
+  buildContextSummaryPrompt,
   buildResourcesPrompt,
   formatResourceBlock,
 } from './utils/react-loop-prompt.util';
@@ -99,6 +103,9 @@ export class ReactLoopService {
     @Optional()
     @Inject(ARTIFACT_TMP_MANAGER)
     private readonly tmpManager?: IArtifactTmpManager,
+    @Optional()
+    @Inject(CONVERSATION_ARTIFACT_STORE)
+    private readonly conversationArtifactStore?: IConversationArtifactStore,
   ) {}
 
   async run(
@@ -198,7 +205,7 @@ export class ReactLoopService {
           dto.workspaceId,
           dto.persona,
           dto.prompt,
-          dto.channelId ?? dto.conversationId,
+          dto.contextSummary,
         ),
         forcedSkillSlugs.length > 0
           ? Promise.resolve<ISkillMatch[]>([])
@@ -296,6 +303,7 @@ export class ReactLoopService {
       idempotencyManager: this.idempotencyManager,
       actionAudit: this.actionAudit,
       tmpManager: this.tmpManager,
+      conversationArtifactStore: this.conversationArtifactStore,
     };
   }
 
@@ -500,7 +508,7 @@ export class ReactLoopService {
     workspaceId?: string,
     persona?: PersonaDto,
     userPrompt?: string,
-    channelId?: string,
+    contextSummary?: string,
   ): Promise<string> {
     const resourceContents = await this.buildResourcesBlock(
       provider,
@@ -518,11 +526,7 @@ export class ReactLoopService {
     }
     systemInstruction += buildResourcesPrompt(resourceContents);
     systemInstruction += await this.buildPolicyGroundingBlock(userPrompt);
-    systemInstruction += await this.buildRecalledMemoriesBlock(
-      channelId,
-      modelId,
-      userPrompt,
-    );
+    systemInstruction += buildContextSummaryPrompt(contextSummary);
 
     return systemInstruction;
   }
@@ -581,26 +585,6 @@ export class ReactLoopService {
       this.logger.warn(`Lỗi truy xuất policy grounding: ${(err as Error).message}`);
       return '';
     }
-  }
-
-  // Tiêm ký ức và sự thật dài hạn (Entities / Facts) vào System Instruction của ReAct
-  private async buildRecalledMemoriesBlock(
-    channelId?: string,
-    modelId: string = ORCHESTRATION_CONSTANTS.DEFAULT_REACT_MODEL,
-    userPrompt?: string,
-  ): Promise<string> {
-    if (!channelId || !this.memoryManager) return '';
-    try {
-      const memories = await this.memoryManager.getMemories(
-        channelId,
-        modelId,
-        userPrompt,
-      );
-      if (!memories || memories.length === 0) return '';
-      return buildRecalledMemoriesPrompt(memories.map((m) => m.content));
-    } catch (err) {
-      this.logger.warn(`Lỗi nạp ký ức vào ReAct: ${(err as Error).message}`);
-      return '';
-    }
+  
   }
 }

@@ -81,6 +81,7 @@ export class NativeToolRegistryService {
       workspaceId: context?.workspaceId ?? dto.workspaceId,
       tenantId: context?.tenantId ?? dto.tenantId,
       messageId: context?.messageId ?? dto.messageId,
+      conversationId: context?.conversationId,
       signal: signal ?? context?.signal,
     });
   }

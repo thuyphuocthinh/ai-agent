@@ -1,8 +1,11 @@
 import { Logger } from '@nestjs/common';
 import {
+  CONV_ARTIFACT_READ_TOOL_NAME,
+  CONV_ARTIFACT_STATUS,
   ORCHESTRATION_CONSTANTS,
   EStepExecutionStatus,
 } from '@agent/core/constants';
+import { IConversationArtifactStore } from '../../contracts/storage/conversation-artifact.interface';
 import { ToolCallExecutor } from './tool-call-executor';
 import { ToolRepeatGuard } from './guards/tool-repeat-guard';
 import { InsertAccumulator } from './guards/insert-accumulator';
@@ -52,6 +55,7 @@ describe('ToolCallExecutor', () => {
       riskGate?: Partial<ToolRiskGate>;
       insertAccumulator?: InsertAccumulator;
       tmpManager?: any;
+      conversationArtifactStore?: IConversationArtifactStore;
     } = {},
   ) {
     const riskGate = {
@@ -78,6 +82,7 @@ describe('ToolCallExecutor', () => {
         insertAccumulator: options.insertAccumulator ?? new InsertAccumulator(),
         riskGate,
         tmpManager: options.tmpManager,
+        conversationArtifactStore: options.conversationArtifactStore,
       },
     );
     return { executor, riskGate };
@@ -448,6 +453,121 @@ describe('ToolCallExecutor', () => {
         sample: [records[0], records[1]],
       });
       expect(envelope.note).toContain('Python Compute Sandbox');
+    });
+
+    it('falls back to conversationArtifactStore when tryOffloadPayloadToDisk returns null for oversized text/CSV without touching Python Sandbox (AC-14)', async () => {
+      const largeCsv = [
+        'id,name',
+        ...Array.from({ length: 3000 }, (_, i) => `${i},Customer-${i}`),
+      ].join('\n');
+      expect(largeCsv.length).toBeGreaterThan(
+        ORCHESTRATION_CONSTANTS.DIRECT_TO_DISK_CHAR_THRESHOLD,
+      );
+
+      const mockTmpManager = {
+        getTurnDir: jest.fn(),
+        saveJsonToFile: jest.fn(),
+        listTurnArtifacts: jest.fn(),
+        readTurnArtifact: jest.fn(),
+        cleanupTurn: jest.fn(),
+      };
+      const mockArtifactStore: jest.Mocked<IConversationArtifactStore> = {
+        save: jest.fn().mockResolvedValue({
+          filename: 'artifact_csv123.txt',
+          conversationId: 'channel-1',
+          sourceTool: 'export_csv',
+          mimeType: 'text/plain',
+          recordCount: 3001,
+          byteSize: largeCsv.length,
+          sample: ['id,name', '0,Customer-0'],
+        }),
+        read: jest.fn(),
+        cleanExpired: jest.fn(),
+      };
+
+      mockMcpClient.callTool.mockResolvedValueOnce({
+        content: [{ type: 'text', text: largeCsv }],
+        isError: false,
+      });
+
+      const { executor } = createExecutor({
+        tmpManager: mockTmpManager,
+        conversationArtifactStore: mockArtifactStore,
+      });
+      const result = await executor.run([
+        { id: 'call-csv', name: 'export_csv', args: {} },
+      ]);
+
+      expect(mockTmpManager.saveJsonToFile).not.toHaveBeenCalled();
+      expect(mockArtifactStore.save).toHaveBeenCalledWith({
+        conversationId: 'channel-1',
+        sourceTool: 'export_csv',
+        rawText: largeCsv,
+      });
+      const envelope = JSON.parse(result[0].content);
+      expect(envelope).toMatchObject({
+        status: CONV_ARTIFACT_STATUS,
+        filename: 'artifact_csv123.txt',
+        conversationId: 'channel-1',
+        mimeType: 'text/plain',
+      });
+    });
+
+    it('does not double-write to conversationArtifactStore when tryOffloadPayloadToDisk succeeds on JSON payload (AC-14)', async () => {
+      const records = Array.from({ length: 1500 }, (_, idx) => ({
+        id: idx,
+        desc: 'json-row-' + 'x'.repeat(30),
+      }));
+      const rawJson = JSON.stringify(records);
+
+      const mockTmpManager = {
+        getTurnDir: jest.fn((t: string) => `/tmp/artifacts/${t}`),
+        saveJsonToFile: jest
+          .fn()
+          .mockResolvedValue('/tmp/artifacts/reply-msg-1/source_q.json'),
+        listTurnArtifacts: jest.fn(),
+        readTurnArtifact: jest.fn(),
+        cleanupTurn: jest.fn(),
+      };
+      const mockArtifactStore: jest.Mocked<IConversationArtifactStore> = {
+        save: jest.fn(),
+        read: jest.fn(),
+        cleanExpired: jest.fn(),
+      };
+
+      mockMcpClient.callTool.mockResolvedValueOnce({
+        content: [{ type: 'text', text: rawJson }],
+        isError: false,
+      });
+
+      const { executor } = createExecutor({
+        tmpManager: mockTmpManager,
+        conversationArtifactStore: mockArtifactStore,
+      });
+      await executor.run([{ id: 'call-json', name: 'q', args: {} }]);
+
+      expect(mockTmpManager.saveJsonToFile).toHaveBeenCalledTimes(1);
+      expect(mockArtifactStore.save).not.toHaveBeenCalled();
+    });
+
+    it('forwards conversationId in ToolContext (3rd arg) when calling read_conversation_artifact (AC-15)', async () => {
+      const { executor } = createExecutor();
+      await executor.run([
+        {
+          id: 'call-read',
+          name: CONV_ARTIFACT_READ_TOOL_NAME,
+          args: { filename: 'artifact_csv123.txt' },
+        },
+      ]);
+
+      expect(mockMcpClient.callTool).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: CONV_ARTIFACT_READ_TOOL_NAME,
+          args: { filename: 'artifact_csv123.txt' },
+        }),
+        expect.anything(),
+        { conversationId: 'channel-1' },
+      );
     });
   });
 });

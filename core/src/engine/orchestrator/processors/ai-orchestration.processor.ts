@@ -35,6 +35,7 @@ import { AgentCancellationService } from '../../cancellation/agent-cancellation.
 import { TurnCancelledError } from '../../loop/errors/turn-cancelled.error';
 import { TurnResolverService } from '../turn/turn-resolver.service';
 import { ApprovalExecutionService } from '../../hitl/approval-execution.service';
+import { ConversationCompactionService } from '../context/conversation-compaction.service';
 import {
   ITracerService,
   TRACER_SERVICE,
@@ -75,6 +76,8 @@ export class AiOrchestrationProcessor extends BaseProcessor<
     @Optional()
     @Inject(TRACER_SERVICE)
     private readonly tracer?: ITracerService,
+    @Optional()
+    private readonly compactionService?: ConversationCompactionService,
   ) {
     super();
   }
@@ -273,6 +276,9 @@ export class AiOrchestrationProcessor extends BaseProcessor<
         );
       stopHeartbeat?.();
       await this.eventLog?.finish(reply.id, finalStatus);
+      if (finalStatus === ETurnLogStatus.DONE && channelId) {
+        this.compactionService?.scheduleCompaction(channelId);
+      }
     }
   }
 

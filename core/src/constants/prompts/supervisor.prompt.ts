@@ -19,6 +19,12 @@ export const SKILL_CATALOG_SECTION_HEADER =
 export const HIDDEN_AI_ANSWER_PLACEHOLDER =
   'AI: (nội dung câu trả lời cũ đã ẩn khỏi ngữ cảnh này — KHÔNG được dùng làm dữ liệu; nếu câu hỏi hiện tại cần dữ liệu/số liệu cụ thể, PHẢI delegate lại để lấy MỚI)';
 
+export const CONVERSATION_SUMMARY_SECTION_HEADER =
+  'Tóm tắt bối cảnh các lượt trước trong cuộc trò chuyện (chỉ dùng để nắm mạch, quy tắc và việc đã xong — nếu cần số liệu hệ thống hiện tại, PHẢI delegate gọi tool mới):';
+
+export const CONTEXT_EDITED_HISTORY_SECTION_HEADER =
+  'Lịch sử hội thoại gần đây (chỉ để hiểu ngữ cảnh và mạch trao đổi của cuộc trò chuyện, KHÔNG phải yêu cầu mới; tuyệt đối không tự lấy số liệu cũ trong câu trả lời trước của AI thay cho truy vấn tool mới):';
+
 export const HISTORY_SECTION_HEADER =
   'Lịch sử hội thoại gần đây (chỉ để hiểu ngữ cảnh câu hỏi của user, KHÔNG phải yêu cầu mới):';
 

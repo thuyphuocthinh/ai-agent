@@ -5,6 +5,9 @@ import {
   ORCHESTRATION_CONSTANTS,
   EStepExecutionStatus,
   EAgentStreamStepType,
+  CONV_ARTIFACT_OFFLOAD_NOTE,
+  CONV_ARTIFACT_READ_TOOL_NAME,
+  CONV_ARTIFACT_STATUS,
   EXECUTE_WRITE_QUERY_TOOL,
   SQL_SERVER_PROVIDER,
 } from '@agent/core/constants';
@@ -23,6 +26,10 @@ import {
   IArtifactTmpManager,
 } from '../../contracts';
 import { CallToolResponseDto, McpToolDto } from '../../contracts/dtos/mcp.dto';
+import {
+  ConversationArtifactEnvelope,
+  IConversationArtifactStore,
+} from '../../contracts/storage/conversation-artifact.interface';
 import { abortableSleep } from '../../common/async/abortable-sleep.util';
 import { capToolResultSize } from '../../common/text/token-budget.util';
 import { classifyToolError, parseInsertValues } from './utils/tool-execution.util';
@@ -104,6 +111,7 @@ export class ToolCallExecutor {
   private readonly riskGate: ToolRiskGate;
   private readonly actionAudit?: ActionAuditService;
   private readonly tmpManager?: IArtifactTmpManager;
+  private readonly conversationArtifactStore?: IConversationArtifactStore;
   private readonly reflector: ToolFailureReflector;
 
   private readonly toolCalls: ToolCallTraceDto[] = [];
@@ -133,6 +141,7 @@ export class ToolCallExecutor {
     this.riskGate = deps.riskGate;
     this.actionAudit = deps.actionAudit;
     this.tmpManager = deps.tmpManager;
+    this.conversationArtifactStore = deps.conversationArtifactStore;
     this.reflector = new ToolFailureReflector();
 
     this.tracedHandleToolCall = traceable(
@@ -614,17 +623,21 @@ export class ToolCallExecutor {
     args: Record<string, unknown>,
   ): Promise<CallToolResponseDto> {
     const { provider, rawName } = this.resolveToolCall(name);
-    return this.toolProvider.callTool(
-      {
-        provider,
-        name: rawName,
-        args,
-        ownerId: this.dto.userId,
-        workspaceId: this.dto.workspaceId,
-        messageId: this.dto.messageId,
-      },
-      this.signal,
-    );
+    const callDto = {
+      provider,
+      name: rawName,
+      args,
+      ownerId: this.dto.userId,
+      workspaceId: this.dto.workspaceId,
+      messageId: this.dto.messageId,
+    };
+    const convId = this.dto.conversationId ?? this.dto.channelId;
+    if (rawName === CONV_ARTIFACT_READ_TOOL_NAME && convId) {
+      return this.toolProvider.callTool(callDto, this.signal, {
+        conversationId: convId,
+      });
+    }
+    return this.toolProvider.callTool(callDto, this.signal);
   }
 
   private async runToolCall(
@@ -818,6 +831,25 @@ export class ToolCallExecutor {
         this.tmpManager,
       );
       if (offloaded) return offloaded;
+
+      const convId = this.dto.conversationId ?? this.dto.channelId;
+      if (
+        convId &&
+        this.conversationArtifactStore &&
+        text.length > ORCHESTRATION_CONSTANTS.DIRECT_TO_DISK_CHAR_THRESHOLD
+      ) {
+        const record = await this.conversationArtifactStore.save({
+          conversationId: convId,
+          sourceTool: name,
+          rawText: text,
+        });
+        const envelope: ConversationArtifactEnvelope = {
+          status: CONV_ARTIFACT_STATUS,
+          ...record,
+          note: CONV_ARTIFACT_OFFLOAD_NOTE,
+        };
+        return JSON.stringify(envelope);
+      }
     }
     return this.capForFeed(text);
   }

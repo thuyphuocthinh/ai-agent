@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto';
-import { Injectable, Logger, Optional } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import {
   IMessageSink,
   MessageEvent,
@@ -14,7 +14,7 @@ import {
 } from '../../contracts/dtos/message-client.dto';
 import { IMessageAttachment } from '../../contracts/storage/storage.interface';
 import { EMessageEventType, EMessageRole } from '@agent/core/constants';
-import { ConversationMemoryService } from '../../memory/conversation-memory.service';
+import { trimTurnsToCharBudget } from '../../common/text/context-edit.util';
 
 const DEFAULT_CONVERSATION = 'default';
 
@@ -35,10 +35,6 @@ export class MessageClientService implements IMessageSink {
   private readonly messages = new Map<string, StoredMessage>();
   private readonly order = new Map<string, string[]>();
   private readonly listeners = new Set<(event: MessageEvent) => void>();
-
-  constructor(
-    @Optional() private readonly channelMemory?: ConversationMemoryService,
-  ) {}
 
   /**
    * Nghe mọi message được tạo/cập nhật. Câu trả lời cuối, lỗi của engine và yêu
@@ -74,7 +70,7 @@ export class MessageClientService implements IMessageSink {
       ids = ids.slice(0, beforeIndex);
     }
     const limit = dto.limit || 10;
-    return ids
+    const turns = ids
       .map((id) => this.messages.get(id))
       .filter((m): m is StoredMessage => Boolean(m?.isText && m.text))
       .filter((m, idx, arr) => {
@@ -95,6 +91,10 @@ export class MessageClientService implements IMessageSink {
         ...(m.attachments ? { attachments: m.attachments } : {}),
       }))
       .slice(-limit);
+    if (dto.charBudget && dto.charBudget > 0) {
+      return trimTurnsToCharBudget(turns, dto.charBudget);
+    }
+    return turns;
   }
 
   async createMessage(
@@ -133,14 +133,6 @@ export class MessageClientService implements IMessageSink {
       role: existing?.role ?? EMessageRole.MODEL,
       content: dto.content,
     });
-
-    if (convId && dto.toolCalls?.length && this.channelMemory) {
-      await this.channelMemory.recordSuccessfulCreateCalls(
-        convId,
-        dto.id,
-        dto.toolCalls,
-      );
-    }
   }
 
   async tryUpdateMessage(dto: UpdateOrchestrationMessageRequestDto): Promise<void> {

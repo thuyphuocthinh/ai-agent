@@ -1,6 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { Logger } from '@nestjs/common';
 import {
+  CONTEXT_EDITED_HISTORY_SECTION_HEADER,
+  CONVERSATION_SUMMARY_SECTION_HEADER,
   ORCHESTRATION_CONSTANTS,
   SUPERVISOR_PLAN_SCHEMA,
   SUPERVISOR_PLAN_SCHEMA_NO_ANSWER,
@@ -374,23 +376,18 @@ describe('SupervisorService', () => {
       const sentPrompt =
         mockStrategy.generateStructured.mock.calls[0][0].prompt;
       expect(sentPrompt).toContain('User: doanh thu tháng này bao nhiêu?');
-      // Giai đoạn 4 (hướng CHẮC nhất, sau khi cảnh báo-cạnh-dữ-liệu vẫn không
-      // đủ) — nội dung câu trả lời CŨ của AI bị ẨN HẲN, không còn xuất hiện
-      // nguyên văn trong prompt gửi cho Supervisor nữa (xem bug "14 dòng" ở
-      // stage4_step.md). Đảm bảo ở tầng CODE, không phụ thuộc model có nghe
-      // lời cảnh báo hay không.
-      expect(sentPrompt).not.toContain('Doanh thu tháng này là 100 triệu.');
-      expect(sentPrompt).toContain('AI: (nội dung câu trả lời cũ đã ẩn');
+      expect(sentPrompt).toContain('AI: Doanh thu tháng này là 100 triệu.');
       expect(sentPrompt).toContain(
         'Câu hỏi gốc của user: còn tháng trước thì sao?',
       );
     });
 
-    it('Giai đoạn 4 (bug "14 dòng") — hides old AI answer content entirely so Supervisor cannot echo stale/wrong data back, regardless of prompt compliance', async () => {
+    it('truncates oversized old AI answers via context editing while keeping context intact (AC-12)', async () => {
       mockStrategy.generateStructured.mockResolvedValue({
         action: 'respond',
         answer: 'ok',
       });
+      const hugeAnswer = `START_${'B'.repeat(ORCHESTRATION_CONSTANTS.CONTEXT_EDIT_AI_TEXT_MAX_CHARS + 500)}_END`;
 
       await service.plan(
         'Bảng Orders có bao nhiêu dòng?',
@@ -398,95 +395,59 @@ describe('SupervisorService', () => {
         [],
         [
           { role: 'user', text: 'Bảng Orders có bao nhiêu dòng?' },
-          { role: 'model', text: 'Bảng Orders có tổng cộng 14 dòng.' },
+          { role: 'model', text: hugeAnswer },
         ],
       );
 
       const sentPrompt =
         mockStrategy.generateStructured.mock.calls[0][0].prompt;
-      // Số liệu cũ ("14") tuyệt đối KHÔNG được xuất hiện lại trong prompt —
-      // đảm bảo chắc chắn (code-level), không phải "hy vọng model bỏ qua nó".
-      expect(sentPrompt).not.toContain('14 dòng');
-      expect(sentPrompt).toContain(
-        'AI: (nội dung câu trả lời cũ đã ẩn khỏi ngữ cảnh này',
-      );
-      // Câu hỏi CỦA USER (không phải câu trả lời của AI) vẫn còn nguyên —
-      // Supervisor vẫn hiểu được NGỮ CẢNH/CHỦ ĐỀ đã hỏi trước đó.
       expect(sentPrompt).toContain('User: Bảng Orders có bao nhiêu dòng?');
+      expect(sentPrompt).toContain('đã lược bỏ');
+      expect(sentPrompt.length).toBeLessThan(hugeAnswer.length);
     });
 
-    describe('ver3.md mục 1 (dài hạn) — channel_memory context', () => {
-      it('fetches recent channel memories by channelId and folds them into the prompt BEFORE conversation history', async () => {
-        mockMemoryManager.getMemories.mockResolvedValue([
-          { content: 'notion.create_page: Page "Roadmap" (id=abc123)' },
-        ]);
+    describe('AC-11 & AC-13 — conversation compaction summary context (replaces legacy getMemories)', () => {
+      it('injects contextSummary BEFORE conversation history via planWithContext and does not call legacy getMemories', async () => {
         mockStrategy.generateStructured.mockResolvedValue({
           action: 'respond',
           answer: 'ok',
         });
 
-        await service.plan(
-          'chèn lại đi',
+        await service.planWithContext({
+          prompt: 'chèn lại đi',
           agents,
-          [],
-          [{ role: 'user', text: 'tạo trang Roadmap trên Notion' }],
-          undefined,
-          undefined,
-          'chan-1',
-        );
-
-        expect(mockMemoryManager.getMemories).toHaveBeenCalledWith(
-          'chan-1',
-          ORCHESTRATION_CONSTANTS.SUPERVISOR_MODEL,
-          'chèn lại đi',
-        );
-        const sentPrompt =
-          mockStrategy.generateStructured.mock.calls[0][0].prompt;
-        expect(sentPrompt).toContain('Thông tin đã xác nhận trước đó');
-        expect(sentPrompt).toContain('GỢI Ý tham khảo');
-        expect(sentPrompt).toContain(
-          'notion.create_page: Page "Roadmap" (id=abc123)',
-        );
-        // Đứng TRƯỚC lịch sử hội thoại (ver3.md yêu cầu rõ thứ tự).
-        expect(
-          sentPrompt.indexOf('Thông tin đã xác nhận trước đó'),
-        ).toBeLessThan(sentPrompt.indexOf('Lịch sử hội thoại gần đây'));
-      });
-
-      it('does not fetch memories or add the section when channelId is not provided (existing call sites unaffected)', async () => {
-        mockStrategy.generateStructured.mockResolvedValue({
-          action: 'respond',
-          answer: 'ok',
+          rounds: [],
+          history: [{ role: 'user', text: 'tạo trang Roadmap trên Notion' }],
+          contextSummary: 'notion.create_page: Page "Roadmap" (id=abc123)',
+          channelId: 'chan-1',
         });
-
-        await service.plan('câu hỏi', agents);
 
         expect(mockMemoryManager.getMemories).not.toHaveBeenCalled();
         const sentPrompt =
           mockStrategy.generateStructured.mock.calls[0][0].prompt;
-        expect(sentPrompt).not.toContain('Thông tin đã xác nhận trước đó');
+        expect(sentPrompt).toContain(CONVERSATION_SUMMARY_SECTION_HEADER);
+        expect(sentPrompt).toContain(
+          'notion.create_page: Page "Roadmap" (id=abc123)',
+        );
+        expect(
+          sentPrompt.indexOf(CONVERSATION_SUMMARY_SECTION_HEADER),
+        ).toBeLessThan(
+          sentPrompt.indexOf(CONTEXT_EDITED_HISTORY_SECTION_HEADER),
+        );
       });
 
-      it('omits the section entirely when there are no memories for the channel', async () => {
-        mockMemoryManager.getMemories.mockResolvedValue([]);
+      it('does not fetch legacy memories or add summary section when contextSummary is omitted', async () => {
         mockStrategy.generateStructured.mockResolvedValue({
           action: 'respond',
           answer: 'ok',
         });
 
-        await service.plan(
-          'câu hỏi',
-          agents,
-          [],
-          [],
-          undefined,
-          undefined,
-          'chan-1',
-        );
+        await service.plan('câu hỏi', agents, [], [], undefined, undefined, 'chan-1');
 
+        expect(mockMemoryManager.getMemories).not.toHaveBeenCalled();
         const sentPrompt =
           mockStrategy.generateStructured.mock.calls[0][0].prompt;
-        expect(sentPrompt).not.toContain('Thông tin đã xác nhận trước đó');
+        expect(sentPrompt).not.toContain(CONVERSATION_SUMMARY_SECTION_HEADER);
       });
     });
 
@@ -515,31 +476,29 @@ describe('SupervisorService', () => {
     });
 
     describe('ver3.md mục 5 — frustration detection (regex, không LLM call)', () => {
-      it('prepends a warning section, placed BEFORE channel_memory, when the current prompt matches a frustration pattern', async () => {
-        mockMemoryManager.getMemories.mockResolvedValue([
-          { content: 'notion.create_page: Page "Roadmap" (id=abc123)' },
-        ]);
+      it('prepends a warning section, placed BEFORE contextSummary, when the current prompt matches a frustration pattern', async () => {
         mockStrategy.generateStructured.mockResolvedValue({
           action: 'respond',
           answer: 'ok',
         });
 
-        await service.plan(
-          'sai rồi, làm lại đi',
+        await service.planWithContext({
+          prompt: 'sai rồi, làm lại đi',
           agents,
-          [],
-          [],
-          undefined,
-          undefined,
-          'chan-1',
-        );
+          rounds: [],
+          history: [],
+          contextSummary: 'notion.create_page: Page "Roadmap" (id=abc123)',
+          channelId: 'chan-1',
+        });
 
         const sentPrompt =
           mockStrategy.generateStructured.mock.calls[0][0].prompt;
         expect(sentPrompt).toContain('có dấu hiệu không hài lòng/bực bội');
         expect(
           sentPrompt.indexOf('có dấu hiệu không hài lòng/bực bội'),
-        ).toBeLessThan(sentPrompt.indexOf('Thông tin đã xác nhận trước đó'));
+        ).toBeLessThan(
+          sentPrompt.indexOf(CONVERSATION_SUMMARY_SECTION_HEADER),
+        );
       });
 
       it('does not add the warning section for a neutral prompt', async () => {

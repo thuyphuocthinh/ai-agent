@@ -1,5 +1,6 @@
 import { Logger } from '@nestjs/common';
 import { IStreamSink, IToolProvider, IArtifactTmpManager } from '../../contracts';
+import { IConversationArtifactStore } from '../../contracts/storage/conversation-artifact.interface';
 import { RunReactLoopRequestDto } from '../../contracts/dtos/react-loop.dto';
 import { McpToolDto } from '../../contracts/dtos/mcp.dto';
 import { LlmChatSession, LlmStrategy } from '../../contracts/engine/llm-strategy.interface';
@@ -40,4 +41,5 @@ export interface ReactLoopRunDeps {
   idempotencyManager?: IdempotencyManager;
   actionAudit?: ActionAuditService;
   tmpManager?: IArtifactTmpManager;
+  conversationArtifactStore?: IConversationArtifactStore;
 }

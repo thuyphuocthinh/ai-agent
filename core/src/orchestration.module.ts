@@ -39,6 +39,12 @@ import { SKILL_CATALOG_READER } from './contracts/skill/skill-catalog-reader.int
 import { SKILL_MATCHER } from './contracts/skill/skill-matcher.interface';
 import { SkillMatchService } from './memory/skill/skill-match.service';
 import { ReadSkillTool } from './infrastructure/tools/native/read-skill.tool';
+import { ReadConversationArtifactTool } from './infrastructure/tools/native/read-conversation-artifact.tool';
+import { LocalConversationArtifactStore } from './infrastructure/storage/local-conversation-artifact.store';
+import { CONVERSATION_ARTIFACT_STORE } from './contracts/storage/conversation-artifact.interface';
+import { PrismaConversationCompactionRepository } from './infrastructure/database/adapters/prisma-conversation-compaction.repository';
+import { CONVERSATION_COMPACTION_REPOSITORY } from './contracts/memory/conversation-compaction.interface';
+import { ConversationCompactionService } from './engine/orchestrator/context/conversation-compaction.service';
 import { GoogleSheetsStructureTool } from './infrastructure/tools/native/google-sheets-structure.tool';
 import { GoogleSheetsBatchUpdateTool } from './infrastructure/tools/native/google-sheets-batch-update.tool';
 import { CheckpointCleanupService } from './engine/hitl/checkpoint-cleanup.service';
@@ -178,7 +184,19 @@ import { SecurityModule } from './security';
     { provide: SKILL_CATALOG_READER, useExisting: SkillCatalogService },
     SkillMatchService,
     { provide: SKILL_MATCHER, useExisting: SkillMatchService },
+    PrismaConversationCompactionRepository,
+    {
+      provide: CONVERSATION_COMPACTION_REPOSITORY,
+      useExisting: PrismaConversationCompactionRepository,
+    },
+    LocalConversationArtifactStore,
+    {
+      provide: CONVERSATION_ARTIFACT_STORE,
+      useExisting: LocalConversationArtifactStore,
+    },
+    ConversationCompactionService,
     ReadSkillTool,
+    ReadConversationArtifactTool,
     GoogleSheetsStructureTool,
     GoogleSheetsBatchUpdateTool,
     PrismaTriggerClaimService,
@@ -269,6 +287,10 @@ import { SecurityModule } from './security';
     VisionProviderResolver,
     VisionLlmOcrService,
     IMAGE_OCR_SERVICE,
+    CONVERSATION_COMPACTION_REPOSITORY,
+    CONVERSATION_ARTIFACT_STORE,
+    ConversationCompactionService,
+    ReadConversationArtifactTool,
   ],
 })
 export class OrchestrationModule {}

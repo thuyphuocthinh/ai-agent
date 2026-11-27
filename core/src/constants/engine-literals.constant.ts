@@ -17,3 +17,23 @@ export const DEFAULT_TWO_STEP_PIPELINE_ID = 'default-two-step-pipeline';
 
 // Provider đặc biệt của McpToolConnectorService: trả các native tool dùng chung cho mọi agent (VD read_skill).
 export const NATIVE_TOOL_PROVIDER = 'native';
+
+// Conversation Artifact Handoff literals (tách biệt hoàn toàn khỏi /tmp/artifacts của Python Sandbox)
+export const CONV_ARTIFACT_DIR_NAME = 'agent-conv-artifacts';
+export const CONV_ARTIFACT_STATUS = 'saved_to_artifact' as const;
+export const CONV_ARTIFACT_FILE_PREFIX = 'artifact_';
+export const CONV_ARTIFACT_READ_TOOL_NAME = 'read_conversation_artifact';
+export const CONV_ARTIFACT_OFFLOAD_NOTE =
+  'Dữ liệu lớn đã lưu vào kho artifact của cuộc trò chuyện (hết hạn sau 4h). Gọi read_conversation_artifact với filename khi bước sau cần đọc lại.';
+
+export const CONV_ARTIFACT_FORMAT = {
+  JSON: { extension: '.json', mimeType: 'application/json' },
+  TEXT: { extension: '.txt', mimeType: 'text/plain' },
+} as const;
+
+export const CONV_ARTIFACT_ERROR_CODES = {
+  INVALID_ARGUMENTS: 'INVALID_ARGUMENTS',
+  MISSING_CONVERSATION: 'MISSING_CONVERSATION',
+  NOT_FOUND: 'ARTIFACT_NOT_FOUND',
+  READ_FAILED: 'ARTIFACT_READ_FAILED',
+} as const;

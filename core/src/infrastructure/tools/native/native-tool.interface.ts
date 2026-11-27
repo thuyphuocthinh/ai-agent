@@ -6,6 +6,7 @@ export interface NativeToolExecutionContext {
   workspaceId?: string;
   tenantId?: string;
   messageId?: string;
+  conversationId?: string;
   signal?: AbortSignal;
 }
 

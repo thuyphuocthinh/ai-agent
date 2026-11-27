@@ -12,7 +12,7 @@ import {
 import { AnswerResult } from '../../../contracts/engine/orchestration-answer.types';
 import { SupervisorService } from '../../supervisor/supervisor.service';
 import { AvailableAgentDto } from '../../../contracts/dtos/supervisor.dto';
-import { ORCHESTRATION_CONSTANTS } from '../../../constants';
+import { EMessageRole, ORCHESTRATION_CONSTANTS } from '../../../constants';
 
 describe('AutonomousEngine', () => {
   let engine: AutonomousEngine;
@@ -174,27 +174,24 @@ describe('AutonomousEngine', () => {
       expect(result).toBeDefined();
     });
 
-    it('tự động nén lịch sử đàm thoại dài (> 10 turns) trước khi đưa vào Frontline ReAct', async () => {
+    it('không còn nén lịch sử in-flight bằng ConversationHistorySummarizer mà chuyển tiếp contextSummary sang Frontline ReAct (AC-11 & AC-13)', async () => {
       const longHistory = Array.from({ length: 15 }, (_, i) => ({
-        role: i % 2 === 0 ? ('user' as const) : ('model' as const),
+        role: i % 2 === 0 ? EMessageRole.USER : EMessageRole.MODEL,
         text: `Nội dung chat cũ ${i}`,
       }));
 
       const longContext: EngineExecutionContext = {
         ...baseContext,
         history: longHistory,
+        contextSummary: 'Bản tóm tắt đã nén sẵn ở đầu lượt',
       };
 
       const result = await engine.execute(longContext);
       expect(result).toBeDefined();
       expect(mockReactLoop.run).toHaveBeenCalledWith(
         expect.objectContaining({
-          // Sau khi nén: 2 anchor turns + 6 turns gần nhất = 8 turns
-          history: expect.arrayContaining([
-            expect.objectContaining({
-              text: expect.stringContaining('[TÓM TẮT BỐI CẢNH CÁC LƯỢT TRÒ CHUYỆN TRƯỚC ĐÓ]'),
-            }),
-          ]),
+          contextSummary: 'Bản tóm tắt đã nén sẵn ở đầu lượt',
+          history: longHistory,
         }),
         undefined,
       );

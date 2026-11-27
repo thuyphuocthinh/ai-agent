@@ -257,6 +257,29 @@ describe('PrismaMessageSink', () => {
         { type: 'image', url: 'https://img.com/1.png' },
       ]);
     });
+
+    it('does not invoke legacy channelMemory.recordSuccessfulCreateCalls on updateMessage (AC-13)', async () => {
+      const recordSuccessfulCreateCalls = jest.fn();
+      const legacySink = new PrismaMessageSink(
+        mockPrisma as unknown as PrismaService,
+        { recordSuccessfulCreateCalls } as never,
+      );
+      mockPrisma.conversationMessage.findUnique.mockResolvedValue({
+        id: 'msg-1',
+        conversationId: 'conv-1',
+        role: MessageRole.ASSISTANT,
+        metadata: {},
+      });
+
+      await legacySink.updateMessage({
+        id: 'msg-1',
+        conversationId: 'conv-1',
+        content: 'done',
+        toolCalls: [{ tool: 'sql.write', status: EStepExecutionStatus.SUCCESS }],
+      });
+
+      expect(recordSuccessfulCreateCalls).not.toHaveBeenCalled();
+    });
   });
 
   describe('Bảo mật lỗi (No SQL leak)', () => {

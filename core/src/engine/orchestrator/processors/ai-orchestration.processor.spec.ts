@@ -23,6 +23,7 @@ import { TurnCancelledError } from '../../loop/errors/turn-cancelled.error';
 import { TurnResolverService } from '../turn/turn-resolver.service';
 import { ApprovalExecutionService } from '../../hitl/approval-execution.service';
 import { TurnEventRecorderService } from '../turn/turn-event-recorder.service';
+import { ConversationCompactionService } from '../context/conversation-compaction.service';
 
 // ai-orchestration.processor.ts import ReactLoopService (dù đã mock qua DI ở
 // dưới) — file thật của nó vẫn import @agent/core/common ở module scope, kéo theo
@@ -78,6 +79,7 @@ describe('AiOrchestrationProcessor', () => {
     read: jest.fn(),
   };
   const mockRecorder = { idle: jest.fn() };
+  const mockCompactionService = { scheduleCompaction: jest.fn() };
 
   const stepEntry = (
     id: string,
@@ -128,6 +130,7 @@ describe('AiOrchestrationProcessor', () => {
         { provide: ApprovalExecutionService, useValue: mockApprovalExecution },
         { provide: TURN_EVENT_LOG, useValue: mockEventLog },
         { provide: TurnEventRecorderService, useValue: mockRecorder },
+        { provide: ConversationCompactionService, useValue: mockCompactionService },
       ],
     }).compile();
 
@@ -523,6 +526,31 @@ describe('AiOrchestrationProcessor', () => {
       expect(mockMessageClient.updateMessage).toHaveBeenCalledWith(
         expect.objectContaining({ id: 'reply-1', content: 'xong' }),
       );
+    });
+  });
+
+  describe('Background compaction scheduling (AC-11)', () => {
+    it('schedules compaction for channelId after DONE turn completes', async () => {
+      mockTurnResolver.resolveAnswer.mockResolvedValue({ content: 'xong' });
+
+      await runJob();
+
+      expect(mockCompactionService.scheduleCompaction).toHaveBeenCalledTimes(1);
+      expect(mockCompactionService.scheduleCompaction).toHaveBeenCalledWith(
+        jobData.channelId,
+      );
+    });
+
+    it('does not schedule compaction when the turn fails or is cancelled', async () => {
+      mockTurnResolver.resolveAnswer.mockRejectedValueOnce(new Error('LLM down'));
+      await runJob();
+      expect(mockCompactionService.scheduleCompaction).not.toHaveBeenCalled();
+
+      mockTurnResolver.resolveAnswer.mockRejectedValueOnce(
+        new TurnCancelledError('partial'),
+      );
+      await runJob();
+      expect(mockCompactionService.scheduleCompaction).not.toHaveBeenCalled();
     });
   });
 });
