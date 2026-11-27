@@ -3,6 +3,10 @@ import {
   ORCHESTRATION_CONSTANTS,
   ECheckpointKind,
   NATIVE_TOOL_PROVIDER,
+  NATIVE_UTILITY_AGENT_LABEL,
+  NATIVE_UTILITY_AGENT_DESCRIPTION,
+  CONV_ARTIFACT_READ_TOOL_NAME,
+  HISTORY_SEARCH_TOOL_NAME,
 } from '@agent/core/constants';
 import {
   IExecutionEngine,
@@ -265,17 +269,47 @@ export class AutonomousEngine implements IExecutionEngine {
       return this.executeFrontlineReAct(context);
     }
 
+    const supervisorAgents = await this.withNativeLookupAgent(context.agents);
     return this.runSupervisorLoop({
       data: context.data,
       replyMessageId: context.replyMessageId,
       prompt: context.prompt,
-      agents: context.agents,
+      agents: supervisorAgents,
       history: context.history,
       contextSummary: context.contextSummary,
       rounds: [],
       toolCalls: [],
       signal: context.signal,
     });
+  }
+
+  private async withNativeLookupAgent(
+    agents: readonly AvailableAgentDto[],
+  ): Promise<AvailableAgentDto[]> {
+    if (!this.toolProvider || agents.some((a) => a.provider === NATIVE_TOOL_PROVIDER)) {
+      return [...agents];
+    }
+    try {
+      const nativeTools = await this.toolProvider.getTools(NATIVE_TOOL_PROVIDER);
+      const supportsLookup = nativeTools.some(
+        (t) =>
+          t.name === HISTORY_SEARCH_TOOL_NAME ||
+          t.name === CONV_ARTIFACT_READ_TOOL_NAME,
+      );
+      if (!supportsLookup) {
+        return [...agents];
+      }
+    } catch {
+      return [...agents];
+    }
+    return [
+      ...agents,
+      {
+        provider: NATIVE_TOOL_PROVIDER,
+        label: NATIVE_UTILITY_AGENT_LABEL,
+        description: NATIVE_UTILITY_AGENT_DESCRIPTION,
+      },
+    ];
   }
 
   async runSupervisorLoop(

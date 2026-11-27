@@ -81,8 +81,9 @@ describe('ConversationCompactionService', () => {
     });
 
     it('compacts older messages while preserving COMPACTION_KEEP_RECENT_TURNS uncompacted', async () => {
-      const total = ORCHESTRATION_CONSTANTS.COMPACTION_TRIGGER_TURNS + 2; // 12
-      const keep = ORCHESTRATION_CONSTANTS.COMPACTION_KEEP_RECENT_TURNS; // 6
+      const total = ORCHESTRATION_CONSTANTS.COMPACTION_TRIGGER_TURNS + 2; // 24
+      const keep = ORCHESTRATION_CONSTANTS.COMPACTION_KEEP_RECENT_TURNS; // 14
+      const compactedCount = total - keep; // 10
       mockRepo.getCompactionState.mockResolvedValueOnce({
         summary: 'Summary 0',
         summarizedUntilMessageId: 'msg-0',
@@ -104,14 +105,14 @@ describe('ConversationCompactionService', () => {
       );
       const sentPrompt = mockSendMessage.mock.calls[0][0] as string;
       expect(sentPrompt).toContain('Summary 0');
-      expect(sentPrompt).toContain('Nội dung tin 6');
-      expect(sentPrompt).not.toContain('Nội dung tin 7');
+      expect(sentPrompt).toContain(`Nội dung tin ${compactedCount}`);
+      expect(sentPrompt).not.toContain(`Nội dung tin ${compactedCount + 1}`);
 
       expect(mockRepo.saveCompactionState).toHaveBeenCalledWith(
         'conv-1',
         expect.objectContaining({
           summary: 'Summary hợp nhất mới',
-          summarizedUntilMessageId: `msg-${total - keep}`,
+          summarizedUntilMessageId: `msg-${compactedCount}`,
         }),
       );
     });
@@ -119,7 +120,9 @@ describe('ConversationCompactionService', () => {
     it('prevents concurrent overlapping compactions for the same conversationId', async () => {
       let resolveLlm!: (value: { text: string; toolCalls: [] }) => void;
       mockRepo.getCompactionState.mockResolvedValue(null);
-      mockRepo.getMessagesInWindow.mockResolvedValue(buildRecords(12));
+      mockRepo.getMessagesInWindow.mockResolvedValue(
+        buildRecords(ORCHESTRATION_CONSTANTS.COMPACTION_TRIGGER_TURNS + 2),
+      );
       mockSendMessage.mockImplementationOnce(
         () =>
           new Promise((resolve) => {

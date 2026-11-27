@@ -2,6 +2,7 @@ import { Logger } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import {
   CONVERSATION_SUMMARY_SECTION_HEADER,
+  HISTORY_SEARCH_TOOL_NAME,
   ORCHESTRATION_CONSTANTS,
   ORCHESTRATION_SELF_CHECK_PROMPT,
 } from '@agent/core/constants';
@@ -354,6 +355,33 @@ describe('ReactLoopService', () => {
         expect.any(Function),
         expect.anything(),
       );
+    });
+
+    it('skips QuantityCheck completely when the turn only executed read-only lookup tools such as search_conversation_history', async () => {
+      mockMcpClient.getTools.mockResolvedValue([
+        {
+          name: HISTORY_SEARCH_TOOL_NAME,
+          description: 'Search history',
+          inputSchema: { type: 'object', properties: {} },
+        },
+      ]);
+      mockSession.sendMessage
+        .mockResolvedValueOnce({
+          text: '',
+          toolCalls: [{ name: HISTORY_SEARCH_TOOL_NAME, args: { query: 'VIP' } }],
+        })
+        .mockResolvedValueOnce({
+          text: 'Đã tổng hợp đủ 8 thông tin.',
+          toolCalls: [],
+        });
+
+      const result = await service.run({
+        ...baseDto,
+        prompt: 'Trả lời chính xác 8 thông tin đã trao đổi ở lượt trước',
+      });
+
+      expect(result.answer).toBe('Đã tổng hợp đủ 8 thông tin.');
+      expect(mockStrategy.generateStructured).not.toHaveBeenCalled();
     });
 
     it('treats a failed quantity check as not-applicable and still runs the freeform self-check', async () => {

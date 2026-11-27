@@ -1,10 +1,13 @@
 import { Logger } from '@nestjs/common';
 import {
+  CONV_ARTIFACT_READ_TOOL_NAME,
   DEFAULT_EMPTY_ANSWER,
   EStepExecutionStatus,
+  HISTORY_SEARCH_TOOL_NAME,
   ORCHESTRATION_CONSTANTS,
   ORCHESTRATION_SELF_CHECK_PROMPT,
 } from '@agent/core/constants';
+import { READ_SKILL_TOOL_NAME } from '../../infrastructure/tools/native/read-skill.tool';
 import {
   RunReactLoopRequestDto,
   RunReactLoopResponseDto,
@@ -37,6 +40,12 @@ import {
 
 const METADATA_TOOL_REGEX =
   /schema|list_tables|describe|columns|metadata|list_channels|list_spreadsheets|list_repositories/i;
+
+const READ_ONLY_LOOKUP_TOOLS = new Set<string>([
+  READ_SKILL_TOOL_NAME,
+  CONV_ARTIFACT_READ_TOOL_NAME,
+  HISTORY_SEARCH_TOOL_NAME,
+]);
 
 /**
  * Điều khiển vòng lặp ReAct (1 agent, 1 lượt): gọi LLM, chuyển tool call cho
@@ -176,8 +185,10 @@ export class ReactLoopRun {
       };
     }
 
-    // 2. Chặng 1: Nudge số lượng (Quantity Shortfall)
-    const quantityResult = await this.evaluateQuantityNudge(turn.text, onToken);
+    // 2. Chặng 1: Nudge số lượng (Quantity Shortfall) — chỉ áp cho tác vụ ghi/xử lý ngoài, bỏ qua lượt chỉ đọc tra cứu nội bộ
+    const quantityResult = this.isReadOnlyLookupTurn(toolCalls)
+      ? undefined
+      : await this.evaluateQuantityNudge(turn.text, onToken);
     if (quantityResult?.action === 'continue') {
       return this.continueLoop(quantityResult.nextTurn, resync);
     }
@@ -330,6 +341,17 @@ export class ReactLoopRun {
           { signal: this.signal, canRetry: () => !streamedAnything },
         ),
       this.signal,
+    );
+  }
+
+  private isReadOnlyLookupTurn(toolCalls: readonly ToolCallTraceDto[]): boolean {
+    return (
+      toolCalls.length > 0 &&
+      toolCalls.every((tc) => {
+        const dotIdx = tc.tool.indexOf('.');
+        const rawName = dotIdx >= 0 ? tc.tool.slice(dotIdx + 1) : tc.tool;
+        return READ_ONLY_LOOKUP_TOOLS.has(rawName);
+      })
     );
   }
 

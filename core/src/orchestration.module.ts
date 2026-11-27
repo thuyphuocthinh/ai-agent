@@ -40,10 +40,13 @@ import { SKILL_MATCHER } from './contracts/skill/skill-matcher.interface';
 import { SkillMatchService } from './memory/skill/skill-match.service';
 import { ReadSkillTool } from './infrastructure/tools/native/read-skill.tool';
 import { ReadConversationArtifactTool } from './infrastructure/tools/native/read-conversation-artifact.tool';
+import { SearchConversationHistoryTool } from './infrastructure/tools/native/search-conversation-history.tool';
 import { LocalConversationArtifactStore } from './infrastructure/storage/local-conversation-artifact.store';
 import { CONVERSATION_ARTIFACT_STORE } from './contracts/storage/conversation-artifact.interface';
 import { PrismaConversationCompactionRepository } from './infrastructure/database/adapters/prisma-conversation-compaction.repository';
 import { CONVERSATION_COMPACTION_REPOSITORY } from './contracts/memory/conversation-compaction.interface';
+import { PrismaConversationHistorySearchRepository } from './infrastructure/database/adapters/prisma-conversation-history-search.repository';
+import { CONVERSATION_HISTORY_SEARCH_REPOSITORY } from './contracts/memory/conversation-history-search.interface';
 import { ConversationCompactionService } from './engine/orchestrator/context/conversation-compaction.service';
 import { GoogleSheetsStructureTool } from './infrastructure/tools/native/google-sheets-structure.tool';
 import { GoogleSheetsBatchUpdateTool } from './infrastructure/tools/native/google-sheets-batch-update.tool';
@@ -189,6 +192,11 @@ import { SecurityModule } from './security';
       provide: CONVERSATION_COMPACTION_REPOSITORY,
       useExisting: PrismaConversationCompactionRepository,
     },
+    PrismaConversationHistorySearchRepository,
+    {
+      provide: CONVERSATION_HISTORY_SEARCH_REPOSITORY,
+      useExisting: PrismaConversationHistorySearchRepository,
+    },
     LocalConversationArtifactStore,
     {
       provide: CONVERSATION_ARTIFACT_STORE,
@@ -197,6 +205,7 @@ import { SecurityModule } from './security';
     ConversationCompactionService,
     ReadSkillTool,
     ReadConversationArtifactTool,
+    SearchConversationHistoryTool,
     GoogleSheetsStructureTool,
     GoogleSheetsBatchUpdateTool,
     PrismaTriggerClaimService,
@@ -288,9 +297,11 @@ import { SecurityModule } from './security';
     VisionLlmOcrService,
     IMAGE_OCR_SERVICE,
     CONVERSATION_COMPACTION_REPOSITORY,
+    CONVERSATION_HISTORY_SEARCH_REPOSITORY,
     CONVERSATION_ARTIFACT_STORE,
     ConversationCompactionService,
     ReadConversationArtifactTool,
+    SearchConversationHistoryTool,
   ],
 })
 export class OrchestrationModule {}

@@ -9,6 +9,7 @@ import {
   CONV_ARTIFACT_READ_TOOL_NAME,
   CONV_ARTIFACT_STATUS,
   EXECUTE_WRITE_QUERY_TOOL,
+  HISTORY_SEARCH_TOOL_NAME,
   SQL_SERVER_PROVIDER,
 } from '@agent/core/constants';
 import { extractTextFromMcpResult } from '@agent/core/common';
@@ -632,7 +633,11 @@ export class ToolCallExecutor {
       messageId: this.dto.messageId,
     };
     const convId = this.dto.conversationId ?? this.dto.channelId;
-    if (rawName === CONV_ARTIFACT_READ_TOOL_NAME && convId) {
+    if (
+      convId &&
+      (rawName === CONV_ARTIFACT_READ_TOOL_NAME ||
+        rawName === HISTORY_SEARCH_TOOL_NAME)
+    ) {
       return this.toolProvider.callTool(callDto, this.signal, {
         conversationId: convId,
       });

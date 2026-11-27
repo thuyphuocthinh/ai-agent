@@ -17,6 +17,9 @@ export const DEFAULT_TWO_STEP_PIPELINE_ID = 'default-two-step-pipeline';
 
 // Provider đặc biệt của McpToolConnectorService: trả các native tool dùng chung cho mọi agent (VD read_skill).
 export const NATIVE_TOOL_PROVIDER = 'native';
+export const NATIVE_UTILITY_AGENT_LABEL = 'Internal History & Artifact Tools';
+export const NATIVE_UTILITY_AGENT_DESCRIPTION =
+  'CHỈ dùng khi người dùng hỏi lại sự kiện/quyết định ĐÃ TỪNG TRAO ĐỔI ở các lượt trước trong chính cuộc trò chuyện này mà Tóm tắt/Lịch sử gần đây thiếu chi tiết (search_conversation_history), hoặc cần đọc file artifact tạm (read_conversation_artifact). KHÔNG dùng cho câu hỏi kiến thức chung hay câu hỏi mới độc lập.';
 
 // Conversation Artifact Handoff literals (tách biệt hoàn toàn khỏi /tmp/artifacts của Python Sandbox)
 export const CONV_ARTIFACT_DIR_NAME = 'agent-conv-artifacts';
@@ -36,4 +39,13 @@ export const CONV_ARTIFACT_ERROR_CODES = {
   MISSING_CONVERSATION: 'MISSING_CONVERSATION',
   NOT_FOUND: 'ARTIFACT_NOT_FOUND',
   READ_FAILED: 'ARTIFACT_READ_FAILED',
+} as const;
+
+// Conversation History Search literals (On-Demand PostgreSQL retrieval)
+export const HISTORY_SEARCH_TOOL_NAME = 'search_conversation_history';
+export const HISTORY_SEARCH_ERROR_CODES = {
+  INVALID_ARGUMENTS: 'INVALID_ARGUMENTS',
+  MISSING_CONVERSATION: 'MISSING_CONVERSATION',
+  NOT_FOUND: 'MESSAGE_NOT_FOUND',
+  SEARCH_FAILED: 'HISTORY_SEARCH_FAILED',
 } as const;

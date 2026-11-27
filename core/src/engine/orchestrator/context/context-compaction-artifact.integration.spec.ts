@@ -341,9 +341,12 @@ describe('Multi-turn Integration: Context Compaction + Context Editing + Isolate
     channelType: 'web',
   });
 
-  it('compacts after >10 turns, applies Context Editing to oversized AI turns, and reads oversized CSV artifacts across turns via real LocalConversationArtifactStore + ReadConversationArtifactTool', async () => {
-    // --- Turns 1..5 (10 messages total = at threshold, compaction stays inactive) ---
-    for (let turn = 1; turn <= 5; turn++) {
+  it('compacts after exceeding COMPACTION_TRIGGER_TURNS, applies Context Editing to oversized AI turns, and reads oversized CSV artifacts across turns via real LocalConversationArtifactStore + ReadConversationArtifactTool', async () => {
+    const preTriggerTurns = Math.floor(
+      ORCHESTRATION_CONSTANTS.COMPACTION_TRIGGER_TURNS / 2,
+    ); // 11 turns = 22 messages
+    // --- Turns 1..preTriggerTurns (tối đa ngưỡng trigger, compaction vẫn tắt) ---
+    for (let turn = 1; turn <= preTriggerTurns; turn++) {
       const userPrompt =
         turn === 1
           ? 'Quy tắc: luôn dùng mã đơn ORD-778 khi đối chiếu'
@@ -354,7 +357,7 @@ describe('Multi-turn Integration: Context Compaction + Context Editing + Isolate
         action: 'respond',
         answer:
           turn === 2
-            ? `HEAD_TURN2_${'Z'.repeat(2400)}_TAIL_TURN2`
+            ? `HEAD_TURN2_${'Z'.repeat(2800)}_TAIL_TURN2`
             : `Đáp turn ${turn}`,
       });
 
@@ -366,42 +369,50 @@ describe('Multi-turn Integration: Context Compaction + Context Editing + Isolate
       await compactionService.compactConversation(CONV_ID, 'gemini-2.5-flash');
     }
 
-    // 10 tin nhắn chưa vượt COMPACTION_TRIGGER_TURNS (10) -> chưa nén
+    // Chưa vượt COMPACTION_TRIGGER_TURNS -> chưa nén
     expect(await inMemoryRepo.getCompactionState(CONV_ID)).toBeNull();
 
-    // --- Turn 6 (đủ 12 tin > 10): Supervisor phải nhận bản Context Edited của câu AI turn 2, sau đó compaction kích hoạt ---
-    inMemoryRepo.appendMessage(CONV_ID, EMessageRole.USER, 'Hỏi ở turn 6');
+    // --- Turn kích hoạt (vượt ngưỡng trigger): Supervisor phải nhận bản Context Edited của câu AI turn 2, sau đó compaction kích hoạt ---
+    const triggerTurn = preTriggerTurns + 1;
+    inMemoryRepo.appendMessage(CONV_ID, EMessageRole.USER, `Hỏi ở turn ${triggerTurn}`);
     mockGenerateStructured.mockResolvedValueOnce({
       action: 'respond',
-      answer: 'Đáp turn 6',
+      answer: `Đáp turn ${triggerTurn}`,
     });
 
-    const turn6Ans = await turnResolver.resolveAnswer(
-      buildJobData('Hỏi ở turn 6', 'trig-6'),
-      'reply-6',
+    const triggerTurnAns = await turnResolver.resolveAnswer(
+      buildJobData(`Hỏi ở turn ${triggerTurn}`, `trig-${triggerTurn}`),
+      `reply-${triggerTurn}`,
     );
-    expect(turn6Ans.content).toBe('Đáp turn 6');
+    expect(triggerTurnAns.content).toBe(`Đáp turn ${triggerTurn}`);
 
-    const turn6PlanPrompt = mockGenerateStructured.mock.calls[5][0].prompt as string;
-    expect(turn6PlanPrompt).toContain(CONTEXT_EDITED_HISTORY_SECTION_HEADER);
-    expect(turn6PlanPrompt).toContain('HEAD_TURN2_');
-    expect(turn6PlanPrompt).toContain('TAIL_TURN2');
-    expect(turn6PlanPrompt).toContain('đã lược bỏ');
+    const triggerPlanPrompt = mockGenerateStructured.mock.calls[preTriggerTurns][0]
+      .prompt as string;
+    expect(triggerPlanPrompt).toContain(CONTEXT_EDITED_HISTORY_SECTION_HEADER);
+    expect(triggerPlanPrompt).toContain('HEAD_TURN2_');
+    expect(triggerPlanPrompt).toContain('TAIL_TURN2');
+    expect(triggerPlanPrompt).toContain('đã lược bỏ');
 
-    inMemoryRepo.appendMessage(CONV_ID, EMessageRole.MODEL, turn6Ans.content);
+    inMemoryRepo.appendMessage(CONV_ID, EMessageRole.MODEL, triggerTurnAns.content);
 
-    // Compaction lần 1 chạy với COMPACTION_SYSTEM_PROMPT, giữ 6 tin cuối (#7..#12), nén #1..#6
+    const totalAtCompaction = triggerTurn * 2;
+    const expectedCompactedCount =
+      totalAtCompaction - ORCHESTRATION_CONSTANTS.COMPACTION_KEEP_RECENT_TURNS;
+
+    // Compaction lần 1 chạy với COMPACTION_SYSTEM_PROMPT, giữ KEEP_RECENT_TURNS tin cuối, nén phần đầu
     mockSendMessage.mockResolvedValueOnce({
-      text: '[QUY TẮC & RÀNG BUỘC CÒN HIỆU LỰC]\n- Dùng mã ORD-778\n[VIỆC ĐÃ HOÀN THÀNH]\n- Đã trả lời turn 1..3\n[VIỆC ĐANG LÀM DỞ / CÂU HỎI ĐANG MỞ]\n- Chuẩn bị xuất CSV',
+      text: '[QUY TẮC & RÀNG BUỘC CÒN HIỆU LỰC]\n- Dùng mã ORD-778\n[VIỆC ĐÃ HOÀN THÀNH]\n- Đã trả lời các lượt đầu\n[VIỆC ĐANG LÀM DỞ / CÂU HỎI ĐANG MỞ]\n- Chuẩn bị xuất CSV',
       toolCalls: [],
     });
     await compactionService.compactConversation(CONV_ID, 'gemini-2.5-flash');
 
     const compactedState = await inMemoryRepo.getCompactionState(CONV_ID);
     expect(compactedState).not.toBeNull();
-    expect(compactedState?.summarizedUntilMessageId).toBe('msg-6');
+    expect(compactedState?.summarizedUntilMessageId).toBe(
+      `msg-${expectedCompactedCount}`,
+    );
     expect(mockSendMessage.mock.calls[0][0]).toContain('ORD-778');
-    expect(mockSendMessage.mock.calls[0][0]).not.toContain('Đáp turn 6');
+    expect(mockSendMessage.mock.calls[0][0]).not.toContain(`Đáp turn ${triggerTurn}`);
 
     // Kiểm tra systemInstruction compaction
     const compactionChatOpts = (mockSendMessage.mock.instances &&
@@ -413,7 +424,7 @@ describe('Multi-turn Integration: Context Compaction + Context Editing + Isolate
       expect.objectContaining({ systemInstruction: COMPACTION_SYSTEM_PROMPT }),
     );
 
-    // --- Turn 7: Supervisor + ReAct đều nhận contextSummary + 6 tin chưa nén (#7..#12), offload CSV >50KB rồi đọc lại thật ---
+    // --- Turn tiếp theo: Supervisor + ReAct đều nhận contextSummary + KEEP_RECENT_TURNS tin chưa nén, offload CSV >50KB rồi đọc lại thật ---
     const largeCsv = [
       'order_id,customer,amount',
       ...Array.from({ length: 3000 }, (_, i) => `ORD-${i},Customer-${i},${i * 100}`),
@@ -479,7 +490,7 @@ describe('Multi-turn Integration: Context Compaction + Context Editing + Isolate
     expect(turn7Ans.content).toContain(savedArtifactFilename);
 
     // Xác minh Supervisor plan() và ReactLoop startChat() đều nhận Summary từ compaction
-    const turn7PlanPrompt = mockGenerateStructured.mock.calls[6][0].prompt as string;
+    const turn7PlanPrompt = mockGenerateStructured.mock.calls[triggerTurn][0].prompt as string;
     expect(turn7PlanPrompt).toContain(CONVERSATION_SUMMARY_SECTION_HEADER);
     expect(turn7PlanPrompt).toContain('Dùng mã ORD-778');
     expect(turn7PlanPrompt).not.toContain('HEAD_TURN2_'); // msg #4 đã được nén vào summary, không lặp lại ở history thô
